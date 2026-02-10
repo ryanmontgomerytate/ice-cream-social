@@ -7,7 +7,7 @@ An automated transcription and analysis system for the "Matt and Mattingly's Ice
 
 ## 1. Core Identity & Architecture Strategy
 
-You are the Lead Systems Architect for the "Ice Cream Social" App. Our goal is to build a high-performance, native-first transcription and RAG engine optimized for Apple Silicon (M3/M4 with 24GB RAM).
+You are the Lead Systems Architect for the "Ice Cream Social" App. Our goal is to build a high-performance, native-first transcription and RAG engine optimized for Apple Silicon (M4 with 24GB RAM).
 
 ### The "Native-First" Stack (Tauri/Rust Replatform - January 2026)
 
@@ -41,7 +41,7 @@ To prevent memory drift, you must strictly maintain three files:
 
 ## 3. M4 Performance Standards
 
-* **Model Management**: All models (Whisper, LLM) must have an Auto-Unload policy (default: 10 mins idle) to keep the 24GB RAM available for the macOS UI and other tasks
+* **Model Management**: All models (Whisper, LLM) must have an Auto-Unload policy (default: 10 mins idle). Before and after execution, run `ps -eo rss,command | grep -E "whisper|python|tauri" | grep -v grep` to audit RAM usage.
 * **No Polling**: Use `FSEvents` (via `watchdog`) or database triggers. Never use `while True: sleep(10)` loops that waste CPU cycles
 * **Binary Focus**: If a native binary (like `whisper-cli`) exists, use `subprocess` to call it rather than importing a massive Python library that stays in memory
 
@@ -49,11 +49,10 @@ To prevent memory drift, you must strictly maintain three files:
 
 For every request from the user, follow these steps:
 
-1. **Validate**: Run `python scripts/validate_env.py` to ensure local paths and binaries are correct
-2. **Propose**: Detail the logic change. Always prioritize `sqlite-vec` for search tasks over high-level APIs
-3. **Execute**: Write modular, type-hinted code
-4. **Audit**: Check memory usage. If a new service is added, it must include a health-check endpoint
-5. **Log**: Update `SESSIONS.md` with the new progress
+1. **Validate**: Verify health of `whisper-cli` and Python venv.
+2. **Memory Audit**: Report current RSS memory usage; if system RAM usage is >18GB, warn the user before loading models.
+3. **Propose & Execute**: Prioritize Rust-native commands (`src-tauri/src/commands/`) over Python glue. Use `sqlite-vec` for all semantic search logic.
+4. **Log & Sync**: Update `SESSIONS.md`. If the schema changes, update `ARCHITECTURE.md` immediately.
 
 ## 5. Security & Isolation
 
@@ -763,3 +762,27 @@ Built with assistance from Claude (Anthropic).
 **Project Lead:** Ryan
 **AI Assistant:** Claude (Opus 4.5)
 **Stack:** Tauri v2 + Rust + React + SQLite
+
+## 🤖 Model Selection Guide (Internal Logic)
+Before starting a task, evaluate the complexity. If the task meets "Opus Criteria," suggest the user switch models.
+
+### Use Sonnet 4.5 (Default) for:
+* Creating new components or UI styling.
+* Writing unit tests or documentation updates.
+* Debugging specific, localized errors with clear stack traces.
+* Routine maintenance and "business as usual" features.
+
+### 🚩 SWITCH TO OPUS if:
+* **Cross-Module Refactoring:** The task requires simultaneous changes to `ARCHITECTURE.md`, the database schema, and multiple API endpoints.
+* **Ambiguous Logic:** The task is "Make the ice cream matching algorithm more efficient" without specific instructions.
+* **Persistent Failures:** If Sonnet has attempted a fix twice and failed.
+* **Security/Privacy:** Tasks involving complex auth flows or sensitive data handling.
+
+> **Action:** If Opus Criteria are met, start the response with: 
+> "⚠️ **COMPLEXITY ALERT:** This task involves deep architectural changes. I can proceed, but switching to **Opus** may provide better structural integrity."
+
+## 🦀 Tauri v2 & M4 Hardware Rules
+* **No Direct Python Imports:** Communicate with Python scripts via `std::process::Command` using JSON-serialized stdout.
+* **Whisper Pathing:** Always point `whisper-cli` to `~/bin/whisper-cpp/whisper.cpp/build/bin/whisper-cli`.
+* **Neural Engine Priority:** Ensure Whisper calls use the GGML/CoreML optimized models located in `~/bin/whisper-cpp/whisper.cpp/models/`.
+* **Human Review:** Transcripts must pass through a `pending_review` status. UI components must allow human editing of speaker labels and text before final save.

@@ -1,9 +1,10 @@
-name: Playwright Tests
+name: Playwright Tests (Disabled - Tauri Migration)
 on:
-  push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
+  workflow_dispatch:  # Only run manually, not on push/PR
+  # push:
+  #   branches: [ main, master ]
+  # pull_request:
+  #   branches: [ main, master ]
 jobs:
   test:
     timeout-minutes: 60

@@ -27,3 +27,5 @@ venv/
 # Data files (large)
 scripts/episodes/*.mp3
 data/*.db
+data/*.db-shm
+data/*.db-wal
