@@ -1,0 +1,133 @@
+# Ice Cream Social Fandom App Configuration
+# Edit this file to customize settings for your environment
+
+# Podcast Feed Settings
+podcast:
+  name: "Matt and Mattingly's Ice Cream Social"
+  # Multiple feed sources
+  feeds:
+    patreon:
+      name: "Patreon (Full Archive)"
+      url: "https://www.patreon.com/rss/heyscoops?auth=REDACTED_PATREON_AUTH_TOKEN&show=876202"
+      enabled: true
+    apple:
+      name: "Apple Podcasts"
+      url: "https://feed.cdnstream1.com/zjb/feed/download/91/7e/43/917e43a3-1a10-46f7-9fde-348c9360fa41.xml"
+      enabled: true
+  # Default feed for backward compatibility
+  rss_feed_url: "https://www.patreon.com/rss/heyscoops?auth=REDACTED_PATREON_AUTH_TOKEN&show=876202"
+
+# Directory Paths (relative to project root)
+paths:
+  episodes: "scripts/episodes"           # Downloaded audio files
+  transcripts: "scripts/transcripts"     # Transcription outputs
+  data: "data"                           # Structured data (characters, trivia, etc.)
+  database: "data/ice_cream_social.db"   # SQLite database path
+  logs: "scripts"                        # Log files location
+
+# Transcription Settings
+transcription:
+  # Model selection: tiny, base, small, medium, large-v2, large-v3
+  # Speed optimized: small = 10x faster, mps = 2x faster = 20x total speedup!
+  model: "small"
+
+  # Device: auto, cpu, cuda (auto detects GPU if available)
+  # Using mps for Apple Silicon M4 GPU acceleration
+  device: "mps"
+
+  # Compute type: auto, int8, float16, float32
+  compute_type: "auto"
+
+  # Processing options (optimized for speed)
+  beam_size: 3      # Reduced from 5 for 15% speed boost
+  word_timestamps: true
+  vad_filter: true  # Filter out silence
+
+  # Output formats (all enabled by default)
+  output_formats:
+    json: true      # Full data with timestamps
+    text: true      # Plain text
+    srt: true       # Subtitle format
+    markdown: true  # Formatted with timestamps
+
+# Background Worker Settings
+worker:
+  check_interval: 60        # Seconds between folder scans
+  auto_start_on_download: true  # Start transcribing when new files appear
+  max_retries: 3            # Retry failed transcriptions
+  retry_delay: 300          # Seconds to wait before retry
+
+# Download Settings
+download:
+  skip_existing: true       # Don't re-download existing files
+  max_concurrent: 1         # Downloads at once (be nice to servers)
+  timeout: 300              # Seconds before download timeout
+
+# Database Settings (SQLite)
+database:
+  enabled: false            # Enable when database is set up
+  auto_migrate: true        # Automatically run migrations
+  backup_enabled: false     # Create periodic backups
+  backup_interval: 86400    # Seconds between backups (24 hours)
+
+# AnythingLLM Integration
+anythingllm:
+  enabled: false            # Enable when AnythingLLM is configured
+  api_url: "http://localhost:3001/api"
+  api_key: ""               # Add your AnythingLLM API key here
+  workspace_slug: "ice-cream-social"
+  auto_upload: false        # Automatically upload completed transcripts
+  upload_format: "markdown" # Format to upload: markdown, text, or json
+
+# Speaker Diarization (Optional - requires pyannote.audio)
+# NOTE: Set HUGGINGFACE_TOKEN in .env file (not here - this file may be committed to git)
+diarization:
+  enabled: true             # Enable speaker identification
+  min_speakers: 2           # Minimum number of speakers (Matt & Paul)
+  max_speakers: 5           # Maximum speakers (hosts + guests)
+
+# Alternative: AssemblyAI (Cloud transcription service)
+assemblyai:
+  enabled: false            # Use instead of local transcription
+  api_key: ""               # Add your AssemblyAI API key
+  speaker_labels: true      # Enable speaker diarization
+  auto_chapters: true       # Generate chapter markers
+  entity_detection: true    # Detect names, places, etc.
+
+# Data Extraction Settings
+extraction:
+  enabled: false            # Enable when LLM extraction is set up
+  extract_characters: true  # Identify recurring characters/bits
+  extract_trivia: true      # Parse Jock vs Nerd results
+  extract_guests: true      # Identify guest appearances
+  extract_topics: true      # Categorize episode topics
+  extract_quotes: true      # Notable/funny quotes
+
+# Social Media Integration
+social:
+  enabled: false
+  twitter_handle: "heyscoops"
+  instagram_handle: "heyscoops"
+  aggregate_mentions: false
+
+# Logging
+logging:
+  level: "INFO"             # DEBUG, INFO, WARNING, ERROR
+  format: "%(asctime)s - %(levelname)s - %(message)s"
+  date_format: "%Y-%m-%d %H:%M:%S"
+
+# Performance Tuning
+performance:
+  # Transcription performance (affects quality/speed tradeoff)
+  batch_size: 16            # Larger = faster but more memory
+  num_workers: 1            # Parallel transcription workers
+
+  # Memory management
+  clear_cache_after: 10     # Clear model cache after N episodes
+  max_audio_length: 14400   # Max seconds (4 hours) - reject longer files
+
+# Feature Flags
+features:
+  experimental_mode: false  # Enable experimental features
+  debug_mode: false         # Extra logging and validation
+  dry_run: false            # Preview actions without executing

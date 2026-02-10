@@ -1,0 +1,6126 @@
+{
+	"systeminfo": "WHISPER : COREML = 0 | OPENVINO = 0 | Metal : EMBED_LIBRARY = 1 | CPU : NEON = 1 | ARM_FMA = 1 | FP16_VA = 1 | MATMUL_INT8 = 1 | DOTPROD = 1 | SME = 1 | ACCELERATE = 1 | REPACK = 1 | ",
+	"model": {
+		"type": "medium",
+		"multilingual": true,
+		"vocab": 51865,
+		"audio": {
+			"ctx": 1500,
+			"state": 1024,
+			"head": 16,
+			"layer": 24
+		},
+		"text": {
+			"ctx": 448,
+			"state": 1024,
+			"head": 16,
+			"layer": 24
+		},
+		"mels": 80,
+		"ftype": 1
+	},
+	"params": {
+		"model": "/Users/ryan/bin/whisper-cpp/whisper.cpp/models/ggml-medium.bin",
+		"language": "en",
+		"translate": false
+	},
+	"result": {
+		"language": "en"
+	},
+	"transcription": [
+		{
+			"timestamps": {
+				"from": "00:00:00,000",
+				"to": "00:00:09,280"
+			},
+			"offsets": {
+				"from": 0,
+				"to": 9280
+			},
+			"text": " Oh hello there I am so happy you're here. I want to thank you the ice cream truck"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:09,280",
+				"to": "00:00:13,080"
+			},
+			"offsets": {
+				"from": 9280,
+				"to": 13080
+			},
+			"text": " drivers. Who are the ice cream truck drivers? Well these are the folks that"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:13,080",
+				"to": "00:00:17,680"
+			},
+			"offsets": {
+				"from": 13080,
+				"to": 17680
+			},
+			"text": " deliver that fucking ice cream straight to your fucking ear holes. It's a new"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:17,680",
+				"to": "00:00:21,600"
+			},
+			"offsets": {
+				"from": 17680,
+				"to": 21600
+			},
+			"text": " month we don't have a new list yet so I don't have names to thank but we will"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:21,600",
+				"to": "00:00:25,800"
+			},
+			"offsets": {
+				"from": 21600,
+				"to": 25800
+			},
+			"text": " thank each and every ice cream truck driver before this month is through. If"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:25,800",
+				"to": "00:00:29,640"
+			},
+			"offsets": {
+				"from": 25800,
+				"to": 29640
+			},
+			"text": " you want to be an ice cream truck driver and help deliver that ice cream"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:29,640",
+				"to": "00:00:33,720"
+			},
+			"offsets": {
+				"from": 29640,
+				"to": 33720
+			},
+			"text": " head over to preachingfun.com. Preachingfun.com is where you can go to sign up"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:33,720",
+				"to": "00:00:40,200"
+			},
+			"offsets": {
+				"from": 33720,
+				"to": 40200
+			},
+			"text": " to be an ice cream truck driver and who knows the life you save may be your own."
+		},
+		{
+			"timestamps": {
+				"from": "00:00:40,200",
+				"to": "00:00:52,000"
+			},
+			"offsets": {
+				"from": 40200,
+				"to": 52000
+			},
+			"text": " Here's a show. Hey Johnny do you want to go to an ice cream social? Yeah I'd love to. Great let's go."
+		},
+		{
+			"timestamps": {
+				"from": "00:00:52,000",
+				"to": "00:01:06,880"
+			},
+			"offsets": {
+				"from": 52000,
+				"to": 66880
+			},
+			"text": " I'm a cool old jammers guy. They give me the Ajika. I just had a box of Jujutsu."
+		},
+		{
+			"timestamps": {
+				"from": "00:01:06,880",
+				"to": "00:01:14,920"
+			},
+			"offsets": {
+				"from": 66880,
+				"to": 74920
+			},
+			"text": " It's time for Matt Madison's ice cream social. Soon to be in intestinal distress that's"
+		},
+		{
+			"timestamps": {
+				"from": "00:01:14,920",
+				"to": "00:01:33,720"
+			},
+			"offsets": {
+				"from": 74920,
+				"to": 93720
+			},
+			"text": " full. I'm here and I'm Jacob. I'm here and I'm Jacob. Happy new year gents. I tried very hard to"
+		},
+		{
+			"timestamps": {
+				"from": "00:01:33,720",
+				"to": "00:01:42,640"
+			},
+			"offsets": {
+				"from": 93720,
+				"to": 102640
+			},
+			"text": " go see my wife on New Year's Eve at one of her gigs and failed so miserably. It was"
+		},
+		{
+			"timestamps": {
+				"from": "00:01:42,640",
+				"to": "00:01:48,360"
+			},
+			"offsets": {
+				"from": 102640,
+				"to": 108360
+			},
+			"text": " terrible. What happened? It was terrible. I had the early show at Absinthe over at"
+		},
+		{
+			"timestamps": {
+				"from": "00:01:48,360",
+				"to": "00:01:58,240"
+			},
+			"offsets": {
+				"from": 108360,
+				"to": 118240
+			},
+			"text": " Caesars Palace. I got done at 10 30 p.m. My wife was less than a mile down the"
+		},
+		{
+			"timestamps": {
+				"from": "00:01:58,240",
+				"to": "00:02:02,740"
+			},
+			"offsets": {
+				"from": 118240,
+				"to": 122740
+			},
+			"text": " road doing a gig with several of our other friends several other close"
+		},
+		{
+			"timestamps": {
+				"from": "00:02:02,740",
+				"to": "00:02:06,440"
+			},
+			"offsets": {
+				"from": 122740,
+				"to": 126440
+			},
+			"text": " friends. Some of them have been on the podcast from the from the Spice Girls show"
+		},
+		{
+			"timestamps": {
+				"from": "00:02:06,440",
+				"to": "00:02:10,680"
+			},
+			"offsets": {
+				"from": 126440,
+				"to": 130680
+			},
+			"text": " that she does. Right. So I was gonna go down see part of her show hang out with"
+		},
+		{
+			"timestamps": {
+				"from": "00:02:10,680",
+				"to": "00:02:15,400"
+			},
+			"offsets": {
+				"from": 130680,
+				"to": 135400
+			},
+			"text": " her hang out with our friends on New Year's Eve ring in the new year. It was"
+		},
+		{
+			"timestamps": {
+				"from": "00:02:15,400",
+				"to": "00:02:22,560"
+			},
+			"offsets": {
+				"from": 135400,
+				"to": 142560
+			},
+			"text": " gonna be great. Well my plan was to walk. No no. And then it was well I was like"
+		},
+		{
+			"timestamps": {
+				"from": "00:02:22,560",
+				"to": "00:02:27,240"
+			},
+			"offsets": {
+				"from": 142560,
+				"to": 147240
+			},
+			"text": " oh it'll take me a half hour to walk down there but that's not a big deal. I'm"
+		},
+		{
+			"timestamps": {
+				"from": "00:02:27,240",
+				"to": "00:02:32,040"
+			},
+			"offsets": {
+				"from": 147240,
+				"to": 152040
+			},
+			"text": " not. I wasn't too worried about the walk. Normally. Normally. Well no even with the with the foot"
+		},
+		{
+			"timestamps": {
+				"from": "00:02:32,040",
+				"to": "00:02:36,160"
+			},
+			"offsets": {
+				"from": 152040,
+				"to": 156160
+			},
+			"text": " traffic I was like it'll take me half hour maybe 40 45 minutes but even then"
+		},
+		{
+			"timestamps": {
+				"from": "00:02:36,160",
+				"to": "00:02:41,500"
+			},
+			"offsets": {
+				"from": 156160,
+				"to": 161500
+			},
+			"text": " that's okay. I'm not worried about that. It was raining a little bit. It was"
+		},
+		{
+			"timestamps": {
+				"from": "00:02:41,500",
+				"to": "00:02:47,280"
+			},
+			"offsets": {
+				"from": 161500,
+				"to": 167280
+			},
+			"text": " raining beautiful weather. Yeah. For two weeks and then New Year's Eve it was"
+		},
+		{
+			"timestamps": {
+				"from": "00:02:47,280",
+				"to": "00:02:53,980"
+			},
+			"offsets": {
+				"from": 167280,
+				"to": 173980
+			},
+			"text": " raining. By the way did not seem to affect Las Vegas tourism negatively at"
+		},
+		{
+			"timestamps": {
+				"from": "00:02:53,980",
+				"to": "00:02:59,040"
+			},
+			"offsets": {
+				"from": 173980,
+				"to": 179040
+			},
+			"text": " all. The earlier reports I saw actually were that it was record record numbers"
+		},
+		{
+			"timestamps": {
+				"from": "00:02:59,040",
+				"to": "00:03:03,680"
+			},
+			"offsets": {
+				"from": 179040,
+				"to": 183680
+			},
+			"text": " for New Year's Eve. That's right. Oh wow. Yeah even record numbers of trash. 12"
+		},
+		{
+			"timestamps": {
+				"from": "00:03:03,680",
+				"to": "00:03:10,000"
+			},
+			"offsets": {
+				"from": 183680,
+				"to": 190000
+			},
+			"text": " tons of trash cleaned up on the strip after it was all over. Jacob how did your"
+		},
+		{
+			"timestamps": {
+				"from": "00:03:10,000",
+				"to": "00:03:33,000"
+			},
+			"offsets": {
+				"from": 190000,
+				"to": 213000
+			},
+			"text": " mom get down to the strip? I'm not 12 tons of trash. I'm Jacob's mom. Yeah well you keep eating them pies you're gonna be 13 tons of trash. I know that my mom listens to the podcast. Hi mom. 13 tons of trash."
+		},
+		{
+			"timestamps": {
+				"from": "00:03:33,000",
+				"to": "00:03:37,560"
+			},
+			"offsets": {
+				"from": 213000,
+				"to": 217560
+			},
+			"text": " So I walk outside after the shows I gotta go drop off my bag and everything in"
+		},
+		{
+			"timestamps": {
+				"from": "00:03:37,560",
+				"to": "00:03:41,520"
+			},
+			"offsets": {
+				"from": 217560,
+				"to": 221520
+			},
+			"text": " the car so I go over and drop everything off and it's it's sprinkled rain a"
+		},
+		{
+			"timestamps": {
+				"from": "00:03:41,520",
+				"to": "00:03:46,600"
+			},
+			"offsets": {
+				"from": 221520,
+				"to": 226600
+			},
+			"text": " little bit. I'm like you know what this might this might help me out. This this"
+		},
+		{
+			"timestamps": {
+				"from": "00:03:46,600",
+				"to": "00:03:51,520"
+			},
+			"offsets": {
+				"from": 226600,
+				"to": 231520
+			},
+			"text": " might be a glass half full moment because this means that nobody else or"
+		},
+		{
+			"timestamps": {
+				"from": "00:03:51,520",
+				"to": "00:03:56,080"
+			},
+			"offsets": {
+				"from": 231520,
+				"to": 236080
+			},
+			"text": " not as many other people are gonna be out on the actual street. Way to silver"
+		},
+		{
+			"timestamps": {
+				"from": "00:03:56,080",
+				"to": "00:04:07,800"
+			},
+			"offsets": {
+				"from": 236080,
+				"to": 247800
+			},
+			"text": " lining it Jacob. That's really good. It's gonna clear the path for me. Did you did you think about using your scooter? I thought about using the scooter but then I would have then I would have had to like park the"
+		},
+		{
+			"timestamps": {
+				"from": "00:04:07,800",
+				"to": "00:04:21,960"
+			},
+			"offsets": {
+				"from": 247800,
+				"to": 261960
+			},
+			"text": " scooter somewhere. Also the scooter when it is wet at all is a death trap. I guess that's true. Yeah it is horrible to ride that thing if it is slightly wet. Yeah oh god."
+		},
+		{
+			"timestamps": {
+				"from": "00:04:21,960",
+				"to": "00:04:40,720"
+			},
+			"offsets": {
+				"from": 261960,
+				"to": 280720
+			},
+			"text": " Because I mean it's just not heavy enough. It just doesn't it doesn't stay on the ground well enough. So I go outside. Now your mom's on it. Yeah. 15 tons of trash. Put down the pie mom. Boom, boom, boom the hits keep coming. Boom, boom, boom it's my mom"
+		},
+		{
+			"timestamps": {
+				"from": "00:04:40,720",
+				"to": "00:04:48,600"
+			},
+			"offsets": {
+				"from": 280720,
+				"to": 288600
+			},
+			"text": " walking down the hall. So I like I walk outside. I'm like okay it's misting rain a"
+		},
+		{
+			"timestamps": {
+				"from": "00:04:48,600",
+				"to": "00:05:18,520"
+			},
+			"offsets": {
+				"from": 288600,
+				"to": 318520
+			},
+			"text": " little bit. I'll be you know I'll be a little damp. That's okay. I won't be I won't be soaking wet or anything. This is this is doable. I'll be alright. And so I start walking down the street. I'm out on the strip. It's great you know it's New Year's Eve and on the Las Vegas strip. It's all that stuff. It's all the people watching that goes along with that. Dreams. A lot of dreams in the air. A lot of dreams. A lot of hopes and dreams. A lot of deflated pornographic dreams floating through the ether."
+		},
+		{
+			"timestamps": {
+				"from": "00:05:18,520",
+				"to": "00:05:48,280"
+			},
+			"offsets": {
+				"from": 318520,
+				"to": 348280
+			},
+			"text": " And then it started raining a little bit. Call that six nine six nine six nine number in twenty twenty six. I'm going to get a hold of that dead billboard lady. I'm going to see what that's all about. Hey what's one of them dead. All of them send her to six four eight the Rio please. I was talking to my friend who's a Uber driver. He's talking about how many how many tourists come to town and they take the"
+		},
+		{
+			"timestamps": {
+				"from": "00:05:48,280",
+				"to": "00:06:14,120"
+			},
+			"offsets": {
+				"from": 348280,
+				"to": 374120
+			},
+			"text": " Uber to massage parlors and go like oh I guess oh I don't know if this is the place or you know it's like song and dance. They try to they try to alibi it like about like oh I guess I'll get out here and figure it out. But you know I don't just like I do any time I'm getting dropped off by an Uber at a place that I don't think is my destination. I choose to go ahead and get out and figure it out."
+		},
+		{
+			"timestamps": {
+				"from": "00:06:16,620",
+				"to": "00:06:33,160"
+			},
+			"offsets": {
+				"from": 376620,
+				"to": 393160
+			},
+			"text": " How many I guess most massage parlors in Vegas are connected to human trafficking in some way. Is that how dare you dare you. They're legit foot tension specialists brought here. You leave massage envy alone."
+		},
+		{
+			"timestamps": {
+				"from": "00:06:34,600",
+				"to": "00:06:55,080"
+			},
+			"offsets": {
+				"from": 394600,
+				"to": 415080
+			},
+			"text": " I do. I very much. They're very much top graduates of all the leading reflexology schools. It is that reflexology school in a giant shipping container because it's a scene. It's a college. I would call it a giant shipping container."
+		},
+		{
+			"timestamps": {
+				"from": "00:06:57,840",
+				"to": "00:07:07,440"
+			},
+			"offsets": {
+				"from": 417840,
+				"to": 427440
+			},
+			"text": " Look you say accredited I say seaworthy. These are maritime degrees maritime degrees that are good. I'm degree."
+		},
+		{
+			"timestamps": {
+				"from": "00:07:07,440",
+				"to": "00:07:23,800"
+			},
+			"offsets": {
+				"from": 427440,
+				"to": 443800
+			},
+			"text": " You can get your diploma at sea. I just came here to get a manicure. But sure I'll stick around stick around forever."
+		},
+		{
+			"timestamps": {
+				"from": "00:07:25,680",
+				"to": "00:07:31,520"
+			},
+			"offsets": {
+				"from": 445680,
+				"to": 451520
+			},
+			"text": " Now you're in a shipping container. It's not even a giant one. It's a regular size one."
+		},
+		{
+			"timestamps": {
+				"from": "00:07:31,520",
+				"to": "00:07:42,720"
+			},
+			"offsets": {
+				"from": 451520,
+				"to": 462720
+			},
+			"text": " Bernie Sanders. It's missing a little bit. And then it's no longer missing. Now it's lightly raining."
+		},
+		{
+			"timestamps": {
+				"from": "00:07:42,720",
+				"to": "00:07:55,640"
+			},
+			"offsets": {
+				"from": 462720,
+				"to": 475640
+			},
+			"text": " It is. It is definitely. There's more water coming from the sky now. Yes. And I know this because I had a gig and I drove to Utah. No problem. Did the show then drove back trying to make"
+		},
+		{
+			"timestamps": {
+				"from": "00:07:55,640",
+				"to": "00:08:10,280"
+			},
+			"offsets": {
+				"from": 475640,
+				"to": 490280
+			},
+			"text": " it back to this party in time to be with my kids and stuff. And right. And the rain towards the 10 of midnight was pretty pretty heavy. Yeah. Yeah. Yeah. It was a record rainfall for Las Vegas which is which is kind of like which is kind of like having the"
+		},
+		{
+			"timestamps": {
+				"from": "00:08:10,280",
+				"to": "00:08:13,520"
+			},
+			"offsets": {
+				"from": 490280,
+				"to": 493520
+			},
+			"text": " highest rated show on CW like really like what are we talking about."
+		},
+		{
+			"timestamps": {
+				"from": "00:08:14,640",
+				"to": "00:08:40,440"
+			},
+			"offsets": {
+				"from": 494640,
+				"to": 520440
+			},
+			"text": " But we had record rainfall. We did. So I finally gave up. I basically walked from one end of Caesar's Palace to the other outside. Don't mind me guys. I'm just drinking our Christmas gift from Soundstack our hosting company. They didn't send three months. Just one. So we're going to we're going to pass that around. It's going to be a travel."
+		},
+		{
+			"timestamps": {
+				"from": "00:08:41,760",
+				"to": "00:08:48,360"
+			},
+			"offsets": {
+				"from": 521760,
+				"to": 528360
+			},
+			"text": " Look at that. Is that their emblem. Paul can have it on a pocket. Have it in January. Jacob in February."
+		},
+		{
+			"timestamps": {
+				"from": "00:08:48,360",
+				"to": "00:09:08,120"
+			},
+			"offsets": {
+				"from": 528360,
+				"to": 548120
+			},
+			"text": " I want it on. I want it on Wednesdays and Fridays. We'll ship it that often. Yeah. Yeah. It looks like three styles of circumcision. That's right. That's what they started off as. It's much like much like the craft food company started off a little niche industry and grew and grew and grew. That's right. That's right."
+		},
+		{
+			"timestamps": {
+				"from": "00:09:10,280",
+				"to": "00:09:19,960"
+			},
+			"offsets": {
+				"from": 550280,
+				"to": 559960
+			},
+			"text": " Walked from one end to the other. Take a drink out of that. And I said, Matt, is that coffee in that mug? He said, more or less."
+		},
+		{
+			"timestamps": {
+				"from": "00:09:19,960",
+				"to": "00:09:38,200"
+			},
+			"offsets": {
+				"from": 559960,
+				"to": 578200
+			},
+			"text": " All right. We last left off. Jacob was so sorry. You're getting you're getting soaking wet. But, Jacob, did you take the advice of the"
+		},
+		{
+			"timestamps": {
+				"from": "00:09:39,800",
+				"to": "00:09:46,040"
+			},
+			"offsets": {
+				"from": 579800,
+				"to": 586040
+			},
+			"text": " MythBusters and just stroll calmly and serenely through the rain? Or did you try to run?"
+		},
+		{
+			"timestamps": {
+				"from": "00:09:46,040",
+				"to": "00:09:49,720"
+			},
+			"offsets": {
+				"from": 586040,
+				"to": 589720
+			},
+			"text": " Oh, no, no, no, no. I I stroll."
+		},
+		{
+			"timestamps": {
+				"from": "00:09:49,720",
+				"to": "00:09:56,560"
+			},
+			"offsets": {
+				"from": 589720,
+				"to": 596560
+			},
+			"text": " I have a stroller shoving people at the right go like it's raining."
+		},
+		{
+			"timestamps": {
+				"from": "00:09:58,640",
+				"to": "00:10:13,520"
+			},
+			"offsets": {
+				"from": 598640,
+				"to": 613520
+			},
+			"text": " Oh, my God. It's raining. I'm going to melt. I threw my fists out in front of me, flailed them around and ran yelling. It's raining forearm, elbow sweeping just the whole just. Yeah."
+		},
+		{
+			"timestamps": {
+				"from": "00:10:13,520",
+				"to": "00:10:19,880"
+			},
+			"offsets": {
+				"from": 613520,
+				"to": 619880
+			},
+			"text": " Jeff in the chat is asking a very valid question. Do people even own raincoats or umbrellas in Vegas?"
+		},
+		{
+			"timestamps": {
+				"from": "00:10:19,880",
+				"to": "00:10:26,480"
+			},
+			"offsets": {
+				"from": 619880,
+				"to": 626480
+			},
+			"text": " I don't know if people do, but I know that I do not. I never did. So I keep them in the I keep them in the trunk of my car."
+		},
+		{
+			"timestamps": {
+				"from": "00:10:26,640",
+				"to": "00:10:29,920"
+			},
+			"offsets": {
+				"from": 626640,
+				"to": 629920
+			},
+			"text": " You do. I do. Who are you? Because you're a Jersey."
+		},
+		{
+			"timestamps": {
+				"from": "00:10:29,920",
+				"to": "00:10:40,960"
+			},
+			"offsets": {
+				"from": 629920,
+				"to": 640960
+			},
+			"text": " I need to get an umbrella and just keep it in my car. That's it. Your old jersey. Which I definitely used to do, but I never did growing up. We didn't get that much rain in Kentucky."
+		},
+		{
+			"timestamps": {
+				"from": "00:10:40,960",
+				"to": "00:10:48,920"
+			},
+			"offsets": {
+				"from": 640960,
+				"to": 648920
+			},
+			"text": " No, I was living in New York was always the funniest thing is because they sell they sell umbrellas at all the little little little bodega shops."
+		},
+		{
+			"timestamps": {
+				"from": "00:10:49,560",
+				"to": "00:10:59,640"
+			},
+			"offsets": {
+				"from": 649560,
+				"to": 659640
+			},
+			"text": " And they're there used to be. They're always like, you know, three or four bucks. Then also starts raining and they're ten to fifteen dollars. It just place search umbrellas. Yeah. All the time."
+		},
+		{
+			"timestamps": {
+				"from": "00:10:59,640",
+				"to": "00:11:12,000"
+			},
+			"offsets": {
+				"from": 659640,
+				"to": 672000
+			},
+			"text": " But yeah, that's what I'm going to ask. If you have like a utility umbrella, even at even at work, I thought maybe you might keep one. Someone might have one in the desk or an office. We keep a pile of them at work, but they but they stay there."
+		},
+		{
+			"timestamps": {
+				"from": "00:11:13,680",
+				"to": "00:11:25,480"
+			},
+			"offsets": {
+				"from": 673680,
+				"to": 685480
+			},
+			"text": " Those are just there. They're a bouquet of umbrellas. I have some people have stuffed animal heads on their walls. We have umbrella. I've seen the umbrellas employed at absence during inclement times."
+		},
+		{
+			"timestamps": {
+				"from": "00:11:25,480",
+				"to": "00:11:36,880"
+			},
+			"offsets": {
+				"from": 685480,
+				"to": 696880
+			},
+			"text": " When people have to be ferried from stage to tent and what have you. Yeah. Back and forth. Stage hands have gone out. We have we have like giant golf umbrellas."
+		},
+		{
+			"timestamps": {
+				"from": "00:11:37,640",
+				"to": "00:11:52,680"
+			},
+			"offsets": {
+				"from": 697640,
+				"to": 712680
+			},
+			"text": " Cast members through wet areas and everything we have to big sexy actually makes a really good point. The reason why we have umbrellas handy is not because I'm always thinking about the rain. It's because my kids play outdoor sports and you use an umbrella in the desert just to give yourself shade."
+		},
+		{
+			"timestamps": {
+				"from": "00:11:52,680",
+				"to": "00:11:56,600"
+			},
+			"offsets": {
+				"from": 712680,
+				"to": 716600
+			},
+			"text": " So what kind of umbrella is it a black umbrella. Is it a"
+		},
+		{
+			"timestamps": {
+				"from": "00:11:56,840",
+				"to": "00:12:07,640"
+			},
+			"offsets": {
+				"from": 716840,
+				"to": 727640
+			},
+			"text": " I have a we have a multiple. I have a we have a super wide golf umbrella for keeping to us under the shade of watching color blue and white striped and then I have"
+		},
+		{
+			"timestamps": {
+				"from": "00:12:07,640",
+				"to": "00:12:22,840"
+			},
+			"offsets": {
+				"from": 727640,
+				"to": 742840
+			},
+			"text": " Tiny maroon umbrellas that I have for just in case for rain or extra an extra kid in tow or whatever. I can give some kids shade or or if it's raining. I keep goes smart. Yeah. Kenny Kenny in the chat. Yeah, you can't coach soccer without an umbrella."
+		},
+		{
+			"timestamps": {
+				"from": "00:12:24,320",
+				"to": "00:12:35,760"
+			},
+			"offsets": {
+				"from": 744320,
+				"to": 755760
+			},
+			"text": " Matt, was that your was that your issue with your soccer coaching. Did you not have enough umbrellas was you remember we we won our first game. And that's because I entered like Mary Poppins. I took the umbrella and I descended onto the field."
+		},
+		{
+			"timestamps": {
+				"from": "00:12:35,760",
+				"to": "00:12:39,800"
+			},
+			"offsets": {
+				"from": 755760,
+				"to": 759800
+			},
+			"text": " That gave us a spoonful of sugar before they hit the field."
+		},
+		{
+			"timestamps": {
+				"from": "00:12:39,800",
+				"to": "00:12:42,240"
+			},
+			"offsets": {
+				"from": 759800,
+				"to": 762240
+			},
+			"text": " Isn't that where that was cocaine."
+		},
+		{
+			"timestamps": {
+				"from": "00:12:42,240",
+				"to": "00:12:45,200"
+			},
+			"offsets": {
+				"from": 762240,
+				"to": 765200
+			},
+			"text": " The that's why they want that first game. That was just a spoon of cocaine."
+		},
+		{
+			"timestamps": {
+				"from": "00:12:45,200",
+				"to": "00:12:48,280"
+			},
+			"offsets": {
+				"from": 765200,
+				"to": 768280
+			},
+			"text": " The Umbro brand. Right. That's just a shorthand for umbrella."
+		},
+		{
+			"timestamps": {
+				"from": "00:12:48,720",
+				"to": "00:12:56,880"
+			},
+			"offsets": {
+				"from": 768720,
+				"to": 776880
+			},
+			"text": " Umbro Ella. That's why it's such a bit such a big thing in soccer's. Yeah. Yeah. Oh, Paul. Second worst joke of the day."
+		},
+		{
+			"timestamps": {
+				"from": "00:12:56,880",
+				"to": "00:13:14,600"
+			},
+			"offsets": {
+				"from": 776880,
+				"to": 794600
+			},
+			"text": " So far I have so far. Exactly. I have yet to start. So what happened. Jacob. Well, I walked from one end of Caesars to the other outside. Yeah. And dripping. I was wet."
+		},
+		{
+			"timestamps": {
+				"from": "00:13:14,840",
+				"to": "00:13:26,560"
+			},
+			"offsets": {
+				"from": 794840,
+				"to": 806560
+			},
+			"text": " Drippy. So finally I gave up on that. I went back inside. Oh, the one silver lining of the whole evening was I stopped at. They had all these extra bars and extra little shops set up."
+		},
+		{
+			"timestamps": {
+				"from": "00:13:26,560",
+				"to": "00:13:32,200"
+			},
+			"offsets": {
+				"from": 806560,
+				"to": 812200
+			},
+			"text": " So I stopped a little extra shop and because I noticed they had the little airplane bottles of Jameson."
+		},
+		{
+			"timestamps": {
+				"from": "00:13:32,200",
+				"to": "00:13:38,640"
+			},
+			"offsets": {
+				"from": 812200,
+				"to": 818640
+			},
+			"text": " So I'll I'll get myself a little airplane bottle of Jameson for this. What has turned into a very long walk."
+		},
+		{
+			"timestamps": {
+				"from": "00:13:38,640",
+				"to": "00:13:43,280"
+			},
+			"offsets": {
+				"from": 818640,
+				"to": 823280
+			},
+			"text": " So I got up and got the airplane ball of Jameson New Year's Eve."
+		},
+		{
+			"timestamps": {
+				"from": "00:13:45,480",
+				"to": "00:13:54,400"
+			},
+			"offsets": {
+				"from": 825480,
+				"to": 834400
+			},
+			"text": " There are no prices on anything. That's right. Same thing with like the bodega umbrella. Oh, God. I mean, a bottle of liquor on New Year's Eve in Vegas is a bodega umbrella in New York."
+		},
+		{
+			"timestamps": {
+				"from": "00:13:54,400",
+				"to": "00:14:07,920"
+			},
+			"offsets": {
+				"from": 834400,
+				"to": 847920
+			},
+			"text": " What was the price for that? Yo little shot bottle shot bottle shot bottle of whiskey. The airplane bottle of whiskey. New Year's Eve at Caesars Palace in a little pop up thing."
+		},
+		{
+			"timestamps": {
+				"from": "00:14:08,920",
+				"to": "00:14:15,760"
+			},
+			"offsets": {
+				"from": 848920,
+				"to": 855760
+			},
+			"text": " These are normally for these are only just a few bucks at a liquor store. Yeah, this would normally be like three dollars. Right. I think about how"
+		},
+		{
+			"timestamps": {
+				"from": "00:14:15,760",
+				"to": "00:14:26,520"
+			},
+			"offsets": {
+				"from": 855760,
+				"to": 866520
+			},
+			"text": " These drinks around town are usually served in very ornate designer thingies. Oh, they put in like some spiraling unicorn deal."
+		},
+		{
+			"timestamps": {
+				"from": "00:14:27,040",
+				"to": "00:14:43,680"
+			},
+			"offsets": {
+				"from": 867040,
+				"to": 883680
+			},
+			"text": " And you're exactly right. Dynamic pricing is what they call it ends up being like a 30 or $35 thing. Maybe a little more depending on how much alcohol. But this is just the simplified thing. But still, New Year's Eve. My guess is just a bottle. My guess my 18"
+		},
+		{
+			"timestamps": {
+				"from": "00:14:43,680",
+				"to": "00:14:56,560"
+			},
+			"offsets": {
+				"from": 883680,
+				"to": 896560
+			},
+			"text": " My gut initial is going to be like 10 or $12. Uh huh. But then I went to disco to see one last time with my kids and we bought two bottles of water on the way out. And it wasn't even New Year's Eve."
+		},
+		{
+			"timestamps": {
+				"from": "00:14:58,040",
+				"to": "00:15:18,000"
+			},
+			"offsets": {
+				"from": 898040,
+				"to": 918000
+			},
+			"text": " And it was $10 each for Aquafina bottles. $10. Stop it. They should pay you to drink Aquafina. That's your water. That is the nastiest shit ever. You got to walk outside. You got to just walk outside and find the guys selling the bottles of water on the street. They saw for a dollar or two."
+		},
+		{
+			"timestamps": {
+				"from": "00:15:19,120",
+				"to": "00:15:48,440"
+			},
+			"offsets": {
+				"from": 919120,
+				"to": 948440
+			},
+			"text": " Oh, it's just a case of case of bottled water. They got it. Costco. Who cares? I said, I said like at least put the different label on it. So like at least put like Aqua Tina, at least let me think I'm getting a different spring. That's nicer or put like the put like a casino label on it or something like that. Something. But like when I, when, when you know it's Aquafina face, it was like, like it puts it, it put like a damper in the, in the mood. You're like, Oh, sure. I just went, I just went to Costco. Yeah."
+		},
+		{
+			"timestamps": {
+				"from": "00:15:48,960",
+				"to": "00:15:54,560"
+			},
+			"offsets": {
+				"from": 948960,
+				"to": 954560
+			},
+			"text": " For under $4, Matt, I walked away with a brick of 40 waters. Right. Well, exactly."
+		},
+		{
+			"timestamps": {
+				"from": "00:15:54,560",
+				"to": "00:16:12,360"
+			},
+			"offsets": {
+				"from": 954560,
+				"to": 972360
+			},
+			"text": " When it comes to aquafina, when Anne and I bought that water at Costco the first time, we went up there and we were getting the, cause it's right up there next to the toilet paper and everything else. I was like, Oh, okay. Here we go. Get some waters. And she goes, I go, how much do you think it is? She goes, four bucks. I was like, no."
+		},
+		{
+			"timestamps": {
+				"from": "00:16:14,560",
+				"to": "00:16:44,160"
+			},
+			"offsets": {
+				"from": 974560,
+				"to": 1004160
+			},
+			"text": " She says, yeah, it's four bucks. My God. I mean, you know, you know, who knows that the guys on the escalator selling the bottles of water for $2. They do. They do. I, I nearly had an out-of-body experience. That was amazing. So the prevailing average seems to be around 18 to $20 here in the chat. That's what I'm feeling 18. Yeah. Uh, less than 10 bucks. Oh, okay. I was so pleasantly surprised. Yes. Wow."
+		},
+		{
+			"timestamps": {
+				"from": "00:16:44,200",
+				"to": "00:17:09,480"
+			},
+			"offsets": {
+				"from": 1004200,
+				"to": 1029480
+			},
+			"text": " I handed, I handed the guy a 10. I like that. They're gouging people for water, but when it comes to liquor, they're like, no, no, no. Stay true to yourself, fam. You help yourself. We've got to keep you on the straight and narrow the guy, a $10 bill. And that included the tip. And it genuinely, I mean this sincerely. I felt better about Las Vegas."
+		},
+		{
+			"timestamps": {
+				"from": "00:17:13,160",
+				"to": "00:17:35,160"
+			},
+			"offsets": {
+				"from": 1033160,
+				"to": 1055160
+			},
+			"text": " Oh, somebody gets it. There's still charging three times, four times. They paid for this, but it's still making an amazing problem. It was a gentlemanly markup. It was like this. I can live with this because I was ready for him to be like, Oh, that's $25. Right. That's what I was prepared for."
+		},
+		{
+			"timestamps": {
+				"from": "00:17:37,080",
+				"to": "00:17:57,920"
+			},
+			"offsets": {
+				"from": 1057080,
+				"to": 1077920
+			},
+			"text": " Oh, I was, I was so, that was, that was the only good part of my night. So I drank my little baby bottle of Jamison walking. I did. I just, I just, I sipped on that as I walked through. And, uh, well, this is not a good way to put this. Now that I, now that I hear myself saying this out loud, I sipped my little baby bottle of Jamison as I walked."
+		},
+		{
+			"timestamps": {
+				"from": "00:18:02,160",
+				"to": "00:18:31,000"
+			},
+			"offsets": {
+				"from": 1082160,
+				"to": 1111000
+			},
+			"text": " I hear that out loud now as I say it. And, uh, so I went to my car. So they close off the strip, close off the cops. Cannot ask you to open a baby bottle. That's a fact. It's just a constitutional fact. They gotta, they gotta have a warrant. If they want to know what's inside that baby bottle. That's what makes it different. No officer. I'm not using my baby bottle there to conduct business on a federal highway. So I don't need to have a driver's license. It's fine."
+		},
+		{
+			"timestamps": {
+				"from": "00:18:31,840",
+				"to": "00:18:43,680"
+			},
+			"offsets": {
+				"from": 1111840,
+				"to": 1123680
+			},
+			"text": " What do you say? I'm a, I'm transporting. Look at my binder of paper. I'm transporting this baby bottle. Not driving it. Baby bottle. And I'm not doing it for interstate commerce."
+		},
+		{
+			"timestamps": {
+				"from": "00:18:43,680",
+				"to": "00:18:56,760"
+			},
+			"offsets": {
+				"from": 1123680,
+				"to": 1136760
+			},
+			"text": " So I, I, uh, I go to the car and they close off all the roads around the strip. You can't drive on the strip. It's all pedestrian and everything. And the problem is SJ's gig is on the other side of the strip."
+		},
+		{
+			"timestamps": {
+				"from": "00:18:58,840",
+				"to": "00:19:22,240"
+			},
+			"offsets": {
+				"from": 1138840,
+				"to": 1162240
+			},
+			"text": " That's a big problem. That's a big problem. And so I spend about an hour, uh, driving around to different, uh, roads that the map says is open and they are all closed and then finally at about 11, 15, 12, uh, 11 30, 11 40, some, somewhere like that."
+		},
+		{
+			"timestamps": {
+				"from": "00:19:22,240",
+				"to": "00:19:28,280"
+			},
+			"offsets": {
+				"from": 1162240,
+				"to": 1168280
+			},
+			"text": " I finally just say, fuck it. If I turn right down this road, that will lead to my house. So that is where I'm going."
+		},
+		{
+			"timestamps": {
+				"from": "00:19:29,840",
+				"to": "00:19:35,840"
+			},
+			"offsets": {
+				"from": 1169840,
+				"to": 1175840
+			},
+			"text": " So I drove to my house. I let the dogs out. We watched the fireworks from the backyard. It was fine."
+		},
+		{
+			"timestamps": {
+				"from": "00:19:35,840",
+				"to": "00:19:48,840"
+			},
+			"offsets": {
+				"from": 1175840,
+				"to": 1188840
+			},
+			"text": " And then SJ came home a few hours later and brought friends home. And then I was up until six 30 in the morning anyway. So I did all of that and then didn't get to sleep early."
+		},
+		{
+			"timestamps": {
+				"from": "00:19:52,240",
+				"to": "00:20:09,840"
+			},
+			"offsets": {
+				"from": 1192240,
+				"to": 1209840
+			},
+			"text": " That sounds like a pretty good night overall. It was fine. It was perfectly nice how true SJ is to herself. I love that. She can always, always rally people after hours. No problem. Everybody on the year. You got 30 in the morning. Here comes SJ on New Year's Eve."
+		},
+		{
+			"timestamps": {
+				"from": "00:20:09,840",
+				"to": "00:20:16,640"
+			},
+			"offsets": {
+				"from": 1209840,
+				"to": 1216640
+			},
+			"text": " It's like call it a night. You know, it's, it's, it's blood money when you work on New Year's Eve, especially on the strip."
+		},
+		{
+			"timestamps": {
+				"from": "00:20:17,840",
+				"to": "00:20:34,640"
+			},
+			"offsets": {
+				"from": 1217840,
+				"to": 1234640
+			},
+			"text": " And, uh, no, no, it's, it's SJ had been out since like, I think she left the house at like 1:00 PM that day and was gone. Right. Like she, she took a shower and got into full makeup at like one o'clock in the afternoon because then she had multiple sound checks and multiple gigs and everything."
+		},
+		{
+			"timestamps": {
+				"from": "00:20:34,640",
+				"to": "00:20:44,040"
+			},
+			"offsets": {
+				"from": 1234640,
+				"to": 1244040
+			},
+			"text": " And then 2 a.m. 2 30 in the morning. Here she comes rolling into the house with people and you go like, get the whiskey ready. I got people coming."
+		},
+		{
+			"timestamps": {
+				"from": "00:20:45,440",
+				"to": "00:21:04,840"
+			},
+			"offsets": {
+				"from": 1245440,
+				"to": 1264840
+			},
+			"text": " I'm doing a show with your wife on January 14th. Sarah has to Ross is hosting a variety show downtown. Wow. Oh, nice. I didn't know about this. Yeah. Yeah. Yeah. I just got the, uh, so good. She sends you slides for you to post on social media. She makes them herself and gives them to you, which is so nice."
+		},
+		{
+			"timestamps": {
+				"from": "00:21:06,040",
+				"to": "00:21:35,840"
+			},
+			"offsets": {
+				"from": 1266040,
+				"to": 1295840
+			},
+			"text": " And that's as good as great at the socials. We know this. Exactly. We flipped through and I saw SJ out there and I was like, Oh, great. I'm doing the same show as SJ. Nice. Yeah. January 14th at the composer's room. I think it's called. Oh, nice. Yeah. Yeah. Oh, that's a nice. That's a nice room up there too. Also a friend of the show. She had a Christmas is doing that show, which I'm very excited. Yeah. So it should be a fun one. I've seen her in a long time. Yeah. I'll tell you who else walked around all night on New Year's Eve and didn't really get much done. And that is the following sponsor."
+		},
+		{
+			"timestamps": {
+				"from": "00:21:36,040",
+				"to": "00:22:05,600"
+			},
+			"offsets": {
+				"from": 1296040,
+				"to": 1325600
+			},
+			"text": " Today's show, man, man. These ice cream social is brought to you by from the makers of dangerously inaccurate AI generated medical school textbooks. It's robot timeshare salesman for cryptocurrency based feeding tubes, IVs and ventilators. That's from the gorilla dentist from the Bjork video in 2024. I'll say it one more time for the makers of the dangerously inaccurate AI generated medical school textbooks. It's robot timeshare salesman for cryptocurrency based feeding tubes, IVs and ventilators."
+		},
+		{
+			"timestamps": {
+				"from": "00:22:06,280",
+				"to": "00:22:34,440"
+			},
+			"offsets": {
+				"from": 1326280,
+				"to": 1354440
+			},
+			"text": " Hey, how are you? I hope your day is going well. Are you in the market for medical equipment? If so, come and buy some from me. I'm a robot who sells medical equipment that's been made using AI technology."
+		},
+		{
+			"timestamps": {
+				"from": "00:22:36,880",
+				"to": "00:22:59,360"
+			},
+			"offsets": {
+				"from": 1356880,
+				"to": 1379360
+			},
+			"text": " The needles kind of work the tubes also sort of work. Also, I will. I'm basically a euthanasia robot. That's the whole thing."
+		},
+		{
+			"timestamps": {
+				"from": "00:23:02,000",
+				"to": "00:23:24,080"
+			},
+			"offsets": {
+				"from": 1382000,
+				"to": 1404080
+			},
+			"text": " You buy equipment from me and it malfunctions. Giant quotes around malfunctions. I make murder tools for the medical industry. Are you tired of granny? Are you sick of Uncle Joe?"
+		},
+		{
+			"timestamps": {
+				"from": "00:23:26,280",
+				"to": "00:23:40,120"
+			},
+			"offsets": {
+				"from": 1406280,
+				"to": 1420120
+			},
+			"text": " You're going to kill them. No, not directly. I will sell you faulty medical equipment that will lead to their demise. Hello."
+		},
+		{
+			"timestamps": {
+				"from": "00:23:40,120",
+				"to": "00:23:52,680"
+			},
+			"offsets": {
+				"from": 1420120,
+				"to": 1432680
+			},
+			"text": " Yeah, I'm here. My grandmother is she's a little she's a little sick. She's got a little cough, but she's also just a pain in my ass. Do you have anything for that?"
+		},
+		{
+			"timestamps": {
+				"from": "00:23:54,000",
+				"to": "00:24:04,960"
+			},
+			"offsets": {
+				"from": 1434000,
+				"to": 1444960
+			},
+			"text": " This is gauze made with AI. It's basically hemp rope. Tie it tautly around her neck and leave it for four to three hours."
+		},
+		{
+			"timestamps": {
+				"from": "00:24:09,600",
+				"to": "00:24:28,680"
+			},
+			"offsets": {
+				"from": 1449600,
+				"to": 1468680
+			},
+			"text": " I hate scoops at checkout. Four to three hours. Four to three hours. Here's an amount of time. That robot is dumb. That's actually robot in jail's cousin. It's not the same guy though."
+		},
+		{
+			"timestamps": {
+				"from": "00:24:28,680",
+				"to": "00:24:48,120"
+			},
+			"offsets": {
+				"from": 1468680,
+				"to": 1488120
+			},
+			"text": " A few. Oh, good to know. Good to know. Good. Good. Different. Tracy, the bus driver scoop. It is Tracy, the bus driver scoops birthday today. Longtime supporter of the show. Tracy, the bus driver scoop. Love you. Happy birthday. Yeah, heck."
+		},
+		{
+			"timestamps": {
+				"from": "00:24:48,120",
+				"to": "00:25:16,120"
+			},
+			"offsets": {
+				"from": 1488120,
+				"to": 1516120
+			},
+			"text": " Yeah. So that was my New Year's Eve, gents. How was yours? I hope yours was less wet. Mine was soaking wet. I was in bed by about eight o'clock. Yeah, Paul's was soaked with passion. I was in bed early and I wasn't feeling great. And we got a crazy snowstorm. We ended up with over six inches. And I was like, Yeah, you did. This is some bullshit."
+		},
+		{
+			"timestamps": {
+				"from": "00:25:17,000",
+				"to": "00:25:46,480"
+			},
+			"offsets": {
+				"from": 1517000,
+				"to": 1546480
+			},
+			"text": " I was up and down all night, not being able to sleep because I wasn't feeling well. And I got up at 1 30 to let the dogs out. And we were in the middle of a squall. So I opened up the door and it was just whoosh. Snow just, I was like, just come straight into the house. This is just too much to do. I'd say it'd be one thing if I didn't feel 100%. It'd be one thing if the roads"
+		},
+		{
+			"timestamps": {
+				"from": "00:25:46,880",
+				"to": "00:26:16,560"
+			},
+			"offsets": {
+				"from": 1546880,
+				"to": 1576560
+			},
+			"text": " could possibly kill my Kia. I can't deal with both. So I called out for New Year's Day. I was supposed to go with you do not have an automobile that is built for no weather on the roads. No, not an automobile that is built for perfect weather on the roadway, which is why it served me so well in Las Vegas. But out here in PA, things get dicey. And even when there's just a little bit like I was slipping and sliding even today,"
+		},
+		{
+			"timestamps": {
+				"from": "00:26:16,600",
+				"to": "00:26:46,440"
+			},
+			"offsets": {
+				"from": 1576600,
+				"to": 1606440
+			},
+			"text": " driving, driving home. So the last time we had a really bad storm like this, and I pushed through, I think we need to get Paul Mattingly a Silverado. I pushed through and I went through and I almost put it into a wall. Yeah. But yeah, and got that newer Honda and it. It's got snow mode. So she she fears nothing. Oh, and got snow mode. We know this about him. Do you tire shop out there, Paul? What"
+		},
+		{
+			"timestamps": {
+				"from": "00:26:46,440",
+				"to": "00:27:16,000"
+			},
+			"offsets": {
+				"from": 1606440,
+				"to": 1636000
+			},
+			"text": " kind of tires do you get to make sure you're mine are just all weather kumos. They're, you know, top notch kumos. Okay. All right. Yeah, they're fine. They're fine. They're the tires that came with the car back in the day. So yeah. But I just drive with snow chains on just in case no matter what. Yeah, just constantly chewing up chewing up the roads. I just I could I couldn't I I just I was like, No, I'm not gonna risk this."
+		},
+		{
+			"timestamps": {
+				"from": "00:27:16,840",
+				"to": "00:27:23,880"
+			},
+			"offsets": {
+				"from": 1636840,
+				"to": 1643880
+			},
+			"text": " For a five hour shift where I could die. So I went back to sleep. And, yeah."
+		},
+		{
+			"timestamps": {
+				"from": "00:27:23,880",
+				"to": "00:27:28,560"
+			},
+			"offsets": {
+				"from": 1643880,
+				"to": 1648560
+			},
+			"text": " Mike Nielsen in the chat is correcting you, Paul. It's pronounced come ho."
+		},
+		{
+			"timestamps": {
+				"from": "00:27:32,400",
+				"to": "00:27:57,200"
+			},
+			"offsets": {
+				"from": 1652400,
+				"to": 1677200
+			},
+			"text": " That is the massage parlor. I go to when I drive. How did I end up here? I had no idea. I just typed come ho in the Googles. I how did I get combo? Oh, my goodness. I'm looking I'm looking for just some kind of nice massaging thing."
+		},
+		{
+			"timestamps": {
+				"from": "00:27:57,960",
+				"to": "00:28:16,200"
+			},
+			"offsets": {
+				"from": 1677960,
+				"to": 1696200
+			},
+			"text": " We're just looking for a reasonable. I was going to massage tires. I was going to rub tires and see which ones are the best. That's what I came out here to do. That's what I was gonna do. Kick the tires like the fire. I guess I'll go check it out, though."
+		},
+		{
+			"timestamps": {
+				"from": "00:28:16,200",
+				"to": "00:28:26,680"
+			},
+			"offsets": {
+				"from": 1696200,
+				"to": 1706680
+			},
+			"text": " I sent Paul a picture with me and his old stage manager for for New Year's Eve. That's what I was very sweet. Yeah. Yeah."
+		},
+		{
+			"timestamps": {
+				"from": "00:28:27,440",
+				"to": "00:28:34,080"
+			},
+			"offsets": {
+				"from": 1707440,
+				"to": 1714080
+			},
+			"text": " We're talking from what second city. Nice. My friend, Brooke Walquist. Yeah."
+		},
+		{
+			"timestamps": {
+				"from": "00:28:34,080",
+				"to": "00:28:49,160"
+			},
+			"offsets": {
+				"from": 1714080,
+				"to": 1729160
+			},
+			"text": " Yeah, we were. We were. I made it end up making it back. So I went out to Utah to do a show and a factor that made me nervous in the beginning and thankful at the end is that I forgot there's a time change between Las Vegas and Utah."
+		},
+		{
+			"timestamps": {
+				"from": "00:28:49,920",
+				"to": "00:29:01,200"
+			},
+			"offsets": {
+				"from": 1729920,
+				"to": 1741200
+			},
+			"text": " Right now, I was I was leaving to be over two hours early anyway, just in case. Right. So I ended up getting there just like an hour and a half for my show, which still plenty of time to set up and do everything still."
+		},
+		{
+			"timestamps": {
+				"from": "00:29:01,200",
+				"to": "00:29:17,680"
+			},
+			"offsets": {
+				"from": 1741200,
+				"to": 1757680
+			},
+			"text": " But it was the spring Springdale Community Center in Springdale, Utah, which is just outside of Zion National Park. I never came to any of those cute little towns. There's a bunch of cute little tourist kind of cabinet towns. Yeah, they're very nice and"
+		},
+		{
+			"timestamps": {
+				"from": "00:29:19,640",
+				"to": "00:29:32,680"
+			},
+			"offsets": {
+				"from": 1759640,
+				"to": 1772680
+			},
+			"text": " We did a show there. And so my show was from 730 to 830 was actually 630 to 730 Vegas time, which meant when I finished up even packing and everything and and taking pictures and all that stuff, I still was able to get back"
+		},
+		{
+			"timestamps": {
+				"from": "00:29:32,680",
+				"to": "00:29:42,160"
+			},
+			"offsets": {
+				"from": 1772680,
+				"to": 1782160
+			},
+			"text": " To my my family's New Year's Eve party at a local neighborhood. And I guess Paul's old stage manager lives in my neighborhood. She was"
+		},
+		{
+			"timestamps": {
+				"from": "00:29:42,160",
+				"to": "00:29:46,960"
+			},
+			"offsets": {
+				"from": 1782160,
+				"to": 1786960
+			},
+			"text": " At our mutual friend, the Camusso's house and getting to talking"
+		},
+		{
+			"timestamps": {
+				"from": "00:29:48,800",
+				"to": "00:29:52,160"
+			},
+			"offsets": {
+				"from": 1788800,
+				"to": 1792160
+			},
+			"text": " She was like, you know, Paul Mattingly and I was like, I love Paul Mattingly"
+		},
+		{
+			"timestamps": {
+				"from": "00:29:52,160",
+				"to": "00:29:58,000"
+			},
+			"offsets": {
+				"from": 1792160,
+				"to": 1798000
+			},
+			"text": " To know him is to love and I was like, boy, I know him."
+		},
+		{
+			"timestamps": {
+				"from": "00:29:58,000",
+				"to": "00:30:09,360"
+			},
+			"offsets": {
+				"from": 1798000,
+				"to": 1809360
+			},
+			"text": " In the biblical sense, we spent a good 20 minutes just raving about Paul going back and forth about Paul and then I took a little photo with them. But I did the show up in Utah."
+		},
+		{
+			"timestamps": {
+				"from": "00:30:09,360",
+				"to": "00:30:15,280"
+			},
+			"offsets": {
+				"from": 1809360,
+				"to": 1815280
+			},
+			"text": " And it was, you know, real quick on that just that's really sweet. I just want to keep talking about me for a minute."
+		},
+		{
+			"timestamps": {
+				"from": "00:30:16,480",
+				"to": "00:30:25,760"
+			},
+			"offsets": {
+				"from": 1816480,
+				"to": 1825760
+			},
+			"text": " But no, that's really, really nice. And, you know, Brooke, Brooke really helped me out early on. And she really did help lobby for me early on getting on."
+		},
+		{
+			"timestamps": {
+				"from": "00:30:25,760",
+				"to": "00:30:36,320"
+			},
+			"offsets": {
+				"from": 1825760,
+				"to": 1836320
+			},
+			"text": " I brought up, I go, I go, I can't believe it took a like a, as I said, it took a letter campaign to get Paul in the second city main stage or whatever. She goes, oh, that was such, you know, whatever. And she just talked about the politics of second city."
+		},
+		{
+			"timestamps": {
+				"from": "00:30:36,320",
+				"to": "00:30:41,160"
+			},
+			"offsets": {
+				"from": 1836320,
+				"to": 1841160
+			},
+			"text": " And how annoying it was and all the things she navigated and stuff."
+		},
+		{
+			"timestamps": {
+				"from": "00:30:41,920",
+				"to": "00:30:47,480"
+			},
+			"offsets": {
+				"from": 1841920,
+				"to": 1847480
+			},
+			"text": " But yeah, yeah. And she was, she was very sweet when she left."
+		},
+		{
+			"timestamps": {
+				"from": "00:30:47,480",
+				"to": "00:30:53,400"
+			},
+			"offsets": {
+				"from": 1847480,
+				"to": 1853400
+			},
+			"text": " She wrote notes to everybody and the note she sent sent to me said,"
+		},
+		{
+			"timestamps": {
+				"from": "00:30:53,400",
+				"to": "00:30:59,520"
+			},
+			"offsets": {
+				"from": 1853400,
+				"to": 1859520
+			},
+			"text": " I might not always be your boss, but I'll always be a fan. And I thought that was really, really sweet."
+		},
+		{
+			"timestamps": {
+				"from": "00:30:59,520",
+				"to": "00:31:00,640"
+			},
+			"offsets": {
+				"from": 1859520,
+				"to": 1860640
+			},
+			"text": " Oh, wow."
+		},
+		{
+			"timestamps": {
+				"from": "00:31:00,640",
+				"to": "00:31:08,240"
+			},
+			"offsets": {
+				"from": 1860640,
+				"to": 1868240
+			},
+			"text": " Yeah, she really did champion me getting onto that main stage spot. So I appreciate that from Brooke big time. Yeah."
+		},
+		{
+			"timestamps": {
+				"from": "00:31:08,320",
+				"to": "00:31:20,240"
+			},
+			"offsets": {
+				"from": 1868320,
+				"to": 1880240
+			},
+			"text": " Yeah. Yeah. Well, she was good. Yeah, I heard her husband were great. I got to chat with them a little bit, super fun. But yeah, so so the event up in Utah was simply for locals who want to come to CUNY Center, they could"
+		},
+		{
+			"timestamps": {
+				"from": "00:31:20,240",
+				"to": "00:31:28,760"
+			},
+			"offsets": {
+				"from": 1880240,
+				"to": 1888760
+			},
+			"text": " be taught to country line dance, eat a nice, eat a nice meal, and then get a, you know, an entertainment event, which was me."
+		},
+		{
+			"timestamps": {
+				"from": "00:31:28,760",
+				"to": "00:31:31,800"
+			},
+			"offsets": {
+				"from": 1888760,
+				"to": 1891800
+			},
+			"text": " How did the line dancing teaching go for you?"
+		},
+		{
+			"timestamps": {
+				"from": "00:31:32,480",
+				"to": "00:31:40,880"
+			},
+			"offsets": {
+				"from": 1892480,
+				"to": 1900880
+			},
+			"text": " Man, I'm trying to set up and it was like, I was playing like Frogger, right? Like I'm trying to run stuff out and like everybody's just moving like all over the place that I'm trying to carry."
+		},
+		{
+			"timestamps": {
+				"from": "00:31:40,880",
+				"to": "00:31:44,520"
+			},
+			"offsets": {
+				"from": 1900880,
+				"to": 1904520
+			},
+			"text": " And I don't want them."
+		},
+		{
+			"timestamps": {
+				"from": "00:31:44,520",
+				"to": "00:31:48,840"
+			},
+			"offsets": {
+				"from": 1904520,
+				"to": 1908840
+			},
+			"text": " And I don't want them to"
+		},
+		{
+			"timestamps": {
+				"from": "00:31:48,840",
+				"to": "00:31:52,680"
+			},
+			"offsets": {
+				"from": 1908840,
+				"to": 1912680
+			},
+			"text": " look at the props, see all your stuff. Right."
+		},
+		{
+			"timestamps": {
+				"from": "00:31:52,680",
+				"to": "00:32:02,000"
+			},
+			"offsets": {
+				"from": 1912680,
+				"to": 1922000
+			},
+			"text": " So I'm like, you know, just trying to like, keep all eyes on my eyes. Like I'm looking up at anyone looking at me like, you know,"
+		},
+		{
+			"timestamps": {
+				"from": "00:32:02,040",
+				"to": "00:32:11,760"
+			},
+			"offsets": {
+				"from": 1922040,
+				"to": 1931760
+			},
+			"text": " seeing your fish. Yeah. It was like, it's like a like ninja camp for misdirection. It was like, I like this a lot. Can you get all these people to not look at the stuff you're carrying in your hands?"
+		},
+		{
+			"timestamps": {
+				"from": "00:32:11,760",
+				"to": "00:32:19,200"
+			},
+			"offsets": {
+				"from": 1931760,
+				"to": 1939200
+			},
+			"text": " And so and then it was funny is that like someone was teaching them the steps, but she was just shouting"
+		},
+		{
+			"timestamps": {
+				"from": "00:32:19,200",
+				"to": "00:32:25,720"
+			},
+			"offsets": {
+				"from": 1939200,
+				"to": 1945720
+			},
+			"text": " over the top or whatever. And so like while I'm in my little changing area dressing room, IE someone's office."
+		},
+		{
+			"timestamps": {
+				"from": "00:32:25,720",
+				"to": "00:32:30,160"
+			},
+			"offsets": {
+				"from": 1945720,
+				"to": 1950160
+			},
+			"text": " I just keep hearing just shouting like and laughed."
+		},
+		{
+			"timestamps": {
+				"from": "00:32:31,080",
+				"to": "00:32:36,640"
+			},
+			"offsets": {
+				"from": 1951080,
+				"to": 1956640
+			},
+			"text": " To right dip and just like just screaming instructions."
+		},
+		{
+			"timestamps": {
+				"from": "00:32:36,640",
+				"to": "00:32:40,960"
+			},
+			"offsets": {
+				"from": 1956640,
+				"to": 1960960
+			},
+			"text": " And I was like, this is a loser voice."
+		},
+		{
+			"timestamps": {
+				"from": "00:32:40,960",
+				"to": "00:32:52,600"
+			},
+			"offsets": {
+				"from": 1960960,
+				"to": 1972600
+			},
+			"text": " That's so wild. Now, I guess, were they able to respond properly to these commands? Do they know what they meant instinctively? Or did she have to be like,"
+		},
+		{
+			"timestamps": {
+				"from": "00:32:52,600",
+				"to": "00:32:55,800"
+			},
+			"offsets": {
+				"from": 1972600,
+				"to": 1975800
+			},
+			"text": " you know, a little more descriptive of the"
+		},
+		{
+			"timestamps": {
+				"from": "00:32:57,560",
+				"to": "00:33:05,480"
+			},
+			"offsets": {
+				"from": 1977560,
+				"to": 1985480
+			},
+			"text": " I don't know. I don't think it was like a square dance ball. I was too busy focused on getting your shit up. I was too busy putting weird shit in my pockets in the right order."
+		},
+		{
+			"timestamps": {
+				"from": "00:33:05,480",
+				"to": "00:33:22,920"
+			},
+			"offsets": {
+				"from": 1985480,
+				"to": 2002920
+			},
+			"text": " To to figure it out. But then they had dinner. And then I did the show. And it was fine. Like I went up there, my mic didn't work. And I switched the other mic. And that mic also was feeding back."
+		},
+		{
+			"timestamps": {
+				"from": "00:33:23,680",
+				"to": "00:33:35,880"
+			},
+			"offsets": {
+				"from": 2003680,
+				"to": 2015880
+			},
+			"text": " And then I just said, you guys can hear me. Yes. And then I did the whole show kind of just really kind of talking loudly. Yeah. But it worked. It worked out fine. It was a great show. Super fun. Great audience."
+		},
+		{
+			"timestamps": {
+				"from": "00:33:35,880",
+				"to": "00:33:40,080"
+			},
+			"offsets": {
+				"from": 2015880,
+				"to": 2020080
+			},
+			"text": " You know, think about the secret thing about love playing shows in"
+		},
+		{
+			"timestamps": {
+				"from": "00:33:40,080",
+				"to": "00:33:47,800"
+			},
+			"offsets": {
+				"from": 2020080,
+				"to": 2027800
+			},
+			"text": " Jeff Lewis and chances. If Matt had real magical powers, he would need to load things in his pockets. What a hack."
+		},
+		{
+			"timestamps": {
+				"from": "00:33:50,280",
+				"to": "00:34:02,840"
+			},
+			"offsets": {
+				"from": 2030280,
+				"to": 2042840
+			},
+			"text": " I just saw I just saw a tick or tick tock where this lady was said, my what's that thing? They say my hot take or what have you."
+		},
+		{
+			"timestamps": {
+				"from": "00:34:02,840",
+				"to": "00:34:14,720"
+			},
+			"offsets": {
+				"from": 2042840,
+				"to": 2054720
+			},
+			"text": " Uh huh. You know, my hot take is that some magicians are actually magic and they just start practicing magic because they can do magic and it's easy for them."
+		},
+		{
+			"timestamps": {
+				"from": "00:34:14,720",
+				"to": "00:34:19,800"
+			},
+			"offsets": {
+				"from": 2054720,
+				"to": 2059800
+			},
+			"text": " And they just and they hide the fact that they're magic by doing magic."
+		},
+		{
+			"timestamps": {
+				"from": "00:34:20,400",
+				"to": "00:34:25,200"
+			},
+			"offsets": {
+				"from": 2060400,
+				"to": 2065200
+			},
+			"text": " That's the that's a great it's a that's the logic that made me think I could fool Penn and Teller is"
+		},
+		{
+			"timestamps": {
+				"from": "00:34:25,200",
+				"to": "00:34:29,560"
+			},
+			"offsets": {
+				"from": 2065200,
+				"to": 2069560
+			},
+			"text": " With a with a trick that Penn showed you."
+		},
+		{
+			"timestamps": {
+				"from": "00:34:29,560",
+				"to": "00:34:33,800"
+			},
+			"offsets": {
+				"from": 2069560,
+				"to": 2073800
+			},
+			"text": " Yes. Maybe maybe I could have double bluffed it."
+		},
+		{
+			"timestamps": {
+				"from": "00:34:41,920",
+				"to": "00:34:52,200"
+			},
+			"offsets": {
+				"from": 2081920,
+				"to": 2092200
+			},
+			"text": " This is going way too far back. Matt's first appearance on fool us. If you had somehow just put something in there to make it try to appear as though you were doing a different method on it."
+		},
+		{
+			"timestamps": {
+				"from": "00:34:52,200",
+				"to": "00:35:04,400"
+			},
+			"offsets": {
+				"from": 2092200,
+				"to": 2104400
+			},
+			"text": " Yeah. He was paranoid. I was paranoid that I was. Yeah. But about halfway through it was like, no, he's not the trick. Like I taught him. I was only I was only 14 months into magic."
+		},
+		{
+			"timestamps": {
+				"from": "00:35:06,320",
+				"to": "00:35:13,920"
+			},
+			"offsets": {
+				"from": 2106320,
+				"to": 2113920
+			},
+			"text": " How to throw any bells and whistles on something, you know, all you are now. All you had to do is dress up like a horse and cut off your thumb."
+		},
+		{
+			"timestamps": {
+				"from": "00:35:13,920",
+				"to": "00:35:29,000"
+			},
+			"offsets": {
+				"from": 2113920,
+				"to": 2129000
+			},
+			"text": " You would have got one pretty pretty. I didn't do proper misdirection for Penn and Teller, which is actually injuring yourself."
+		},
+		{
+			"timestamps": {
+				"from": "00:35:29,000",
+				"to": "00:35:33,440"
+			},
+			"offsets": {
+				"from": 2129000,
+				"to": 2133440
+			},
+			"text": " Feeding blood to European magicians."
+		},
+		{
+			"timestamps": {
+				"from": "00:35:36,160",
+				"to": "00:35:50,880"
+			},
+			"offsets": {
+				"from": 2136160,
+				"to": 2150880
+			},
+			"text": " So I finished the show and a woman comes up and she's like, you work with Penn and Teller and she starts talking to me. And she seems like as as politely as I can phrase it. Something has happened with her brain at some point in her life."
+		},
+		{
+			"timestamps": {
+				"from": "00:35:50,880",
+				"to": "00:36:00,560"
+			},
+			"offsets": {
+				"from": 2150880,
+				"to": 2160560
+			},
+			"text": " I don't know. I don't have to say anymore. I don't have to guess anymore anymore. Just whatever the way is to say"
+		},
+		{
+			"timestamps": {
+				"from": "00:36:05,520",
+				"to": "00:36:22,520"
+			},
+			"offsets": {
+				"from": 2165520,
+				"to": 2182520
+			},
+			"text": " something, something, something happened. I don't know. With this person, was she a football player? Yeah, she was. She was. She just finished the season. She just lost her starting spot in the Miami Dolphins Quinn viewers. And so she had free time."
+		},
+		{
+			"timestamps": {
+				"from": "00:36:22,520",
+				"to": "00:36:26,880"
+			},
+			"offsets": {
+				"from": 2182520,
+				"to": 2186880
+			},
+			"text": " His lady's name was Richie incognito."
+		},
+		{
+			"timestamps": {
+				"from": "00:36:32,440",
+				"to": "00:36:58,920"
+			},
+			"offsets": {
+				"from": 2192440,
+				"to": 2218920
+			},
+			"text": " So she's like, I really like them. Oh, it's good. I always want to see their show in Vegas. Now's a great time to see it. You know, it's like it's it's it's it's the just the 20th year. Right. So 20th year at the Rio. It's their 50th year as a duo. But they just finished up all of their 50th anniversary obligations. And so right there, they're hunkered down at the Rio for the time being. Oh, good. And she goes, I'm a little out of it because I just had major surgery."
+		},
+		{
+			"timestamps": {
+				"from": "00:37:02,520",
+				"to": "00:37:22,960"
+			},
+			"offsets": {
+				"from": 2222520,
+				"to": 2242960
+			},
+			"text": " Don't stop it. Okay. Well, I'm sorry to hear that. And I'm glad like today, like this procedure just happened like few hours ago. Are you fresh from the things that were happening in the, in the place that was line dancing? My husband's magic was the doctor's. Oh, R is the trunk of my car."
+		},
+		{
+			"timestamps": {
+				"from": "00:37:27,000",
+				"to": "00:37:46,780"
+			},
+			"offsets": {
+				"from": 2247000,
+				"to": 2266780
+			},
+			"text": " Took the turns a little fast on the way here. No, I said, Oh, I'm sorry to hear. I'm glad you made it. You made it out. And I hope you have a recovery. You know, made it out to the show, you know, surgery. I'm glad you die."
+		},
+		{
+			"timestamps": {
+				"from": "00:37:49,320",
+				"to": "00:38:06,400"
+			},
+			"offsets": {
+				"from": 2269320,
+				"to": 2286400
+			},
+			"text": " She might've pulled pulled an RJ Owens. That's right. And our companion is with her. I don't know who her companion is, but gentlemen, companion is a guy with her. I don't know, could be brother. It could be whatever, but male companion, at least male presenting companion."
+		},
+		{
+			"timestamps": {
+				"from": "00:38:07,000",
+				"to": "00:38:20,960"
+			},
+			"offsets": {
+				"from": 2287000,
+				"to": 2300960
+			},
+			"text": " It's his job here that I'm more concerned about. Like for example, if he was like, Oh yes, she would love to see Penn and Teller, right? If I felt like I had like a, an accurate wing guy, I might've been like, all right, well, let me see if I can help you out kind of thing."
+		},
+		{
+			"timestamps": {
+				"from": "00:38:20,960",
+				"to": "00:38:36,360"
+			},
+			"offsets": {
+				"from": 2300960,
+				"to": 2316360
+			},
+			"text": " But I did not feel like the, that I could accurately exchange information with this woman in order to facilitate tickets. So I just said, good luck. Or did you trust this wingman? And I think he didn't step up, right? So I was like, he's hanging back. So he's just letting her hang. I'm going to let it hang. I don't know."
+		},
+		{
+			"timestamps": {
+				"from": "00:38:36,840",
+				"to": "00:38:38,240"
+			},
+			"offsets": {
+				"from": 2316840,
+				"to": 2318240
+			},
+			"text": " She has the ability to travel."
+		},
+		{
+			"timestamps": {
+				"from": "00:38:38,240",
+				"to": "00:38:44,400"
+			},
+			"offsets": {
+				"from": 2318240,
+				"to": 2324400
+			},
+			"text": " That's always a lot. Yeah. A long way to go for not necessarily any dividends there."
+		},
+		{
+			"timestamps": {
+				"from": "00:38:44,400",
+				"to": "00:38:54,960"
+			},
+			"offsets": {
+				"from": 2324400,
+				"to": 2334960
+			},
+			"text": " So she starts talking about our show. I agree. We see it again, Jacob, a Penn and Teller show. I agree. It's, it's a long way to go to see a Penn and Teller show without a whole lot of benefit."
+		},
+		{
+			"timestamps": {
+				"from": "00:38:55,000",
+				"to": "00:39:24,600"
+			},
+			"offsets": {
+				"from": 2335000,
+				"to": 2364600
+			},
+			"text": " Well, now, wait. So she starts to talk about her operation and she talks about how her nose lit up red when the surgeon missed his mark. And she went, and I said, I'm glad you're better or whatever. And I'm kind of give a glance, not a, not a, not a knowing glance, but just a quick look over to be like, cool. Like, do you want her to keep talking about this operation?"
+		},
+		{
+			"timestamps": {
+				"from": "00:39:26,000",
+				"to": "00:39:42,840"
+			},
+			"offsets": {
+				"from": 2366000,
+				"to": 2382840
+			},
+			"text": " Right. Like, do you want this or whatever? Everybody's still happy with this interaction. Okay. He is just hands and pockets on his heels. And then she lifts up her sweatshirt and lowers her sweatpants to show a gigantic scar across the entire torso of her body."
+		},
+		{
+			"timestamps": {
+				"from": "00:39:42,840",
+				"to": "00:39:52,560"
+			},
+			"offsets": {
+				"from": 2382840,
+				"to": 2392560
+			},
+			"text": " Oh, they, they opened her up. I was like, wow."
+		},
+		{
+			"timestamps": {
+				"from": "00:39:53,280",
+				"to": "00:40:00,800"
+			},
+			"offsets": {
+				"from": 2393280,
+				"to": 2400800
+			},
+			"text": " You have been believed you before. I hope you didn't note skepticism and the major operation."
+		},
+		{
+			"timestamps": {
+				"from": "00:40:00,800",
+				"to": "00:40:21,280"
+			},
+			"offsets": {
+				"from": 2400800,
+				"to": 2421280
+			},
+			"text": " Did she say, I, uh, I love Penn and Teller because I like when they saw a lady in half. It reminds me of my operation. It reminds me of lunch today. I think I could fill in for the cut in half lady. Take that on my resume."
+		},
+		{
+			"timestamps": {
+				"from": "00:40:23,280",
+				"to": "00:40:27,440"
+			},
+			"offsets": {
+				"from": 2423280,
+				"to": 2427440
+			},
+			"text": " Matt, how, how fresh did the, uh, did the incision look, uh, fresh?"
+		},
+		{
+			"timestamps": {
+				"from": "00:40:27,440",
+				"to": "00:40:38,960"
+			},
+			"offsets": {
+				"from": 2427440,
+				"to": 2438960
+			},
+			"text": " Oh no. Like not today. Not today, but it was recent. Was it glistening? Was it oozy? Was it oozy and glistening? Was it moist?"
+		},
+		{
+			"timestamps": {
+				"from": "00:40:38,960",
+				"to": "00:40:52,640"
+			},
+			"offsets": {
+				"from": 2438960,
+				"to": 2452640
+			},
+			"text": " Did you want to focus on this? Okay. But were there, were there like black stitches in it? Yes. Oh, it's fresh. Oh, that's like, that's like within a week and a half, dude. Yes. Those things don't hang around long."
+		},
+		{
+			"timestamps": {
+				"from": "00:40:52,800",
+				"to": "00:41:04,720"
+			},
+			"offsets": {
+				"from": 2452800,
+				"to": 2464720
+			},
+			"text": " No, it was maybe. Oh my God. Oh Lord. What's she doing at a magic show line dance combo dancing. I hope she was sitting down for the dancing."
+		},
+		{
+			"timestamps": {
+				"from": "00:41:04,720",
+				"to": "00:41:12,680"
+			},
+			"offsets": {
+				"from": 2464720,
+				"to": 2472680
+			},
+			"text": " Well, my doctors told me not to, but you know, me, I can't, I love me some dancing."
+		},
+		{
+			"timestamps": {
+				"from": "00:41:13,280",
+				"to": "00:41:32,960"
+			},
+			"offsets": {
+				"from": 2473280,
+				"to": 2492960
+			},
+			"text": " I, I'd like to compliment your show. Best compliment I can give you as a comedic magician. I found you truly side splitting. Look at my open wounds. You split my sides open you bastard."
+		},
+		{
+			"timestamps": {
+				"from": "00:41:32,960",
+				"to": "00:41:40,320"
+			},
+			"offsets": {
+				"from": 2492960,
+				"to": 2500320
+			},
+			"text": " I really enjoyed your show today. It was, uh, it was a very nice show. I, I, uh, in lieu of a tip, I am giving you a kidney."
+		},
+		{
+			"timestamps": {
+				"from": "00:41:40,960",
+				"to": "00:41:53,200"
+			},
+			"offsets": {
+				"from": 2500960,
+				"to": 2513200
+			},
+			"text": " You, you ripped me a**hole to appetite. You opened me wider than the mammoth cave. You crack me like the Liberty bell."
+		},
+		{
+			"timestamps": {
+				"from": "00:41:53,200",
+				"to": "00:41:57,840"
+			},
+			"offsets": {
+				"from": 2513200,
+				"to": 2517840
+			},
+			"text": " Oh, Boston."
+		},
+		{
+			"timestamps": {
+				"from": "00:41:57,840",
+				"to": "00:42:10,720"
+			},
+			"offsets": {
+				"from": 2517840,
+				"to": 2530720
+			},
+			"text": " I just was like, okay. Okay. Yes. She was literally in stitches. And he literally like, he like very generally was like, okay."
+		},
+		{
+			"timestamps": {
+				"from": "00:42:10,720",
+				"to": "00:42:17,840"
+			},
+			"offsets": {
+				"from": 2530720,
+				"to": 2537840
+			},
+			"text": " Like, but he still, that wasn't like, you know, Hey, you know, like, let's say, let's keep it together. You know, whatever. It just was like, let's keep it together. I don't know."
+		},
+		{
+			"timestamps": {
+				"from": "00:42:17,840",
+				"to": "00:42:33,680"
+			},
+			"offsets": {
+				"from": 2537840,
+				"to": 2553680
+			},
+			"text": " So I would stop the person that the associate. Yes. Or, uh, uh, whoever, whoever the person with her handler, romantic other. What do you think? Did you get any vibe for the relationship?"
+		},
+		{
+			"timestamps": {
+				"from": "00:42:33,680",
+				"to": "00:42:35,520"
+			},
+			"offsets": {
+				"from": 2553680,
+				"to": 2555520
+			},
+			"text": " My vibe, if I had to guess was romantic other."
+		},
+		{
+			"timestamps": {
+				"from": "00:42:38,320",
+				"to": "00:42:54,800"
+			},
+			"offsets": {
+				"from": 2558320,
+				"to": 2574800
+			},
+			"text": " Do you think because he was romantic other during this, what can I say? Reveal of delicate damage body."
+		},
+		{
+			"timestamps": {
+				"from": "00:42:54,800",
+				"to": "00:43:19,040"
+			},
+			"offsets": {
+				"from": 2574800,
+				"to": 2599040
+			},
+			"text": " Someone else has it already said a million times. Do you think that he was also like, Oh God, what am I married to now? Was this like a Frankenstein moment? Was he like, the sepsis got to her noggin and things didn't go right? Like, like, is this like a, is this the one of those times?"
+		},
+		{
+			"timestamps": {
+				"from": "00:43:19,040",
+				"to": "00:43:31,600"
+			},
+			"offsets": {
+				"from": 2599040,
+				"to": 2611600
+			},
+			"text": " I have been begging her to show me this car as she would not. And then you fancy pants, magician come walking in here. Right. Right. All of a sudden, Matt just gets punched."
+		},
+		{
+			"timestamps": {
+				"from": "00:43:31,600",
+				"to": "00:43:38,160"
+			},
+			"offsets": {
+				"from": 2611600,
+				"to": 2618160
+			},
+			"text": " Is he, did you, did you get the vibe that he was like a scar feliac?"
+		},
+		{
+			"timestamps": {
+				"from": "00:43:39,440",
+				"to": "00:43:59,920"
+			},
+			"offsets": {
+				"from": 2619440,
+				"to": 2639920
+			},
+			"text": " Oh yeah. Yeah. Yeah. Yeah. He just was really, when she revealed the scar, he just buddy armed me. It was like, huh? Oh, he comes over. He's like, I've got it. I've got a cut of the lion king where it's only that lion with the scar on his eye. It's very short, but very gratifying."
+		},
+		{
+			"timestamps": {
+				"from": "00:44:01,520",
+				"to": "00:44:13,680"
+			},
+			"offsets": {
+				"from": 2641520,
+				"to": 2653680
+			},
+			"text": " This guy just, he lives for flesh wounds. He was simply, that's what floats his boat. That's what gets his McGillicoh passive. He just was simply so like, yeah, yeah. You know, like we had a good time. You know, it was very just, he just was home."
+		},
+		{
+			"timestamps": {
+				"from": "00:44:13,680",
+				"to": "00:44:23,680"
+			},
+			"offsets": {
+				"from": 2653680,
+				"to": 2663680
+			},
+			"text": " Well, maybe he's, he's had his way with that new scar. And now he's like, well, now I just got to wait for the next operation. Why do you think it was still so pink? He can't get turned on anymore."
+		},
+		{
+			"timestamps": {
+				"from": "00:44:24,880",
+				"to": "00:44:42,320"
+			},
+			"offsets": {
+				"from": 2664880,
+				"to": 2682320
+			},
+			"text": " She got that operation a month and a half ago, but he's just totally overwhelmed. And now he's over it. Yeah. That's how it goes. You always want, which you can't have. He just, he's just an Uber driver who waits by the hospital for this phone to do."
+		},
+		{
+			"timestamps": {
+				"from": "00:44:42,320",
+				"to": "00:44:50,480"
+			},
+			"offsets": {
+				"from": 2682320,
+				"to": 2690480
+			},
+			"text": " Hey, how'd it go? Oh yeah. Stitches."
+		},
+		{
+			"timestamps": {
+				"from": "00:44:52,080",
+				"to": "00:44:59,040"
+			},
+			"offsets": {
+				"from": 2692080,
+				"to": 2699040
+			},
+			"text": " Hop in. Cause you know what? You know, the old saying stitches, lose britches."
+		},
+		{
+			"timestamps": {
+				"from": "00:44:59,040",
+				"to": "00:45:07,520"
+			},
+			"offsets": {
+				"from": 2699040,
+				"to": 2707520
+			},
+			"text": " You go and cancel it on your phone. This one's on me. This is not me. Stitches lose britches. Get in."
+		},
+		{
+			"timestamps": {
+				"from": "00:45:07,520",
+				"to": "00:45:18,480"
+			},
+			"offsets": {
+				"from": 2707520,
+				"to": 2718480
+			},
+			"text": " I'll tell you who else has turned on sexually by surgical scars. That's the following sponsor."
+		},
+		{
+			"timestamps": {
+				"from": "00:45:18,480",
+				"to": "00:45:24,400"
+			},
+			"offsets": {
+				"from": 2718480,
+				"to": 2724400
+			},
+			"text": " Today's show is brought to you by goose, the musical. It's from Mike Nielsen. That's goose, the musical."
+		},
+		{
+			"timestamps": {
+				"from": "00:45:24,400",
+				"to": "00:45:37,040"
+			},
+			"offsets": {
+				"from": 2724400,
+				"to": 2737040
+			},
+			"text": " Uh, give me some music, Jacob. What kind of music would you like? I don't care. All right. If I could even hear it."
+		},
+		{
+			"timestamps": {
+				"from": "00:45:46,320",
+				"to": "00:45:51,200"
+			},
+			"offsets": {
+				"from": 2746320,
+				"to": 2751200
+			},
+			"text": " The surgery didn't go exactly how I wanted it to go."
+		},
+		{
+			"timestamps": {
+				"from": "00:45:51,200",
+				"to": "00:45:59,680"
+			},
+			"offsets": {
+				"from": 2751200,
+				"to": 2759680
+			},
+			"text": " But I'm here at the dance hall slash magic show."
+		},
+		{
+			"timestamps": {
+				"from": "00:45:59,680",
+				"to": "00:46:08,240"
+			},
+			"offsets": {
+				"from": 2759680,
+				"to": 2768240
+			},
+			"text": " I want to show off my belly, the stitches to the magic man"
+		},
+		{
+			"timestamps": {
+				"from": "00:46:12,080",
+				"to": "00:46:16,720"
+			},
+			"offsets": {
+				"from": 2772080,
+				"to": 2776720
+			},
+			"text": " And let him put his fingers into my severed calf."
+		},
+		{
+			"timestamps": {
+				"from": "00:46:16,720",
+				"to": "00:46:27,440"
+			},
+			"offsets": {
+				"from": 2776720,
+				"to": 2787440
+			},
+			"text": " This is terrible. Goosh. Matt's out. Goosh. Goosh goes the wound in my belly."
+		},
+		{
+			"timestamps": {
+				"from": "00:46:27,440",
+				"to": "00:46:40,240"
+			},
+			"offsets": {
+				"from": 2787440,
+				"to": 2800240
+			},
+			"text": " Goosh. Goosh. Goosh goes the sore on my side. My belly. Goosh. Goosh."
+		},
+		{
+			"timestamps": {
+				"from": "00:46:41,600",
+				"to": "00:46:51,920"
+			},
+			"offsets": {
+				"from": 2801600,
+				"to": 2811920
+			},
+			"text": " Goosh. Go my stitches inside me. Goosh. Goosh. Goosh. I've turned into a slip and slide."
+		},
+		{
+			"timestamps": {
+				"from": "00:46:51,920",
+				"to": "00:46:59,840"
+			},
+			"offsets": {
+				"from": 2811920,
+				"to": 2819840
+			},
+			"text": " This is where my, my mental note is. I can't share this episode's Instagram"
+		},
+		{
+			"timestamps": {
+				"from": "00:46:59,840",
+				"to": "00:47:07,360"
+			},
+			"offsets": {
+				"from": 2819840,
+				"to": 2827360
+			},
+			"text": " because we'll get demonetized because Paul was singing the goose song."
+		},
+		{
+			"timestamps": {
+				"from": "00:47:08,560",
+				"to": "00:47:17,440"
+			},
+			"offsets": {
+				"from": 2828560,
+				"to": 2837440
+			},
+			"text": " That's a number one hit the goose song. Goosh. There it is. Multiple vomit emojis"
+		},
+		{
+			"timestamps": {
+				"from": "00:47:17,440",
+				"to": "00:47:25,760"
+			},
+			"offsets": {
+				"from": 2837440,
+				"to": 2845760
+			},
+			"text": " from a scooping over girl in chat. Uh, because it was so good. Yes. Because it was so good."
+		},
+		{
+			"timestamps": {
+				"from": "00:47:25,760",
+				"to": "00:47:29,680"
+			},
+			"offsets": {
+				"from": 2845760,
+				"to": 2849680
+			},
+			"text": " But she comes back with goose episode titles. So I don't know."
+		},
+		{
+			"timestamps": {
+				"from": "00:47:29,680",
+				"to": "00:47:33,760"
+			},
+			"offsets": {
+				"from": 2849680,
+				"to": 2853760
+			},
+			"text": " See, this is the thing you got to understand about me, Matt."
+		},
+		{
+			"timestamps": {
+				"from": "00:47:36,160",
+				"to": "00:47:43,520"
+			},
+			"offsets": {
+				"from": 2856160,
+				"to": 2863520
+			},
+			"text": " I think you do understand that I will take it there and make you love it."
+		},
+		{
+			"timestamps": {
+				"from": "00:47:43,520",
+				"to": "00:47:48,320"
+			},
+			"offsets": {
+				"from": 2863520,
+				"to": 2868320
+			},
+			"text": " This is like, this is the, this is where I hope someone's like at the,"
+		},
+		{
+			"timestamps": {
+				"from": "00:47:48,320",
+				"to": "00:47:55,920"
+			},
+			"offsets": {
+				"from": 2868320,
+				"to": 2875920
+			},
+			"text": " like the drive through pharmacy or the bank or receiving a traffic ticket from the scar"
+		},
+		{
+			"timestamps": {
+				"from": "00:47:55,920",
+				"to": "00:48:13,920"
+			},
+			"offsets": {
+				"from": 2875920,
+				"to": 2893920
+			},
+			"text": " of my belly is just blaring out as they exchange money. We have confirmed ruin at"
+		},
+		{
+			"timestamps": {
+				"from": "00:48:13,920",
+				"to": "00:48:25,520"
+			},
+			"offsets": {
+				"from": 2893920,
+				"to": 2905520
+			},
+			"text": " least one scoops dinner. The best thing about Goosh is it doesn't tell you."
+		},
+		{
+			"timestamps": {
+				"from": "00:48:25,920",
+				"to": "00:48:34,800"
+			},
+			"offsets": {
+				"from": 2905920,
+				"to": 2914800
+			},
+			"text": " It could be anything. That's genuinely the best thing about Goosh. It's something emanating from"
+		},
+		{
+			"timestamps": {
+				"from": "00:48:34,800",
+				"to": "00:48:46,800"
+			},
+			"offsets": {
+				"from": 2914800,
+				"to": 2926800
+			},
+			"text": " a wound. I leave the rest to your fertile imaginations. There are multiple things that"
+		},
+		{
+			"timestamps": {
+				"from": "00:48:46,800",
+				"to": "00:48:53,840"
+			},
+			"offsets": {
+				"from": 2926800,
+				"to": 2933840
+			},
+			"text": " can emanate from a wound. Well, here I am just writing the whole fucking musical. I better pump"
+		},
+		{
+			"timestamps": {
+				"from": "00:48:53,840",
+				"to": "00:49:06,960"
+			},
+			"offsets": {
+				"from": 2933840,
+				"to": 2946960
+			},
+			"text": " my breaks. Yeah. TM TM is right. If you can do a musical called corn, I can do a musical called"
+		},
+		{
+			"timestamps": {
+				"from": "00:49:06,960",
+				"to": "00:49:13,600"
+			},
+			"offsets": {
+				"from": 2946960,
+				"to": 2953600
+			},
+			"text": " goose. Oh, I would watch, I'd watch goose over corn or whatever, 10 times out of 10. You have"
+		},
+		{
+			"timestamps": {
+				"from": "00:49:13,600",
+				"to": "00:49:22,160"
+			},
+			"offsets": {
+				"from": 2953600,
+				"to": 2962160
+			},
+			"text": " that correct. That is correct. That's what I mean. People that made that show. All right. Time for"
+		},
+		{
+			"timestamps": {
+				"from": "00:49:22,160",
+				"to": "00:49:35,920"
+			},
+			"offsets": {
+				"from": 2962160,
+				"to": 2975920
+			},
+			"text": " Goosh. Goosh out of hell. Yeah. Uh, yeah, it probably does have a meatloaf vibe. I, uh, oh,"
+		},
+		{
+			"timestamps": {
+				"from": "00:49:35,920",
+				"to": "00:49:43,440"
+			},
+			"offsets": {
+				"from": 2975920,
+				"to": 2983440
+			},
+			"text": " there's also the, the, the, the big hit song from Goosh. Yeah. Something happened to my brain at"
+		},
+		{
+			"timestamps": {
+				"from": "00:49:43,440",
+				"to": "00:49:54,400"
+			},
+			"offsets": {
+				"from": 2983440,
+				"to": 2994400
+			},
+			"text": " some point. That's the torch song number at some point, something happened to my brain."
+		},
+		{
+			"timestamps": {
+				"from": "00:49:54,400",
+				"to": "00:50:00,320"
+			},
+			"offsets": {
+				"from": 2994400,
+				"to": 3000320
+			},
+			"text": " And right before intermission, of course, it's the big, the big surgical race Goosh lightning."
+		},
+		{
+			"timestamps": {
+				"from": "00:50:00,320",
+				"to": "00:50:10,320"
+			},
+			"offsets": {
+				"from": 3000320,
+				"to": 3010320
+			},
+			"text": " There's an operating room in the back of my car."
+		},
+		{
+			"timestamps": {
+				"from": "00:50:13,920",
+				"to": "00:50:23,520"
+			},
+			"offsets": {
+				"from": 3013920,
+				"to": 3023520
+			},
+			"text": " It's very hard to steer while he's operating on me in the car. Cut me up, cut me down,"
+		},
+		{
+			"timestamps": {
+				"from": "00:50:23,520",
+				"to": "00:50:29,600"
+			},
+			"offsets": {
+				"from": 3023520,
+				"to": 3029600
+			},
+			"text": " cut me all around in the car. Ooh, so nice. Goosh lightning."
+		},
+		{
+			"timestamps": {
+				"from": "00:50:29,600",
+				"to": "00:50:35,680"
+			},
+			"offsets": {
+				"from": 3029600,
+				"to": 3035680
+			},
+			"text": " Something's emanating from that scar."
+		},
+		{
+			"timestamps": {
+				"from": "00:50:38,160",
+				"to": "00:50:47,280"
+			},
+			"offsets": {
+				"from": 3038160,
+				"to": 3047280
+			},
+			"text": " Goosh. What could it be? Feed me. The scar goes quadro slash Audrey."
+		},
+		{
+			"timestamps": {
+				"from": "00:50:47,280",
+				"to": "00:50:53,840"
+			},
+			"offsets": {
+				"from": 3047280,
+				"to": 3053840
+			},
+			"text": " I loved, did you guys see the, uh, the Christmas ad with Travolta in it with him doing the, uh,"
+		},
+		{
+			"timestamps": {
+				"from": "00:50:53,840",
+				"to": "00:50:59,440"
+			},
+			"offsets": {
+				"from": 3053840,
+				"to": 3059440
+			},
+			"text": " the grease lightening thing with the Santa sleigh? What was that? Did you notice how they didn't even,"
+		},
+		{
+			"timestamps": {
+				"from": "00:50:59,440",
+				"to": "00:51:04,000"
+			},
+			"offsets": {
+				"from": 3059440,
+				"to": 3064000
+			},
+			"text": " I have no idea what it's for. Uh, did you notice how they didn't even try to match up"
+		},
+		{
+			"timestamps": {
+				"from": "00:51:04,000",
+				"to": "00:51:10,560"
+			},
+			"offsets": {
+				"from": 3064000,
+				"to": 3070560
+			},
+			"text": " the lyrics with his mouth movements? No, they were like, it seems like for like three hours."
+		},
+		{
+			"timestamps": {
+				"from": "00:51:10,560",
+				"to": "00:51:22,160"
+			},
+			"offsets": {
+				"from": 3070560,
+				"to": 3082160
+			},
+			"text": " It was like, yeah, we got that shot moving on. No sir. We didn't get moving on wheels up in 10."
+		},
+		{
+			"timestamps": {
+				"from": "00:51:22,160",
+				"to": "00:51:29,040"
+			},
+			"offsets": {
+				"from": 3082160,
+				"to": 3089040
+			},
+			"text": " Let's go. Like his mouth is not moving close to what the words are doing."
+		},
+		{
+			"timestamps": {
+				"from": "00:51:32,560",
+				"to": "00:51:36,320"
+			},
+			"offsets": {
+				"from": 3092560,
+				"to": 3096320
+			},
+			"text": " It's weird. And yeah, I have no idea what that ad is for. Uh, I forgot."
+		},
+		{
+			"timestamps": {
+				"from": "00:51:36,320",
+				"to": "00:51:44,800"
+			},
+			"offsets": {
+				"from": 3096320,
+				"to": 3104800
+			},
+			"text": " Did I talk to you guys about the club gray skull She-Ra hat or was that another thing?"
+		},
+		{
+			"timestamps": {
+				"from": "00:51:44,800",
+				"to": "00:51:48,560"
+			},
+			"offsets": {
+				"from": 3104800,
+				"to": 3108560
+			},
+			"text": " I don't think you talked to us about it. No, I don't think it was about us."
+		},
+		{
+			"timestamps": {
+				"from": "00:51:48,560",
+				"to": "00:51:56,880"
+			},
+			"offsets": {
+				"from": 3108560,
+				"to": 3116880
+			},
+			"text": " Okay. Cause I, I guess I talked about it during the scoop chat, but yeah. So if you go on Mattel"
+		},
+		{
+			"timestamps": {
+				"from": "00:51:56,880",
+				"to": "00:52:06,720"
+			},
+			"offsets": {
+				"from": 3116880,
+				"to": 3126720
+			},
+			"text": " creations website, Mattel creation, all the time, which I do all the time. I do. Uh, but, uh, you"
+		},
+		{
+			"timestamps": {
+				"from": "00:52:06,720",
+				"to": "00:52:12,560"
+			},
+			"offsets": {
+				"from": 3126720,
+				"to": 3132560
+			},
+			"text": " know, they have club gray skull, which is their little thing. And they, they sell merchandise."
+		},
+		{
+			"timestamps": {
+				"from": "00:52:12,560",
+				"to": "00:52:20,160"
+			},
+			"offsets": {
+				"from": 3132560,
+				"to": 3140160
+			},
+			"text": " And one of the things they sell is, uh, a new hat that they've created just in the last couple of"
+		},
+		{
+			"timestamps": {
+				"from": "00:52:20,160",
+				"to": "00:52:28,000"
+			},
+			"offsets": {
+				"from": 3140160,
+				"to": 3148000
+			},
+			"text": " weeks. It's She-Ra's 40th anniversary. So they decided to make a She-Ra hat. Okay. But what"
+		},
+		{
+			"timestamps": {
+				"from": "00:52:28,000",
+				"to": "00:52:43,440"
+			},
+			"offsets": {
+				"from": 3148000,
+				"to": 3163440
+			},
+			"text": " they've done is they've created Schrodinger's ball cap. It is a red baseball hat, which given"
+		},
+		{
+			"timestamps": {
+				"from": "00:52:43,440",
+				"to": "00:52:53,200"
+			},
+			"offsets": {
+				"from": 3163440,
+				"to": 3173200
+			},
+			"text": " today's political climate has ramifications and, and, and yeah, it, it, it means something. Right."
+		},
+		{
+			"timestamps": {
+				"from": "00:52:53,200",
+				"to": "00:53:04,640"
+			},
+			"offsets": {
+				"from": 3173200,
+				"to": 3184640
+			},
+			"text": " Right. However, this red baseball cap also, there it is has the words She-Ra princess of power"
+		},
+		{
+			"timestamps": {
+				"from": "00:53:04,640",
+				"to": "00:53:15,120"
+			},
+			"offsets": {
+				"from": 3184640,
+				"to": 3195120
+			},
+			"text": " written on it. So I don't know that a lot of She-Ra fans are going to want to go around in a red"
+		},
+		{
+			"timestamps": {
+				"from": "00:53:15,120",
+				"to": "00:53:26,000"
+			},
+			"offsets": {
+				"from": 3195120,
+				"to": 3206000
+			},
+			"text": " baseball cap. This might be the target demo. This is just for Sydney Sweeney, just for seducing me."
+		},
+		{
+			"timestamps": {
+				"from": "00:53:26,000",
+				"to": "00:53:33,200"
+			},
+			"offsets": {
+				"from": 3206000,
+				"to": 3213200
+			},
+			"text": " That's exactly what this is. Absolutely. I would assume is some kind of, I would, if I saw that"
+		},
+		{
+			"timestamps": {
+				"from": "00:53:33,200",
+				"to": "00:53:37,920"
+			},
+			"offsets": {
+				"from": 3213200,
+				"to": 3217920
+			},
+			"text": " hat, cause the She-Ra's font's very small. Yeah, it is. And the wings are pretty big. That's the"
+		},
+		{
+			"timestamps": {
+				"from": "00:53:37,920",
+				"to": "00:53:42,400"
+			},
+			"offsets": {
+				"from": 3217920,
+				"to": 3222400
+			},
+			"text": " weird thing to me about it is that it's not, not that it's red, but that's her, that's her helmet."
+		},
+		{
+			"timestamps": {
+				"from": "00:53:42,400",
+				"to": "00:53:48,960"
+			},
+			"offsets": {
+				"from": 3222400,
+				"to": 3228960
+			},
+			"text": " From far away, I would have thought it was a, uh, military background Republican. Uh, that's what I"
+		},
+		{
+			"timestamps": {
+				"from": "00:53:48,960",
+				"to": "00:53:54,800"
+			},
+			"offsets": {
+				"from": 3228960,
+				"to": 3234800
+			},
+			"text": " would think if I saw that hat from afar. Yeah. Right. Right. So I don't know what Mattel is"
+		},
+		{
+			"timestamps": {
+				"from": "00:53:54,800",
+				"to": "00:54:02,160"
+			},
+			"offsets": {
+				"from": 3234800,
+				"to": 3242160
+			},
+			"text": " smoking that they would choose a red cap. I get it so far as color coordinate, but you could go"
+		},
+		{
+			"timestamps": {
+				"from": "00:54:02,160",
+				"to": "00:54:09,040"
+			},
+			"offsets": {
+				"from": 3242160,
+				"to": 3249040
+			},
+			"text": " white. You could go blue. You could go pink or whatever. Many years ago was why when I went to"
+		},
+		{
+			"timestamps": {
+				"from": "00:54:09,040",
+				"to": "00:54:15,760"
+			},
+			"offsets": {
+				"from": 3249040,
+				"to": 3255760
+			},
+			"text": " like wine country and we bought, I bought this red trucker hat from his diner in, uh, uh, uh,"
+		},
+		{
+			"timestamps": {
+				"from": "00:54:15,760",
+				"to": "00:54:21,040"
+			},
+			"offsets": {
+				"from": 3255760,
+				"to": 3261040
+			},
+			"text": " Northern California. And I was wearing it around and I was at first getting compliments,"
+		},
+		{
+			"timestamps": {
+				"from": "00:54:21,040",
+				"to": "00:54:27,600"
+			},
+			"offsets": {
+				"from": 3261040,
+				"to": 3267600
+			},
+			"text": " make America great again on it on my cool diner, like vintage diner trucker hat. Right. And then"
+		},
+		{
+			"timestamps": {
+				"from": "00:54:27,600",
+				"to": "00:54:33,440"
+			},
+			"offsets": {
+				"from": 3267600,
+				"to": 3273440
+			},
+			"text": " all of a sudden, one day I got mistaken for a mega hat and it was, uh, a guy giving me a thumbs up"
+		},
+		{
+			"timestamps": {
+				"from": "00:54:33,440",
+				"to": "00:54:38,800"
+			},
+			"offsets": {
+				"from": 3273440,
+				"to": 3278800
+			},
+			"text": " from across the coffee shop. Uh, and my friend being like, he thinks you're wearing a mega hat."
+		},
+		{
+			"timestamps": {
+				"from": "00:54:38,800",
+				"to": "00:54:43,520"
+			},
+			"offsets": {
+				"from": 3278800,
+				"to": 3283520
+			},
+			"text": " And I was like, what? I was like, no. And at that time I was like, how many people are really"
+		},
+		{
+			"timestamps": {
+				"from": "00:54:43,520",
+				"to": "00:54:55,280"
+			},
+			"offsets": {
+				"from": 3283520,
+				"to": 3295280
+			},
+			"text": " wearing those? Um, Oh, you sweet summer child. Oh, I was, I missed it by a mile. And, uh, uh,"
+		},
+		{
+			"timestamps": {
+				"from": "00:54:55,280",
+				"to": "00:54:58,720"
+			},
+			"offsets": {
+				"from": 3295280,
+				"to": 3298720
+			},
+			"text": " but yeah, I eventually had to stop wearing it. Cause everyone was starting to think of it was"
+		},
+		{
+			"timestamps": {
+				"from": "00:54:58,720",
+				"to": "00:55:03,040"
+			},
+			"offsets": {
+				"from": 3298720,
+				"to": 3303040
+			},
+			"text": " a mega hat. Oh, you got a, you got one of your hats ruined. Cause people said it looked like a"
+		},
+		{
+			"timestamps": {
+				"from": "00:55:03,040",
+				"to": "00:55:15,120"
+			},
+			"offsets": {
+				"from": 3303040,
+				"to": 3315120
+			},
+			"text": " mega hat. That's tough shit. Jacob has absolutely been victimized by that on camera. What happened"
+		},
+		{
+			"timestamps": {
+				"from": "00:55:15,120",
+				"to": "00:55:21,520"
+			},
+			"offsets": {
+				"from": 3315120,
+				"to": 3321520
+			},
+			"text": " right here with his Las Vegas hat that is Las Vegas aviator hat is much better than the one I'm"
+		},
+		{
+			"timestamps": {
+				"from": "00:55:21,520",
+				"to": "00:55:30,000"
+			},
+			"offsets": {
+				"from": 3321520,
+				"to": 3330000
+			},
+			"text": " talking about for my trucker trucker hat. It just happens, happens to look weird. Uh, there's a guy,"
+		},
+		{
+			"timestamps": {
+				"from": "00:55:30,000",
+				"to": "00:55:39,600"
+			},
+			"offsets": {
+				"from": 3330000,
+				"to": 3339600
+			},
+			"text": " there was a guy driving down my street and you know, that, that sketch and I think you should"
+		},
+		{
+			"timestamps": {
+				"from": "00:55:39,600",
+				"to": "00:55:44,720"
+			},
+			"offsets": {
+				"from": 3339600,
+				"to": 3344720
+			},
+			"text": " leave with the call, like the, the driving crooner or whatever it's called, where he puts the,"
+		},
+		{
+			"timestamps": {
+				"from": "00:55:44,720",
+				"to": "00:55:51,600"
+			},
+			"offsets": {
+				"from": 3344720,
+				"to": 3351600
+			},
+			"text": " the stickers makes it look like he's smoking a cigar and wearing it on the window. Yeah. Uh,"
+		},
+		{
+			"timestamps": {
+				"from": "00:55:51,600",
+				"to": "00:55:58,640"
+			},
+			"offsets": {
+				"from": 3351600,
+				"to": 3358640
+			},
+			"text": " in the back of this guy's truck, in the cab section behind his main cab, he has, you know,"
+		},
+		{
+			"timestamps": {
+				"from": "00:55:58,640",
+				"to": "00:56:04,960"
+			},
+			"offsets": {
+				"from": 3358640,
+				"to": 3364960
+			},
+			"text": " how you can put a little sticker on the window. Yes. He's got, he's got our president in the back"
+		},
+		{
+			"timestamps": {
+				"from": "00:56:04,960",
+				"to": "00:56:11,280"
+			},
+			"offsets": {
+				"from": 3364960,
+				"to": 3371280
+			},
+			"text": " seat, the neck and head of the president, you know, looking like, Oh, he's sitting in the back seat."
+		},
+		{
+			"timestamps": {
+				"from": "00:56:14,240",
+				"to": "00:56:20,240"
+			},
+			"offsets": {
+				"from": 3374240,
+				"to": 3380240
+			},
+			"text": " He's doing it around the neighborhood. And I casually yelled out the window."
+		},
+		{
+			"timestamps": {
+				"from": "00:56:20,240",
+				"to": "00:56:28,000"
+			},
+			"offsets": {
+				"from": 3380240,
+				"to": 3388000
+			},
+			"text": " He didn't hear me of course, but I warned him, you've got a pedophile in your truck. Look out,"
+		},
+		{
+			"timestamps": {
+				"from": "00:56:28,000",
+				"to": "00:56:33,120"
+			},
+			"offsets": {
+				"from": 3388000,
+				"to": 3393120
+			},
+			"text": " careful. He's behind you. Um, yeah. So may have fallen on deaf ears."
+		},
+		{
+			"timestamps": {
+				"from": "00:56:33,120",
+				"to": "00:56:42,000"
+			},
+			"offsets": {
+				"from": 3393120,
+				"to": 3402000
+			},
+			"text": " Maybe, maybe, uh, feel free to always give Matt a thumbs up if you see him wearing a red hat from"
+		},
+		{
+			"timestamps": {
+				"from": "00:56:42,000",
+				"to": "00:56:49,040"
+			},
+			"offsets": {
+				"from": 3402000,
+				"to": 3409040
+			},
+			"text": " now on two thumbs up in his scars. It's like, it's like where I've had to wear my hooters jacket."
+		},
+		{
+			"timestamps": {
+				"from": "00:56:49,040",
+				"to": "00:56:54,640"
+			},
+			"offsets": {
+				"from": 3409040,
+				"to": 3414640
+			},
+			"text": " And, uh, cause there's too much weight in my, in my bags. And then I get some, like, I get"
+		},
+		{
+			"timestamps": {
+				"from": "00:56:54,640",
+				"to": "00:57:02,640"
+			},
+			"offsets": {
+				"from": 3414640,
+				"to": 3422640
+			},
+			"text": " compliments on like nice jacket. And you're like, no, no, please don't. It is not. Please don't."
+		},
+		{
+			"timestamps": {
+				"from": "00:57:02,640",
+				"to": "00:57:07,360"
+			},
+			"offsets": {
+				"from": 3422640,
+				"to": 3427360
+			},
+			"text": " Let's do a little joke versus nerd."
+		},
+		{
+			"timestamps": {
+				"from": "00:57:12,960",
+				"to": "00:57:16,400"
+			},
+			"offsets": {
+				"from": 3432960,
+				"to": 3436400
+			},
+			"text": " Fuck. Yeah. I'm on the hunt for balls."
+		},
+		{
+			"timestamps": {
+				"from": "00:57:16,400",
+				"to": "00:57:25,200"
+			},
+			"offsets": {
+				"from": 3436400,
+				"to": 3445200
+			},
+			"text": " On the hunt for balls."
+		},
+		{
+			"timestamps": {
+				"from": "00:57:25,200",
+				"to": "00:57:30,560"
+			},
+			"offsets": {
+				"from": 3445200,
+				"to": 3450560
+			},
+			"text": " Scar goose."
+		},
+		{
+			"timestamps": {
+				"from": "00:57:30,560",
+				"to": "00:57:37,600"
+			},
+			"offsets": {
+				"from": 3450560,
+				"to": 3457600
+			},
+			"text": " We got a scooper coming to us today from Smitty scoop. I said the, the sum up here operated"
+		},
+		{
+			"timestamps": {
+				"from": "00:57:37,600",
+				"to": "00:57:42,720"
+			},
+			"offsets": {
+				"from": 3457600,
+				"to": 3462720
+			},
+			"text": " a scooper for you. But first year of the final 20, 25 Smitty scooper, scooper statistics,"
+		},
+		{
+			"timestamps": {
+				"from": "00:57:42,720",
+				"to": "00:57:47,120"
+			},
+			"offsets": {
+				"from": 3462720,
+				"to": 3467120
+			},
+			"text": " uh, much like tiny pyramid at the top of the obelisk that we don't talk about the, uh, there,"
+		},
+		{
+			"timestamps": {
+				"from": "00:57:47,120",
+				"to": "00:57:53,600"
+			},
+			"offsets": {
+				"from": 3467120,
+				"to": 3473600
+			},
+			"text": " these is a tiny chance that you play. Oh, okay. There is a tiny chance that we might play this,"
+		},
+		{
+			"timestamps": {
+				"from": "00:57:53,600",
+				"to": "00:58:00,320"
+			},
+			"offsets": {
+				"from": 3473600,
+				"to": 3480320
+			},
+			"text": " but we didn't, uh, blah, blah, blah, blah, blah. 2025 points. Okay. Matt has 10,800. Paul has 2000."
+		},
+		{
+			"timestamps": {
+				"from": "00:58:00,320",
+				"to": "00:58:06,960"
+			},
+			"offsets": {
+				"from": 3480320,
+				"to": 3486960
+			},
+			"text": " I have negative 4,400. Uh, best game score for Matt was 4,800. Best one for Paul was 6,400."
+		},
+		{
+			"timestamps": {
+				"from": "00:58:06,960",
+				"to": "00:58:12,800"
+			},
+			"offsets": {
+				"from": 3486960,
+				"to": 3492800
+			},
+			"text": " Best one for me was 4,400 worst game scores. I have negative 6,000. Paul has negative 6,800."
+		},
+		{
+			"timestamps": {
+				"from": "00:58:12,800",
+				"to": "00:58:18,480"
+			},
+			"offsets": {
+				"from": 3492800,
+				"to": 3498480
+			},
+			"text": " Matt has negative 2000. Uh, there's a lot of other stats on here. I do not get any scoops."
+		},
+		{
+			"timestamps": {
+				"from": "00:58:18,480",
+				"to": "00:58:23,040"
+			},
+			"offsets": {
+				"from": 3498480,
+				"to": 3503040
+			},
+			"text": " You don't do well traditionally with it. I didn't do well with them in 2025 though."
+		},
+		{
+			"timestamps": {
+				"from": "00:58:23,040",
+				"to": "00:58:27,600"
+			},
+			"offsets": {
+				"from": 3503040,
+				"to": 3507600
+			},
+			"text": " Yeah. Uh, while Matt still has the most all time wins,"
+		},
+		{
+			"timestamps": {
+				"from": "00:58:27,600",
+				"to": "00:58:32,560"
+			},
+			"offsets": {
+				"from": 3507600,
+				"to": 3512560
+			},
+			"text": " Paul and Jacob actually tied with the most 20, 25 wins. Oh, look at that. Oh yeah. It's"
+		},
+		{
+			"timestamps": {
+				"from": "00:58:32,560",
+				"to": "00:58:40,560"
+			},
+			"offsets": {
+				"from": 3512560,
+				"to": 3520560
+			},
+			"text": " time to find out. I lost my Smitty touch in 20, 25 as I recall. Yeah. You've lost that Smitty touch."
+		},
+		{
+			"timestamps": {
+				"from": "00:58:40,560",
+				"to": "00:58:50,640"
+			},
+			"offsets": {
+				"from": 3520560,
+				"to": 3530640
+			},
+			"text": " So the categories are sitcom spouses, geography, spelling, and random. Uh,"
+		},
+		{
+			"timestamps": {
+				"from": "00:58:50,640",
+				"to": "00:58:53,120"
+			},
+			"offsets": {
+				"from": 3530640,
+				"to": 3533120
+			},
+			"text": " Matt, you're up first. What do you want? Random 400."
+		},
+		{
+			"timestamps": {
+				"from": "00:58:53,120",
+				"to": "00:59:00,000"
+			},
+			"offsets": {
+				"from": 3533120,
+				"to": 3540000
+			},
+			"text": " Let's see here. Since you cannot remember the nickname of professional dart player,"
+		},
+		{
+			"timestamps": {
+				"from": "00:59:00,000",
+				"to": "00:59:06,480"
+			},
+			"offsets": {
+				"from": 3540000,
+				"to": 3546480
+			},
+			"text": " Tim Pucey, name four of the 10 best nicknames that you previously came up with for him."
+		},
+		{
+			"timestamps": {
+				"from": "00:59:06,480",
+				"to": "00:59:09,120"
+			},
+			"offsets": {
+				"from": 3546480,
+				"to": 3549120
+			},
+			"text": " Wait, wait. What if I remember his nickname now?"
+		},
+		{
+			"timestamps": {
+				"from": "00:59:09,120",
+				"to": "00:59:17,680"
+			},
+			"offsets": {
+				"from": 3549120,
+				"to": 3557680
+			},
+			"text": " Specifically the ones that you came up with. Uh, cause it was Pucey magnet is his nickname."
+		},
+		{
+			"timestamps": {
+				"from": "00:59:17,680",
+				"to": "00:59:23,920"
+			},
+			"offsets": {
+				"from": 3557680,
+				"to": 3563920
+			},
+			"text": " Right. Yeah. Yeah. Yeah. Right. Uh, the magnet. I like that we all remember that now. Uh, dripping"
+		},
+		{
+			"timestamps": {
+				"from": "00:59:23,920",
+				"to": "00:59:35,200"
+			},
+			"offsets": {
+				"from": 3563920,
+				"to": 3575200
+			},
+			"text": " wet, uh, Pucey control on that one. Gary, Tim, Gary, Gary, Gary was my favorite one. Gary Pucey,"
+		},
+		{
+			"timestamps": {
+				"from": "00:59:35,200",
+				"to": "00:59:51,600"
+			},
+			"offsets": {
+				"from": 3575200,
+				"to": 3591600
+			},
+			"text": " Tim, Gary, Pucey, uh, uh, wet Pucey. Sure. Uh, dry, dry, dry, dry. Dirty. The clip, the smack,"
+		},
+		{
+			"timestamps": {
+				"from": "00:59:51,600",
+				"to": "01:00:04,960"
+			},
+			"offsets": {
+				"from": 3591600,
+				"to": 3604960
+			},
+			"text": " smack that grabbed them by the grab them by the P I like fist, the fist, the Pucey"
+		},
+		{
+			"timestamps": {
+				"from": "01:00:04,960",
+				"to": "01:00:17,520"
+			},
+			"offsets": {
+				"from": 3604960,
+				"to": 3617520
+			},
+			"text": " fistful of, oh, I forgot seventies Bush, seventies Bush. We came up with some good ones."
+		},
+		{
+			"timestamps": {
+				"from": "01:00:17,520",
+				"to": "01:00:24,800"
+			},
+			"offsets": {
+				"from": 3617520,
+				"to": 3624800
+			},
+			"text": " Yep. That's me. I'll try a sitcom spouses 400. What is the name of the actress who played Jill"
+		},
+		{
+			"timestamps": {
+				"from": "01:00:24,800",
+				"to": "01:00:31,840"
+			},
+			"offsets": {
+				"from": 3624800,
+				"to": 3631840
+			},
+			"text": " Taylor, wife of Tim Taylor for eight seasons? You know this, Jacob, you know, fuck you. Smitty"
+		},
+		{
+			"timestamps": {
+				"from": "01:00:31,840",
+				"to": "01:00:38,960"
+			},
+			"offsets": {
+				"from": 3631840,
+				"to": 3638960
+			},
+			"text": " Paul. Oh, I can picture her. I don't know her name though."
+		},
+		{
+			"timestamps": {
+				"from": "01:00:38,960",
+				"to": "01:00:46,480"
+			},
+			"offsets": {
+				"from": 3638960,
+				"to": 3646480
+			},
+			"text": " Barbara something I have to pass Barbara something. Matt, I think Barbara Walters."
+		},
+		{
+			"timestamps": {
+				"from": "01:00:48,000",
+				"to": "01:00:51,920"
+			},
+			"offsets": {
+				"from": 3648000,
+				"to": 3651920
+			},
+			"text": " I'm married to Tim Taylor. I have no idea how this has happened."
+		},
+		{
+			"timestamps": {
+				"from": "01:00:51,920",
+				"to": "01:01:01,440"
+			},
+			"offsets": {
+				"from": 3651920,
+				"to": 3661440
+			},
+			"text": " Patricia Richardson, Barbara, Barbara, Patricia, Barbara, Richard said, Paul,"
+		},
+		{
+			"timestamps": {
+				"from": "01:01:01,440",
+				"to": "01:01:08,560"
+			},
+			"offsets": {
+				"from": 3661440,
+				"to": 3668560
+			},
+			"text": " I'm going to do sitcom spouses for eight. Cause this is fun. What is the name of the actress who"
+		},
+		{
+			"timestamps": {
+				"from": "01:01:08,560",
+				"to": "01:01:14,960"
+			},
+			"offsets": {
+				"from": 3668560,
+				"to": 3674960
+			},
+			"text": " played Deborah Barone, a wife of Ray Barone for nine seasons on everybody loves Raymond."
+		},
+		{
+			"timestamps": {
+				"from": "01:01:15,920",
+				"to": "01:01:25,440"
+			},
+			"offsets": {
+				"from": 3675920,
+				"to": 3685440
+			},
+			"text": " Oh, oh, I do. Wait, I would know her name. She did commercials for the grocery store like a"
+		},
+		{
+			"timestamps": {
+				"from": "01:01:25,440",
+				"to": "01:01:34,000"
+			},
+			"offsets": {
+				"from": 3685440,
+				"to": 3694000
+			},
+			"text": " bitch, like a bitch. She was real mean about them. She was real mean about her grocery store"
+		},
+		{
+			"timestamps": {
+				"from": "01:01:34,000",
+				"to": "01:01:43,440"
+			},
+			"offsets": {
+				"from": 3694000,
+				"to": 3703440
+			},
+			"text": " commercials. Yeah. I don't know her name. I have to pass Matt, Rachel Maddow. No, Rachel Maddow,"
+		},
+		{
+			"timestamps": {
+				"from": "01:01:43,440",
+				"to": "01:01:54,880"
+			},
+			"offsets": {
+				"from": 3703440,
+				"to": 3714880
+			},
+			"text": " pass pass pass. Goosh. Patricia Heaton. Patricia Heaton. Hey, uh, uh, Rachel, let's for dinner."
+		},
+		{
+			"timestamps": {
+				"from": "01:01:54,880",
+				"to": "01:02:06,960"
+			},
+			"offsets": {
+				"from": 3714880,
+				"to": 3726960
+			},
+			"text": " I'm married to Rachel Maddow now. Oh boy. My, my, my giant brother still wants to fuck my wife."
+		},
+		{
+			"timestamps": {
+				"from": "01:02:06,960",
+				"to": "01:02:17,840"
+			},
+			"offsets": {
+				"from": 3726960,
+				"to": 3737840
+			},
+			"text": " My mom and dad are mean. Oh boy. Rachel Maddow didn't solve anything. Goosh."
+		},
+		{
+			"timestamps": {
+				"from": "01:02:17,840",
+				"to": "01:02:28,400"
+			},
+			"offsets": {
+				"from": 3737840,
+				"to": 3748400
+			},
+			"text": " It was my turn. I'll take a random for 800. On episode 1264, Matt discussed the guilt that he"
+		},
+		{
+			"timestamps": {
+				"from": "01:02:28,400",
+				"to": "01:02:32,640"
+			},
+			"offsets": {
+				"from": 3748400,
+				"to": 3752640
+			},
+			"text": " felt working for F1 at the same time that F1 was making the lives of his friends and neighbors"
+		},
+		{
+			"timestamps": {
+				"from": "01:02:32,640",
+				"to": "01:02:37,920"
+			},
+			"offsets": {
+				"from": 3752640,
+				"to": 3757920
+			},
+			"text": " miserable. But Paul said, what can you do? You got to ride the blank."
+		},
+		{
+			"timestamps": {
+				"from": "01:02:37,920",
+				"to": "01:02:45,920"
+			},
+			"offsets": {
+				"from": 3757920,
+				"to": 3765920
+			},
+			"text": " This is the same thing as a t-shirt question, isn't it? I forget what he said. And Paul,"
+		},
+		{
+			"timestamps": {
+				"from": "01:02:45,920",
+				"to": "01:02:49,760"
+			},
+			"offsets": {
+				"from": 3765920,
+				"to": 3769760
+			},
+			"text": " I know for a fact, Paul doesn't remember what he said. I think we've got to ride the devil,"
+		},
+		{
+			"timestamps": {
+				"from": "01:02:49,760",
+				"to": "01:02:57,040"
+			},
+			"offsets": {
+				"from": 3769760,
+				"to": 3777040
+			},
+			"text": " ride the devil, ride the devil or ride the devil's Dick or ride the demon. Yeah. Uh,"
+		},
+		{
+			"timestamps": {
+				"from": "01:02:57,040",
+				"to": "01:03:03,520"
+			},
+			"offsets": {
+				"from": 3777040,
+				"to": 3783520
+			},
+			"text": " Paul has given you three options. I'll pass as well. Paul, I think it's ride the devil,"
+		},
+		{
+			"timestamps": {
+				"from": "01:03:03,520",
+				"to": "01:03:11,680"
+			},
+			"offsets": {
+				"from": 3783520,
+				"to": 3791680
+			},
+			"text": " ride the devil. Yeah. Oh yeah. Apparently I requested the, the, oh yeah, that's right."
+		},
+		{
+			"timestamps": {
+				"from": "01:03:11,680",
+				"to": "01:03:15,920"
+			},
+			"offsets": {
+				"from": 3791680,
+				"to": 3795920
+			},
+			"text": " I requested the ride the devil shirt. See, I remember all the framework, just not the"
+		},
+		{
+			"timestamps": {
+				"from": "01:03:15,920",
+				"to": "01:03:19,680"
+			},
+			"offsets": {
+				"from": 3795920,
+				"to": 3799680
+			},
+			"text": " specifics. You're out here complaining about people not having t-shirt stuff going on, Jacob,"
+		},
+		{
+			"timestamps": {
+				"from": "01:03:19,680",
+				"to": "01:03:26,080"
+			},
+			"offsets": {
+				"from": 3799680,
+				"to": 3806080
+			},
+			"text": " get Brogan on it. Brogan, you're in the chat somewhere. Are you sleeping? I don't think I,"
+		},
+		{
+			"timestamps": {
+				"from": "01:03:26,080",
+				"to": "01:03:30,880"
+			},
+			"offsets": {
+				"from": 3806080,
+				"to": 3810880
+			},
+			"text": " I, I questioned the viability of the ride the devil t-shirt craze, but that's fine."
+		},
+		{
+			"timestamps": {
+				"from": "01:03:30,880",
+				"to": "01:03:40,320"
+			},
+			"offsets": {
+				"from": 3810880,
+				"to": 3820320
+			},
+			"text": " Oh yeah. Yeah. Okay. Scoops prove him wrong. Let's sell out of ride the devil t-shirts."
+		},
+		{
+			"timestamps": {
+				"from": "01:03:40,320",
+				"to": "01:03:44,480"
+			},
+			"offsets": {
+				"from": 3820320,
+				"to": 3824480
+			},
+			"text": " Let's everybody have a ride the devil t-shirt day. I'm going to random for 1200."
+		},
+		{
+			"timestamps": {
+				"from": "01:03:44,480",
+				"to": "01:03:54,240"
+			},
+			"offsets": {
+				"from": 3824480,
+				"to": 3834240
+			},
+			"text": " How many us States border Mexico? All right. A hundred. Well, there's there's California."
+		},
+		{
+			"timestamps": {
+				"from": "01:03:55,360",
+				"to": "01:04:07,120"
+			},
+			"offsets": {
+				"from": 3835360,
+				"to": 3847120
+			},
+			"text": " That's a big one. There's Texas. That's a big one. Yep. I mean is right out. I think it's just those"
+		},
+		{
+			"timestamps": {
+				"from": "01:04:07,120",
+				"to": "01:04:17,840"
+			},
+			"offsets": {
+				"from": 3847120,
+				"to": 3857840
+			},
+			"text": " two. Very big. Uh, wait, there's a, isn't there a geography category? How is this not the geography"
+		},
+		{
+			"timestamps": {
+				"from": "01:04:17,840",
+				"to": "01:04:24,560"
+			},
+			"offsets": {
+				"from": 3857840,
+				"to": 3864560
+			},
+			"text": " category? Um, what's the question? What's the category? Random. I think this was random. Yeah."
+		},
+		{
+			"timestamps": {
+				"from": "01:04:25,360",
+				"to": "01:04:32,880"
+			},
+			"offsets": {
+				"from": 3865360,
+				"to": 3872880
+			},
+			"text": " There you go. That's why it's in the random category. Oh, uh, what is, is it? It's just two."
+		},
+		{
+			"timestamps": {
+				"from": "01:04:32,880",
+				"to": "01:04:43,600"
+			},
+			"offsets": {
+				"from": 3872880,
+				"to": 3883600
+			},
+			"text": " Okay. I'll pass to Paul. Now I've got me questioning. Well, but now I think it is."
+		},
+		{
+			"timestamps": {
+				"from": "01:04:43,600",
+				"to": "01:04:48,480"
+			},
+			"offsets": {
+				"from": 3883600,
+				"to": 3888480
+			},
+			"text": " Oh, Arizona's got a little bit."
+		},
+		{
+			"timestamps": {
+				"from": "01:04:55,840",
+				"to": "01:04:59,840"
+			},
+			"offsets": {
+				"from": 3895840,
+				"to": 3899840
+			},
+			"text": " One might, one might argue there's a new version of that country in our country"
+		},
+		{
+			"timestamps": {
+				"from": "01:04:59,840",
+				"to": "01:05:09,360"
+			},
+			"offsets": {
+				"from": 3899840,
+				"to": 3909360
+			},
+			"text": " that might border it as well. New Arizona. That's right. Uh, yeah. New Mexico. Um,"
+		},
+		{
+			"timestamps": {
+				"from": "01:05:09,360",
+				"to": "01:05:15,360"
+			},
+			"offsets": {
+				"from": 3909360,
+				"to": 3915360
+			},
+			"text": " Arizona too. Does Arizona have it too? I'll pass."
+		},
+		{
+			"timestamps": {
+				"from": "01:05:21,600",
+				"to": "01:05:25,840"
+			},
+			"offsets": {
+				"from": 3921600,
+				"to": 3925840
+			},
+			"text": " Matt, I don't have enough points to guess. So I'm going to pass. My guess is five,"
+		},
+		{
+			"timestamps": {
+				"from": "01:05:25,840",
+				"to": "01:05:29,360"
+			},
+			"offsets": {
+				"from": 3925840,
+				"to": 3929360
+			},
+			"text": " but I'm passing. I mean, I think it's four, but let's see."
+		},
+		{
+			"timestamps": {
+				"from": "01:05:29,360",
+				"to": "01:05:37,680"
+			},
+			"offsets": {
+				"from": 3929360,
+				"to": 3937680
+			},
+			"text": " It's four east to west Texas, Arizona, California. We did name them. I got it right. Kind of. I think"
+		},
+		{
+			"timestamps": {
+				"from": "01:05:37,680",
+				"to": "01:05:44,400"
+			},
+			"offsets": {
+				"from": 3937680,
+				"to": 3944400
+			},
+			"text": " we got all of them. Oh, there's no doubt. Paul was right on this one. Sure. Paul, you're up."
+		},
+		{
+			"timestamps": {
+				"from": "01:05:45,920",
+				"to": "01:05:51,600"
+			},
+			"offsets": {
+				"from": 3945920,
+				"to": 3951600
+			},
+			"text": " I shouldn't take points away from Paul. I like that we end every show showing everyone how dumb we are."
+		},
+		{
+			"timestamps": {
+				"from": "01:05:51,600",
+				"to": "01:06:00,480"
+			},
+			"offsets": {
+				"from": 3951600,
+				"to": 3960480
+			},
+			"text": " What is the name of the actress who played Carrie Heffernan wife of Doug Heffernan for"
+		},
+		{
+			"timestamps": {
+				"from": "01:06:00,480",
+				"to": "01:06:08,160"
+			},
+			"offsets": {
+				"from": 3960480,
+				"to": 3968160
+			},
+			"text": " nine seasons of on king of Queens? Leah remedy. Oh, yeah. Leah remedy. Yay."
+		},
+		{
+			"timestamps": {
+				"from": "01:06:10,720",
+				"to": "01:06:18,080"
+			},
+			"offsets": {
+				"from": 3970720,
+				"to": 3978080
+			},
+			"text": " Matt sitcom spouses, 2000. What is the name of the actress that played Carol foster wife of Frank"
+		},
+		{
+			"timestamps": {
+				"from": "01:06:18,080",
+				"to": "01:06:24,480"
+			},
+			"offsets": {
+				"from": 3978080,
+				"to": 3984480
+			},
+			"text": " Lambert for seven seasons on step by step? Ah, so there's a show called step by step. You say"
+		},
+		{
+			"timestamps": {
+				"from": "01:06:24,480",
+				"to": "01:06:33,680"
+			},
+			"offsets": {
+				"from": 3984480,
+				"to": 3993680
+			},
+			"text": " Matt, would you like a hint? Oh, I think I'm getting a hint in the chat. One of them says"
+		},
+		{
+			"timestamps": {
+				"from": "01:06:33,680",
+				"to": "01:06:39,360"
+			},
+			"offsets": {
+				"from": 3993680,
+				"to": 3999360
+			},
+			"text": " Paul Abdul, but the other says thymaster. Yeah, that's, that's the big hint. It's exactly who it"
+		},
+		{
+			"timestamps": {
+				"from": "01:06:39,360",
+				"to": "01:06:47,600"
+			},
+			"offsets": {
+				"from": 3999360,
+				"to": 4007600
+			},
+			"text": " is. Uh, Suzanne, some Paula Abdul. That's it. It is Suzanne summer. I like the firm Paul Abdul in"
+		},
+		{
+			"timestamps": {
+				"from": "01:06:47,600",
+				"to": "01:06:56,240"
+			},
+			"offsets": {
+				"from": 4007600,
+				"to": 4016240
+			},
+			"text": " the chat. Somebody just said Paul Abdul. It's me. I'll try a fucking, I'll close out random 2000."
+		},
+		{
+			"timestamps": {
+				"from": "01:06:56,240",
+				"to": "01:07:02,720"
+			},
+			"offsets": {
+				"from": 4016240,
+				"to": 4022720
+			},
+			"text": " The three child actors that played three siblings for nine seasons on what popular family sitcom"
+		},
+		{
+			"timestamps": {
+				"from": "01:07:02,720",
+				"to": "01:07:11,040"
+			},
+			"offsets": {
+				"from": 4022720,
+				"to": 4031040
+			},
+			"text": " were actually real life siblings. Nine seasons, what popular family sitcom? Uh,"
+		},
+		{
+			"timestamps": {
+				"from": "01:07:11,040",
+				"to": "01:07:20,240"
+			},
+			"offsets": {
+				"from": 4031040,
+				"to": 4040240
+			},
+			"text": " I mean, there's the Olsen twins, but that's not no, they played one person three and they played"
+		},
+		{
+			"timestamps": {
+				"from": "01:07:20,240",
+				"to": "01:07:23,840"
+			},
+			"offsets": {
+				"from": 4040240,
+				"to": 4043840
+			},
+			"text": " one person. There was only two of them. There's right. Yeah, there's right."
+		},
+		{
+			"timestamps": {
+				"from": "01:07:26,240",
+				"to": "01:07:37,120"
+			},
+			"offsets": {
+				"from": 4046240,
+				"to": 4057120
+			},
+			"text": " Huh? Is this a Jonas Brothers thing? Oh, it could be. Yeah. Were they in, or is this going to be like"
+		},
+		{
+			"timestamps": {
+				"from": "01:07:37,120",
+				"to": "01:07:43,840"
+			},
+			"offsets": {
+				"from": 4057120,
+				"to": 4063840
+			},
+			"text": " Dolby Gillis or something? Is this going to be something from the 50s? Dolby Gillis didn't have"
+		},
+		{
+			"timestamps": {
+				"from": "01:07:43,840",
+				"to": "01:07:55,440"
+			},
+			"offsets": {
+				"from": 4063840,
+				"to": 4075440
+			},
+			"text": " any siblings. Hogan's heroes. Right. A family sitcom three. Oh, is it my three sons? It can't"
+		},
+		{
+			"timestamps": {
+				"from": "01:07:55,440",
+				"to": "01:08:03,360"
+			},
+			"offsets": {
+				"from": 4075440,
+				"to": 4083360
+			},
+			"text": " be my three sons. I mean, that's three actors, nine years. I passed the Paul. This is the sopranos."
+		},
+		{
+			"timestamps": {
+				"from": "01:08:03,360",
+				"to": "01:08:17,760"
+			},
+			"offsets": {
+				"from": 4083360,
+				"to": 4097760
+			},
+			"text": " No, who, who could it be? Three child actors, right? Hey, huh? Oh, no. The Munsters didn't have"
+		},
+		{
+			"timestamps": {
+				"from": "01:08:18,960",
+				"to": "01:08:25,440"
+			},
+			"offsets": {
+				"from": 4098960,
+				"to": 4105440
+			},
+			"text": " a bunch of kids. So we got like Malcolm in the middle didn't have a, well it has three, but they're"
+		},
+		{
+			"timestamps": {
+				"from": "01:08:25,440",
+				"to": "01:08:31,600"
+			},
+			"offsets": {
+				"from": 4105440,
+				"to": 4111600
+			},
+			"text": " not all, they're not, they're not siblings. No, it wasn't all Warners and the Cosby children."
+		},
+		{
+			"timestamps": {
+				"from": "01:08:31,600",
+				"to": "01:08:41,200"
+			},
+			"offsets": {
+				"from": 4111600,
+				"to": 4121200
+			},
+			"text": " No, were there twins, triplets? How many seasons has Family Guy been on the air? I'm going to say"
+		},
+		{
+			"timestamps": {
+				"from": "01:08:41,200",
+				"to": "01:08:52,800"
+			},
+			"offsets": {
+				"from": 4121200,
+				"to": 4132800
+			},
+			"text": " Family Guy. Meg Stewie and the other Griffin. Brian. Brian. That's it. No, Chris. Chris is"
+		},
+		{
+			"timestamps": {
+				"from": "01:08:52,800",
+				"to": "01:09:12,240"
+			},
+			"offsets": {
+				"from": 4132800,
+				"to": 4152240
+			},
+			"text": " the son. Brian's the dog. I have no idea. I'll pass Paul. Oh, um, uh, the, um, Osmond's or the"
+		},
+		{
+			"timestamps": {
+				"from": "01:09:12,240",
+				"to": "01:09:21,600"
+			},
+			"offsets": {
+				"from": 4152240,
+				"to": 4161600
+			},
+			"text": " Jackson five, nine C's gentlemen. We've spent a good deal of time on this question. I think it's"
+		},
+		{
+			"timestamps": {
+				"from": "01:09:21,600",
+				"to": "01:09:31,360"
+			},
+			"offsets": {
+				"from": 4161600,
+				"to": 4171360
+			},
+			"text": " time to move on. I pass that Jesus Christ pass. Everybody loves Raymond. Holy shit. Mattingly."
+		},
+		{
+			"timestamps": {
+				"from": "01:09:31,360",
+				"to": "01:09:37,600"
+			},
+			"offsets": {
+				"from": 4171360,
+				"to": 4177600
+			},
+			"text": " I didn't know. I didn't know that either. Sawyer and Sullivan, uh, Sweden played by Ali, Jeffrey"
+		},
+		{
+			"timestamps": {
+				"from": "01:09:37,600",
+				"to": "01:09:41,840"
+			},
+			"offsets": {
+				"from": 4177600,
+				"to": 4181840
+			},
+			"text": " and Michael Barone. You think as someone who's watched zero episodes of that show that I would"
+		},
+		{
+			"timestamps": {
+				"from": "01:09:41,840",
+				"to": "01:09:48,000"
+			},
+			"offsets": {
+				"from": 4181840,
+				"to": 4188000
+			},
+			"text": " know that, but I've seen like two or three, uh, in waiting rooms. Yep. That's better."
+		},
+		{
+			"timestamps": {
+				"from": "01:09:48,000",
+				"to": "01:09:57,920"
+			},
+			"offsets": {
+				"from": 4188000,
+				"to": 4197920
+			},
+			"text": " Waiting for a screenshot of this is a perfect example of us. We have sitcom spouses and random"
+		},
+		{
+			"timestamps": {
+				"from": "01:09:57,920",
+				"to": "01:10:04,240"
+			},
+			"offsets": {
+				"from": 4197920,
+				"to": 4204240
+			},
+			"text": " gone geography and spelling all on the board. And we didn't do well with the two that we used."
+		},
+		{
+			"timestamps": {
+				"from": "01:10:04,240",
+				"to": "01:10:13,680"
+			},
+			"offsets": {
+				"from": 4204240,
+				"to": 4213680
+			},
+			"text": " All right. I'll try spelling for 400. Maybe the answer is Tory spell the day known as hump day"
+		},
+		{
+			"timestamps": {
+				"from": "01:10:13,680",
+				"to": "01:10:25,120"
+			},
+			"offsets": {
+				"from": 4213680,
+				"to": 4225120
+			},
+			"text": " follows Tuesday and proceeds Thursday. W E D N E S D A Y. W E D N E S D A Y is correct."
+		},
+		{
+			"timestamps": {
+				"from": "01:10:25,120",
+				"to": "01:10:28,720"
+			},
+			"offsets": {
+				"from": 4225120,
+				"to": 4228720
+			},
+			"text": " It's not fair. Cause in the middle is a Nintendo entertainment system. And that's how Paul"
+		},
+		{
+			"timestamps": {
+				"from": "01:10:28,720",
+				"to": "01:10:35,280"
+			},
+			"offsets": {
+				"from": 4228720,
+				"to": 4235280
+			},
+			"text": " remembers that. That's right. Actually is. I remember, I remember I learned how to spell it by,"
+		},
+		{
+			"timestamps": {
+				"from": "01:10:35,280",
+				"to": "01:10:41,440"
+			},
+			"offsets": {
+				"from": 4235280,
+				"to": 4241440
+			},
+			"text": " by learning it phonetically as Wednesday. And that made me remember how it's weirdly spelled."
+		},
+		{
+			"timestamps": {
+				"from": "01:10:41,440",
+				"to": "01:10:46,560"
+			},
+			"offsets": {
+				"from": 4241440,
+				"to": 4246560
+			},
+			"text": " Oh, that's exactly what I do in my head. Every time I type it is Wednesday. Yes. Do you really?"
+		},
+		{
+			"timestamps": {
+				"from": "01:10:46,560",
+				"to": "01:10:53,760"
+			},
+			"offsets": {
+				"from": 4246560,
+				"to": 4253760
+			},
+			"text": " Yes. I still do. Yeah. Spelling eight, 800, please spell the calendar much with,"
+		},
+		{
+			"timestamps": {
+				"from": "01:10:53,760",
+				"to": "01:11:01,200"
+			},
+			"offsets": {
+				"from": 4253760,
+				"to": 4261200
+			},
+			"text": " which contains Valentine's day that follows January and precedes March. J U N E final answer."
+		},
+		{
+			"timestamps": {
+				"from": "01:11:01,200",
+				"to": "01:11:09,520"
+			},
+			"offsets": {
+				"from": 4261200,
+				"to": 4269520
+			},
+			"text": " F E B R U A R Y."
+		},
+		{
+			"timestamps": {
+				"from": "01:11:11,680",
+				"to": "01:11:19,200"
+			},
+			"offsets": {
+				"from": 4271680,
+				"to": 4279200
+			},
+			"text": " No, I, I don't think so. Say, say the first, say the first four letters again. F E B R."
+		},
+		{
+			"timestamps": {
+				"from": "01:11:19,200",
+				"to": "01:11:29,920"
+			},
+			"offsets": {
+				"from": 4279200,
+				"to": 4289920
+			},
+			"text": " Oh yeah. That's right. U A R Y U A R one. That's right. No, F E B R U A R Y. Oh my gosh,"
+		},
+		{
+			"timestamps": {
+				"from": "01:11:29,920",
+				"to": "01:11:33,120"
+			},
+			"offsets": {
+				"from": 4289920,
+				"to": 4293120
+			},
+			"text": " that's right. I would have misspelled it. What did you, what were you, how are you going to spell it?"
+		},
+		{
+			"timestamps": {
+				"from": "01:11:33,120",
+				"to": "01:11:39,360"
+			},
+			"offsets": {
+				"from": 4293120,
+				"to": 4299360
+			},
+			"text": " F E B U A R Y. Oh no, I knew the R was first. I thought he, I thought Matt said the U first"
+		},
+		{
+			"timestamps": {
+				"from": "01:11:40,000",
+				"to": "01:11:46,480"
+			},
+			"offsets": {
+				"from": 4300000,
+				"to": 4306480
+			},
+			"text": " and not the R. No, no. I always leave out the R. February. Anything that's almost spells bro."
+		},
+		{
+			"timestamps": {
+				"from": "01:11:46,480",
+				"to": "01:11:53,920"
+			},
+			"offsets": {
+				"from": 4306480,
+				"to": 4313920
+			},
+			"text": " I'm on top of it. I consider it February. February. February. And now I'm never going"
+		},
+		{
+			"timestamps": {
+				"from": "01:11:53,920",
+				"to": "01:11:57,760"
+			},
+			"offsets": {
+				"from": 4313920,
+				"to": 4317760
+			},
+			"text": " to be the month. The 28th of those 29 days of trading crypto February."
+		},
+		{
+			"timestamps": {
+				"from": "01:11:57,760",
+				"to": "01:12:08,880"
+			},
+			"offsets": {
+				"from": 4317760,
+				"to": 4328880
+			},
+			"text": " I'll do spelling for 1200 trading crypto. Spell the small piece of linen silk or other"
+		},
+		{
+			"timestamps": {
+				"from": "01:12:08,880",
+				"to": "01:12:16,320"
+			},
+			"offsets": {
+				"from": 4328880,
+				"to": 4336320
+			},
+			"text": " fabric, usually square and used for wiping one's nose face, et cetera. This would be a total pass"
+		},
+		{
+			"timestamps": {
+				"from": "01:12:16,320",
+				"to": "01:12:44,160"
+			},
+			"offsets": {
+				"from": 4336320,
+				"to": 4364160
+			},
+			"text": " for me. There's no way. Oh yeah. Uh, I got this like C U M R A G. Correct. Correct. Is this tissue"
+		},
+		{
+			"timestamps": {
+				"from": "01:12:44,160",
+				"to": "01:12:49,520"
+			},
+			"offsets": {
+				"from": 4364160,
+				"to": 4369520
+			},
+			"text": " or a handkerchief? It's had to be handkerchief. G Y M S O C K."
+		},
+		{
+			"timestamps": {
+				"from": "01:12:49,520",
+				"to": "01:13:05,600"
+			},
+			"offsets": {
+				"from": 4369520,
+				"to": 4385600
+			},
+			"text": " H A N K E R S P A N K B L A N K E T. S P A N K B U C K E T."
+		},
+		{
+			"timestamps": {
+				"from": "01:13:08,800",
+				"to": "01:13:28,240"
+			},
+			"offsets": {
+				"from": 4388800,
+				"to": 4408240
+			},
+			"text": " O K K I E C O O K I E J I Z Z R A G. I think it's like chief. I think it's C H I E F."
+		},
+		{
+			"timestamps": {
+				"from": "01:13:28,240",
+				"to": "01:13:37,920"
+			},
+			"offsets": {
+				"from": 4408240,
+				"to": 4417920
+			},
+			"text": " Yeah. So yeah. H A N K E R C H I E F. Look at that. Oh, oh no. I left out the D handkerchief."
+		},
+		{
+			"timestamps": {
+				"from": "01:13:37,920",
+				"to": "01:13:43,600"
+			},
+			"offsets": {
+				"from": 4417920,
+				"to": 4423600
+			},
+			"text": " That's right. That's right. I left out the D and I didn't have enough D in me. I just saw a comedian"
+		},
+		{
+			"timestamps": {
+				"from": "01:13:43,600",
+				"to": "01:13:50,240"
+			},
+			"offsets": {
+				"from": 4423600,
+				"to": 4430240
+			},
+			"text": " talking about that. Like some lady in a store asked him for a handkerchief. He's like, I don't"
+		},
+		{
+			"timestamps": {
+				"from": "01:13:50,240",
+				"to": "01:13:53,840"
+			},
+			"offsets": {
+				"from": 4430240,
+				"to": 4433840
+			},
+			"text": " have a handkerchief. She's like, what are you talking about? Like she was older lady. He's like,"
+		},
+		{
+			"timestamps": {
+				"from": "01:13:53,840",
+				"to": "01:13:59,440"
+			},
+			"offsets": {
+				"from": 4433840,
+				"to": 4439440
+			},
+			"text": " you don't carry a handkerchief around. He's like, no, carry a handkerchief around. Like I know that"
+		},
+		{
+			"timestamps": {
+				"from": "01:14:00,320",
+				"to": "01:14:08,240"
+			},
+			"offsets": {
+				"from": 4440320,
+				"to": 4448240
+			},
+			"text": " 50 years ago, old, more men carried around a rag that they blew their nose in, wiped their sweat"
+		},
+		{
+			"timestamps": {
+				"from": "01:14:08,240",
+				"to": "01:14:14,240"
+			},
+			"offsets": {
+				"from": 4448240,
+				"to": 4454240
+			},
+			"text": " with coughed into. I'm going to tell you though, Paul, every now and then I carry a handkerchief."
+		},
+		{
+			"timestamps": {
+				"from": "01:14:14,240",
+				"to": "01:14:19,280"
+			},
+			"offsets": {
+				"from": 4454240,
+				"to": 4459280
+			},
+			"text": " Usually if I'm wearing like a suit or something, no one, you nasty thing. I'll carry the handkerchief"
+		},
+		{
+			"timestamps": {
+				"from": "01:14:19,280",
+				"to": "01:14:22,800"
+			},
+			"offsets": {
+				"from": 4459280,
+				"to": 4462800
+			},
+			"text": " up. If like I'm wearing a suit or something or like a suit jacket, a lot of times I'll have a"
+		},
+		{
+			"timestamps": {
+				"from": "01:14:22,800",
+				"to": "01:14:28,240"
+			},
+			"offsets": {
+				"from": 4462800,
+				"to": 4468240
+			},
+			"text": " handkerchief in my, in my suit jacket pocket. Oh, as a decorative, as a decorative corner,"
+		},
+		{
+			"timestamps": {
+				"from": "01:14:28,240",
+				"to": "01:14:32,560"
+			},
+			"offsets": {
+				"from": 4468240,
+				"to": 4472560
+			},
+			"text": " as they call it. No, no, no, like in, no, in like in the inside pocket. Sewed in though, right?"
+		},
+		{
+			"timestamps": {
+				"from": "01:14:32,560",
+				"to": "01:14:39,040"
+			},
+			"offsets": {
+				"from": 4472560,
+				"to": 4479040
+			},
+			"text": " Sewed in. No, not sewn in. Functional handkerchief. Yes, but I don't blow my nose into it. What you"
+		},
+		{
+			"timestamps": {
+				"from": "01:14:39,040",
+				"to": "01:14:44,880"
+			},
+			"offsets": {
+				"from": 4479040,
+				"to": 4484880
+			},
+			"text": " don't, what do you do with it then? Yeah, like you mop your brow with it. You impart me. You might,"
+		},
+		{
+			"timestamps": {
+				"from": "01:14:44,880",
+				"to": "01:14:49,600"
+			},
+			"offsets": {
+				"from": 4484880,
+				"to": 4489600
+			},
+			"text": " you might mop a little something up with it. Or if you, if you need something, you might, you might"
+		},
+		{
+			"timestamps": {
+				"from": "01:14:49,600",
+				"to": "01:14:53,360"
+			},
+			"offsets": {
+				"from": 4489600,
+				"to": 4493360
+			},
+			"text": " wipe away a tear. You nasty thing. If you're watching an emotional film,"
+		},
+		{
+			"timestamps": {
+				"from": "01:14:57,360",
+				"to": "01:15:02,480"
+			},
+			"offsets": {
+				"from": 4497360,
+				"to": 4502480
+			},
+			"text": " you can do anything with it. This is now, this is now we're getting deep in Jacob code."
+		},
+		{
+			"timestamps": {
+				"from": "01:15:02,480",
+				"to": "01:15:07,360"
+			},
+			"offsets": {
+				"from": 4502480,
+				"to": 4507360
+			},
+			"text": " SJ, I'm going to need about 20 minutes. I'm watching an emotional film."
+		},
+		{
+			"timestamps": {
+				"from": "01:15:07,360",
+				"to": "01:15:14,320"
+			},
+			"offsets": {
+				"from": 4507360,
+				"to": 4514320
+			},
+			"text": " Yes. I actually, I actually have gym socks sewn into my tuxedo jacket."
+		},
+		{
+			"timestamps": {
+				"from": "01:15:17,840",
+				"to": "01:15:27,600"
+			},
+			"offsets": {
+				"from": 4517840,
+				"to": 4527600
+			},
+			"text": " Paul, you're up. Good Lord. Nasty spelling. For 2000. Spell the appliance usually found in"
+		},
+		{
+			"timestamps": {
+				"from": "01:15:27,600",
+				"to": "01:15:31,680"
+			},
+			"offsets": {
+				"from": 4527600,
+				"to": 4531680
+			},
+			"text": " a kitchen that is integral in food storage and maintains an optimal cooling temperature"
+		},
+		{
+			"timestamps": {
+				"from": "01:15:31,680",
+				"to": "01:15:37,680"
+			},
+			"offsets": {
+				"from": 4531680,
+				"to": 4537680
+			},
+			"text": " of 37 degrees to 41 degrees Fahrenheit, three to five degrees Celsius. Hint, not the freezer."
+		},
+		{
+			"timestamps": {
+				"from": "01:15:38,560",
+				"to": "01:15:50,800"
+			},
+			"offsets": {
+				"from": 4538560,
+				"to": 4550800
+			},
+			"text": " Ah, the car E F R I D G E R A T O R. I think you got it. Yeah. No. What'd you get wrong?"
+		},
+		{
+			"timestamps": {
+				"from": "01:15:50,800",
+				"to": "01:15:59,120"
+			},
+			"offsets": {
+				"from": 4550800,
+				"to": 4559120
+			},
+			"text": " Did you not put a D in there? Oh, you did. Yeah, you did. I did. You put the D in there."
+		},
+		{
+			"timestamps": {
+				"from": "01:15:59,120",
+				"to": "01:16:07,680"
+			},
+			"offsets": {
+				"from": 4559120,
+				"to": 4567680
+			},
+			"text": " I put my D in the refrigerator. Now we have, but at least I don't carry a handkerchief."
+		},
+		{
+			"timestamps": {
+				"from": "01:16:07,680",
+				"to": "01:16:09,680"
+			},
+			"offsets": {
+				"from": 4567680,
+				"to": 4569680
+			},
+			"text": " I was saying Smitty spelled it wrong. Is that true?"
+		},
+		{
+			"timestamps": {
+				"from": "01:16:09,680",
+				"to": "01:16:19,520"
+			},
+			"offsets": {
+				"from": 4569680,
+				"to": 4579520
+			},
+			"text": " Oh, no, no, no, no, no. There's no D, no D maybe not in your fridge. There's no D in my fridge."
+		},
+		{
+			"timestamps": {
+				"from": "01:16:19,520",
+				"to": "01:16:28,320"
+			},
+			"offsets": {
+				"from": 4579520,
+				"to": 4588320
+			},
+			"text": " My wife runs the household. Matt, you got geography questions left. And I think there are two daily"
+		},
+		{
+			"timestamps": {
+				"from": "01:16:28,320",
+				"to": "01:16:32,640"
+			},
+			"offsets": {
+				"from": 4588320,
+				"to": 4592640
+			},
+			"text": " doubles left. Only in my fridge is the defrost setting"
+		},
+		{
+			"timestamps": {
+				"from": "01:16:36,080",
+				"to": "01:16:46,800"
+			},
+			"offsets": {
+				"from": 4596080,
+				"to": 4606800
+			},
+			"text": " geography for 400. Then please daily. Oh God. Name any four of the 10 countries"
+		},
+		{
+			"timestamps": {
+				"from": "01:16:46,800",
+				"to": "01:16:57,040"
+			},
+			"offsets": {
+				"from": 4606800,
+				"to": 4617040
+			},
+			"text": " that have four letter names when written in English. Egypt. No, Chad, Chad, Chad, Iraq, Iran."
+		},
+		{
+			"timestamps": {
+				"from": "01:17:00,800",
+				"to": "01:17:10,800"
+			},
+			"offsets": {
+				"from": 4620800,
+				"to": 4630800
+			},
+			"text": " Oh shoot. Ithaca, New Jersey. No, I remember we had the 10. I was like, Oh yeah."
+		},
+		{
+			"timestamps": {
+				"from": "01:17:10,800",
+				"to": "01:17:25,280"
+			},
+			"offsets": {
+				"from": 4630800,
+				"to": 4645280
+			},
+			"text": " Damn it. Cuba. There we go. Cuba, Cuba, Chad, Cuba, Fiji, Iran, Iraq, Laos,"
+		},
+		{
+			"timestamps": {
+				"from": "01:17:26,320",
+				"to": "01:17:34,240"
+			},
+			"offsets": {
+				"from": 4646320,
+				"to": 4654240
+			},
+			"text": " Malay, Mali. That's right. And Togo. Last time we collectively named three and the test"
+		},
+		{
+			"timestamps": {
+				"from": "01:17:34,240",
+				"to": "01:17:45,520"
+			},
+			"offsets": {
+				"from": 4654240,
+				"to": 4665520
+			},
+			"text": " checks out. We almost did it again. We did. I guess it's me. I guess I'll do geography for 800."
+		},
+		{
+			"timestamps": {
+				"from": "01:17:45,520",
+				"to": "01:17:52,720"
+			},
+			"offsets": {
+				"from": 4665520,
+				"to": 4672720
+			},
+			"text": " Shit. It's the other daily double. They're both still out there. Not anymore. Name four of the"
+		},
+		{
+			"timestamps": {
+				"from": "01:17:52,720",
+				"to": "01:17:58,080"
+			},
+			"offsets": {
+				"from": 4672720,
+				"to": 4678080
+			},
+			"text": " 17 states whose state capital is also its most populous city. Hinton, Nevada is not one of the"
+		},
+		{
+			"timestamps": {
+				"from": "01:17:58,080",
+				"to": "01:18:07,520"
+			},
+			"offsets": {
+				"from": 4678080,
+				"to": 4687520
+			},
+			"text": " 17. Let's see. California. No, California is not going to be California city. Pennsylvania. I'll bet"
+		},
+		{
+			"timestamps": {
+				"from": "01:18:07,520",
+				"to": "01:18:12,880"
+			},
+			"offsets": {
+				"from": 4687520,
+				"to": 4692880
+			},
+			"text": " California city. Oh yeah. Pennsylvania. That's, that's going to be one. Philly is going to be more"
+		},
+		{
+			"timestamps": {
+				"from": "01:18:12,880",
+				"to": "01:18:16,560"
+			},
+			"offsets": {
+				"from": 4692880,
+				"to": 4696560
+			},
+			"text": " popular. Yeah. Philly Philly is going to have the most populous in Pennsylvania. So yeah. So"
+		},
+		{
+			"timestamps": {
+				"from": "01:18:16,560",
+				"to": "01:18:25,120"
+			},
+			"offsets": {
+				"from": 4696560,
+				"to": 4705120
+			},
+			"text": " Pennsylvania is one of them. Uh, Louisiana is not one Kentucky, Kentucky, Kentucky's one. Oh wait,"
+		},
+		{
+			"timestamps": {
+				"from": "01:18:25,120",
+				"to": "01:18:28,400"
+			},
+			"offsets": {
+				"from": 4705120,
+				"to": 4708400
+			},
+			"text": " Frankfurt, not Louisville. That's right. Yeah. Nobody lives in fucking Frankfurt."
+		},
+		{
+			"timestamps": {
+				"from": "01:18:28,400",
+				"to": "01:18:39,520"
+			},
+			"offsets": {
+				"from": 4708400,
+				"to": 4719520
+			},
+			"text": " Just the crooks that run the fucking Commonwealth into the ground. Wow. Let's see. New York city is"
+		},
+		{
+			"timestamps": {
+				"from": "01:18:39,520",
+				"to": "01:18:47,120"
+			},
+			"offsets": {
+				"from": 4719520,
+				"to": 4727120
+			},
+			"text": " not the, uh, my old Kentucky home. These nuts. Let's see. Uh, I think, uh, oh, I think, uh,"
+		},
+		{
+			"timestamps": {
+				"from": "01:18:47,120",
+				"to": "01:18:52,560"
+			},
+			"offsets": {
+				"from": 4727120,
+				"to": 4732560
+			},
+			"text": " Nebraska. I think Lincoln is the state capital of Nebraska. A bunch of people live in there."
+		},
+		{
+			"timestamps": {
+				"from": "01:18:52,560",
+				"to": "01:18:58,800"
+			},
+			"offsets": {
+				"from": 4732560,
+				"to": 4738800
+			},
+			"text": " Yeah. Uh, that's, I think that's where everybody lives there. I bet Honolulu is the most populous"
+		},
+		{
+			"timestamps": {
+				"from": "01:18:58,800",
+				"to": "01:19:05,280"
+			},
+			"offsets": {
+				"from": 4738800,
+				"to": 4745280
+			},
+			"text": " of Hawaii. Oh, I don't know. Where else they live in? I'm trying to think. The rest of it's all"
+		},
+		{
+			"timestamps": {
+				"from": "01:19:05,280",
+				"to": "01:19:14,960"
+			},
+			"offsets": {
+				"from": 4745280,
+				"to": 4754960
+			},
+			"text": " volcano. I think you're right. Maui, Maui, Maui, Maui, Maui. And let's see one other one. Let's see."
+		},
+		{
+			"timestamps": {
+				"from": "01:19:14,960",
+				"to": "01:19:23,600"
+			},
+			"offsets": {
+				"from": 4754960,
+				"to": 4763600
+			},
+			"text": " Uh, a little, one of the little States, um, Rhode Island."
+		},
+		{
+			"timestamps": {
+				"from": "01:19:23,600",
+				"to": "01:19:32,080"
+			},
+			"offsets": {
+				"from": 4763600,
+				"to": 4772080
+			},
+			"text": " What's the capital Rhode Island? Uh, Hawaii was, I think it's Providence, right? Okay."
+		},
+		{
+			"timestamps": {
+				"from": "01:19:32,080",
+				"to": "01:19:38,480"
+			},
+			"offsets": {
+				"from": 4772080,
+				"to": 4778480
+			},
+			"text": " Rhode Island's one. Hawaii's one. I don't remember what else I said. You said Pennsylvania."
+		},
+		{
+			"timestamps": {
+				"from": "01:19:38,480",
+				"to": "01:19:44,480"
+			},
+			"offsets": {
+				"from": 4778480,
+				"to": 4784480
+			},
+			"text": " Oh, I did say Pennsylvania. Is that on there? Pennsylvania. Not on the list. No wonder what it"
+		},
+		{
+			"timestamps": {
+				"from": "01:19:44,480",
+				"to": "01:19:49,920"
+			},
+			"offsets": {
+				"from": 4784480,
+				"to": 4789920
+			},
+			"text": " is in Pennsylvania. I guess it's a Pittsburgh. Must be Pittsburgh. Oh, that doesn't make any,"
+		},
+		{
+			"timestamps": {
+				"from": "01:19:49,920",
+				"to": "01:19:54,960"
+			},
+			"offsets": {
+				"from": 4789920,
+				"to": 4794960
+			},
+			"text": " is Pittsburgh more populous than Philly? Well, I think that's exactly the question. Paul, you're up."
+		},
+		{
+			"timestamps": {
+				"from": "01:20:00,560",
+				"to": "01:20:04,720"
+			},
+			"offsets": {
+				"from": 4800560,
+				"to": 4804720
+			},
+			"text": " Oh, you guys, you guys are throwing shade of Lancaster. That's what's going on."
+		},
+		{
+			"timestamps": {
+				"from": "01:20:04,720",
+				"to": "01:20:09,520"
+			},
+			"offsets": {
+				"from": 4804720,
+				"to": 4809520
+			},
+			"text": " Philadelphia is not the, Philadelphia is not the capital. That's the problem. Oh,"
+		},
+		{
+			"timestamps": {
+				"from": "01:20:09,520",
+				"to": "01:20:20,400"
+			},
+			"offsets": {
+				"from": 4809520,
+				"to": 4820400
+			},
+			"text": " that's the entire issue there. Uh, fatal flaw. Uh, misspoke there."
+		},
+		{
+			"timestamps": {
+				"from": "01:20:20,400",
+				"to": "01:20:28,640"
+			},
+			"offsets": {
+				"from": 4820400,
+				"to": 4828640
+			},
+			"text": " Paul, you had geography for 1200 to 2000. 2000. Let's shoot the moon daddy. Name one of the three"
+		},
+		{
+			"timestamps": {
+				"from": "01:20:28,640",
+				"to": "01:20:34,080"
+			},
+			"offsets": {
+				"from": 4828640,
+				"to": 4834080
+			},
+			"text": " states that shares a border with both a state that borders Canada and with a different state"
+		},
+		{
+			"timestamps": {
+				"from": "01:20:34,080",
+				"to": "01:20:41,200"
+			},
+			"offsets": {
+				"from": 4834080,
+				"to": 4841200
+			},
+			"text": " that borders Mexico. What are the three states? So there are only three of these California three"
+		},
+		{
+			"timestamps": {
+				"from": "01:20:41,200",
+				"to": "01:20:47,520"
+			},
+			"offsets": {
+				"from": 4841200,
+				"to": 4847520
+			},
+			"text": " states that shares a border with both a state that borders Canada and a state that borders Mexico."
+		},
+		{
+			"timestamps": {
+				"from": "01:20:47,520",
+				"to": "01:20:53,360"
+			},
+			"offsets": {
+				"from": 4847520,
+				"to": 4853360
+			},
+			"text": " California. I don't think California shares a border with a state that borders Canada."
+		},
+		{
+			"timestamps": {
+				"from": "01:20:55,040",
+				"to": "01:21:01,760"
+			},
+			"offsets": {
+				"from": 4855040,
+				"to": 4861760
+			},
+			"text": " Oregon, Nevada, and Utah. Oh, Washington and Oregon border, Canada and California and Arizona"
+		},
+		{
+			"timestamps": {
+				"from": "01:21:01,760",
+				"to": "01:21:07,680"
+			},
+			"offsets": {
+				"from": 4861760,
+				"to": 4867680
+			},
+			"text": " borders Mexico. California borders Arizona, which borders Mexico, but it doesn't border anything"
+		},
+		{
+			"timestamps": {
+				"from": "01:21:07,680",
+				"to": "01:21:16,240"
+			},
+			"offsets": {
+				"from": 4867680,
+				"to": 4876240
+			},
+			"text": " that borders Canada. Okay. Close it out. The category already winning anyway. Uh, Matt back"
+		},
+		{
+			"timestamps": {
+				"from": "01:21:16,240",
+				"to": "01:21:21,120"
+			},
+			"offsets": {
+				"from": 4876240,
+				"to": 4881120
+			},
+			"text": " in control of Smitty scooperties, uh, geography for 1200. That's only cause two of my questions"
+		},
+		{
+			"timestamps": {
+				"from": "01:21:21,120",
+				"to": "01:21:27,920"
+			},
+			"offsets": {
+				"from": 4881120,
+				"to": 4887920
+			},
+			"text": " are reduced. Two of my questions. I took the quiz earlier. That's the point of the scooperty. There's"
+		},
+		{
+			"timestamps": {
+				"from": "01:21:27,920",
+				"to": "01:21:34,880"
+			},
+			"offsets": {
+				"from": 4887920,
+				"to": 4894880
+			},
+			"text": " Smitty scooperties. Yeah. Yeah. The four corners monument. The only quadra point in the USA"
+		},
+		{
+			"timestamps": {
+				"from": "01:21:34,880",
+				"to": "01:21:42,720"
+			},
+			"offsets": {
+				"from": 4894880,
+				"to": 4902720
+			},
+			"text": " is where Utah, Arizona, New Mexico, and what other state meet? Uh, I get this wrong every time."
+		},
+		{
+			"timestamps": {
+				"from": "01:21:44,160",
+				"to": "01:22:00,960"
+			},
+			"offsets": {
+				"from": 4904160,
+				"to": 4920960
+			},
+			"text": " So I will pass that passes to me. I of course know the state. I will pass Paul, Utah,"
+		},
+		{
+			"timestamps": {
+				"from": "01:22:00,960",
+				"to": "01:22:14,320"
+			},
+			"offsets": {
+				"from": 4920960,
+				"to": 4934320
+			},
+			"text": " Arizona, New Mexico, and Oklahoma where the wind blows through the planes. It might be pass. Oh,"
+		},
+		{
+			"timestamps": {
+				"from": "01:22:14,320",
+				"to": "01:22:21,120"
+			},
+			"offsets": {
+				"from": 4934320,
+				"to": 4941120
+			},
+			"text": " Jesus. Colorado, New Mexico, and Arizona. Last time Paul said Idaho, Montana, Nebraska, and Italy."
+		},
+		{
+			"timestamps": {
+				"from": "01:22:24,640",
+				"to": "01:22:31,600"
+			},
+			"offsets": {
+				"from": 4944640,
+				"to": 4951600
+			},
+			"text": " I was being facetious. That is the game. Matt crushed us with 6,400. Paul is in second with"
+		},
+		{
+			"timestamps": {
+				"from": "01:22:31,600",
+				"to": "01:22:36,720"
+			},
+			"offsets": {
+				"from": 4951600,
+				"to": 4956720
+			},
+			"text": " negative 1,600. I'm in third with negative 2,000. That's from Smitty scoop. Thank you. Smitty scoop."
+		},
+		{
+			"timestamps": {
+				"from": "01:22:36,720",
+				"to": "01:22:40,880"
+			},
+			"offsets": {
+				"from": 4956720,
+				"to": 4960880
+			},
+			"text": " If you want to send us a scooperty or price of Sprite jock versus nerd or an obelisk jock versus"
+		},
+		{
+			"timestamps": {
+				"from": "01:22:40,880",
+				"to": "01:22:45,840"
+			},
+			"offsets": {
+				"from": 4960880,
+				"to": 4965840
+			},
+			"text": " nerd, head over to Hey scoops.com right there on the homepage. You can send us any of those things."
+		},
+		{
+			"timestamps": {
+				"from": "01:22:45,840",
+				"to": "01:22:50,000"
+			},
+			"offsets": {
+				"from": 4965840,
+				"to": 4970000
+			},
+			"text": " You could send us some scoop mail, do all the things right over there at Hey scoops.com."
+		},
+		{
+			"timestamps": {
+				"from": "01:22:50,960",
+				"to": "01:22:54,720"
+			},
+			"offsets": {
+				"from": 4970960,
+				"to": 4974720
+			},
+			"text": " All I have to do is picture the cross country drives I've done. And it always surprised me"
+		},
+		{
+			"timestamps": {
+				"from": "01:22:54,720",
+				"to": "01:22:58,000"
+			},
+			"offsets": {
+				"from": 4974720,
+				"to": 4978000
+			},
+			"text": " that Utah goes right into Colorado, but I do remember that from driving."
+		},
+		{
+			"timestamps": {
+				"from": "01:22:58,000",
+				"to": "01:23:03,600"
+			},
+			"offsets": {
+				"from": 4978000,
+				"to": 4983600
+			},
+			"text": " So I have to just remember these trips next time I do it. I have gone and stood on the"
+		},
+		{
+			"timestamps": {
+				"from": "01:23:03,600",
+				"to": "01:23:09,040"
+			},
+			"offsets": {
+				"from": 4983600,
+				"to": 4989040
+			},
+			"text": " four corners thing multiple times and I can never remember which states they are. Did you take a"
+		},
+		{
+			"timestamps": {
+				"from": "01:23:09,040",
+				"to": "01:23:13,840"
+			},
+			"offsets": {
+				"from": 4989040,
+				"to": 4993840
+			},
+			"text": " picture? I'm sure I have. It's just him sitting there and everything just says question mark,"
+		},
+		{
+			"timestamps": {
+				"from": "01:23:13,840",
+				"to": "01:23:19,600"
+			},
+			"offsets": {
+				"from": 4993840,
+				"to": 4999600
+			},
+			"text": " question mark, question mark, question mark. This place is not labeled well at all."
+		},
+		{
+			"timestamps": {
+				"from": "01:23:21,120",
+				"to": "01:23:29,040"
+			},
+			"offsets": {
+				"from": 5001120,
+				"to": 5009040
+			},
+			"text": " Thank you. Smitty scoop. I want to thank all of the scoops. We're starting off a brand new year"
+		},
+		{
+			"timestamps": {
+				"from": "01:23:29,040",
+				"to": "01:23:33,760"
+			},
+			"offsets": {
+				"from": 5009040,
+				"to": 5013760
+			},
+			"text": " and we appreciate all of us, all of you guys who are spending your time during your week,"
+		},
+		{
+			"timestamps": {
+				"from": "01:23:33,760",
+				"to": "01:23:38,480"
+			},
+			"offsets": {
+				"from": 5013760,
+				"to": 5018480
+			},
+			"text": " putting us in your ears, whether you're driving your cars, wash your dishes, walk your dog,"
+		},
+		{
+			"timestamps": {
+				"from": "01:23:38,480",
+				"to": "01:23:44,480"
+			},
+			"offsets": {
+				"from": 5018480,
+				"to": 5024480
+			},
+			"text": " go to the gym, sitting at home, going in the shower, whatever it takes. We furiously masturbating"
+		},
+		{
+			"timestamps": {
+				"from": "01:23:45,200",
+				"to": "01:23:54,240"
+			},
+			"offsets": {
+				"from": 5025200,
+				"to": 5034240
+			},
+			"text": " awkwardly or casually, making a real meal of it. You know, just thank you so much. We really"
+		},
+		{
+			"timestamps": {
+				"from": "01:23:54,240",
+				"to": "01:23:58,400"
+			},
+			"offsets": {
+				"from": 5034240,
+				"to": 5038400
+			},
+			"text": " appreciate it. If you want to turn someone onto our podcast, and I really suggest you lead this"
+		},
+		{
+			"timestamps": {
+				"from": "01:23:58,400",
+				"to": "01:24:03,440"
+			},
+			"offsets": {
+				"from": 5038400,
+				"to": 5043440
+			},
+			"text": " one forward right away. If you know someone out there who could use goose, the musical in their"
+		},
+		{
+			"timestamps": {
+				"from": "01:24:03,440",
+				"to": "01:24:21,840"
+			},
+			"offsets": {
+				"from": 5043440,
+				"to": 5061840
+			},
+			"text": " life, they'll shave every one of us before surgery. Go ahead and just choose one person,"
+		},
+		{
+			"timestamps": {
+				"from": "01:24:21,840",
+				"to": "01:24:27,120"
+			},
+			"offsets": {
+				"from": 5061840,
+				"to": 5067120
+			},
+			"text": " one person only. Otherwise it's a pyramid scheme and those are shady schemes. Don't"
+		},
+		{
+			"timestamps": {
+				"from": "01:24:27,120",
+				"to": "01:24:32,480"
+			},
+			"offsets": {
+				"from": 5067120,
+				"to": 5072480
+			},
+			"text": " talk about the tiny pyramid at the top of the obelisk. It's not at the top of every obelisk."
+		},
+		{
+			"timestamps": {
+				"from": "01:24:32,480",
+				"to": "01:24:38,560"
+			},
+			"offsets": {
+				"from": 5072480,
+				"to": 5078560
+			},
+			"text": " Yeah. So don't talk about it. If you have a friend who knows Italy's not in the four corners,"
+		},
+		{
+			"timestamps": {
+				"from": "01:24:38,560",
+				"to": "01:24:43,200"
+			},
+			"offsets": {
+				"from": 5078560,
+				"to": 5083200
+			},
+			"text": " turn them onto this show. This is the moment we thank the people who support us on Patreon. It's"
+		},
+		{
+			"timestamps": {
+				"from": "01:24:43,200",
+				"to": "01:24:46,400"
+			},
+			"offsets": {
+				"from": 5083200,
+				"to": 5086400
+			},
+			"text": " a brand new month. We're going to get a list together for this month, but we of course thank"
+		},
+		{
+			"timestamps": {
+				"from": "01:24:46,400",
+				"to": "01:24:54,080"
+			},
+			"offsets": {
+				"from": 5086400,
+				"to": 5094080
+			},
+			"text": " the people who find it in their hearts and in their wallets to support us. It's not even the"
+		},
+		{
+			"timestamps": {
+				"from": "01:24:54,080",
+				"to": "01:25:02,320"
+			},
+			"offsets": {
+				"from": 5094080,
+				"to": 5102320
+			},
+			"text": " Pac-Man of the pie chart. It's a Pac-Man with his eyes closed and his mouth closed. It's the full"
+		},
+		{
+			"timestamps": {
+				"from": "01:25:02,320",
+				"to": "01:25:08,560"
+			},
+			"offsets": {
+				"from": 5102320,
+				"to": 5108560
+			},
+			"text": " Pac-Man with a sliver of a thing that says ad revenue from Twitch and our podcast. So please"
+		},
+		{
+			"timestamps": {
+				"from": "01:25:08,560",
+				"to": "01:25:16,640"
+			},
+			"offsets": {
+				"from": 5108560,
+				"to": 5116640
+			},
+			"text": " know that we basically run ads for show to feel like we're professionals, but we really just rely"
+		},
+		{
+			"timestamps": {
+				"from": "01:25:16,640",
+				"to": "01:25:24,560"
+			},
+			"offsets": {
+				"from": 5116640,
+				"to": 5124560
+			},
+			"text": " people backing us on Patreon. I'm only laughing because it's so true. So please, if you haven't"
+		},
+		{
+			"timestamps": {
+				"from": "01:25:24,560",
+				"to": "01:25:30,480"
+			},
+			"offsets": {
+				"from": 5124560,
+				"to": 5130480
+			},
+			"text": " supported us yet and you have and you want to, please find a tier that fits your budget over"
+		},
+		{
+			"timestamps": {
+				"from": "01:25:30,480",
+				"to": "01:25:53,040"
+			},
+			"offsets": {
+				"from": 5130480,
+				"to": 5153040
+			},
+			"text": " at PreachingFun.com. Or if you, like me, know that the word basically was doing a lot of heavy"
+		},
+		{
+			"timestamps": {
+				"from": "01:25:53,040",
+				"to": "01:26:07,520"
+			},
+			"offsets": {
+				"from": 5153040,
+				"to": 5167520
+			},
+			"text": " lifting in Matt's sentence, go over fartsinabag.biz. That's fartsinabag.biz that along with"
+		},
+		{
+			"timestamps": {
+				"from": "01:26:07,520",
+				"to": "01:26:11,520"
+			},
+			"offsets": {
+				"from": 5167520,
+				"to": 5171520
+			},
+			"text": " PreachingFun.com. It takes you over to our Patreon page where for as little as $3 a month,"
+		},
+		{
+			"timestamps": {
+				"from": "01:26:11,520",
+				"to": "01:26:15,920"
+			},
+			"offsets": {
+				"from": 5171520,
+				"to": 5175920
+			},
+			"text": " you can upkeep this show on the air. Like Matt said, we are dependent on our Patreons. We love"
+		},
+		{
+			"timestamps": {
+				"from": "01:26:15,920",
+				"to": "01:26:20,160"
+			},
+			"offsets": {
+				"from": 5175920,
+				"to": 5180160
+			},
+			"text": " each and every one of you. Thank you so much. I should maybe just show the Patreons the email"
+		},
+		{
+			"timestamps": {
+				"from": "01:26:20,160",
+				"to": "01:26:23,840"
+			},
+			"offsets": {
+				"from": 5180160,
+				"to": 5183840
+			},
+			"text": " we got for last month for like, \"Hey, money's coming your way.\" And then I clicked on it and"
+		},
+		{
+			"timestamps": {
+				"from": "01:26:23,840",
+				"to": "01:26:32,240"
+			},
+			"offsets": {
+				"from": 5183840,
+				"to": 5192240
+			},
+			"text": " went like, \"What?\" From the ad revenue? Put it this way, our podcast company could not buy"
+		},
+		{
+			"timestamps": {
+				"from": "01:26:32,240",
+				"to": "01:26:39,920"
+			},
+			"offsets": {
+				"from": 5192240,
+				"to": 5199920
+			},
+			"text": " Jacob and Jameson on New Year's Eve. Oh no. And they're pretty reasonably priced. They're"
+		},
+		{
+			"timestamps": {
+				"from": "01:26:39,920",
+				"to": "01:26:47,440"
+			},
+			"offsets": {
+				"from": 5199920,
+				"to": 5207440
+			},
+			"text": " pretty reasonably priced. Oh no. That's right. We are dependent on our Patreon supporters out"
+		},
+		{
+			"timestamps": {
+				"from": "01:26:47,440",
+				"to": "01:26:53,440"
+			},
+			"offsets": {
+				"from": 5207440,
+				"to": 5213440
+			},
+			"text": " there. As little as $3, you could do the support every month. You can do it for the year. If you"
+		},
+		{
+			"timestamps": {
+				"from": "01:26:53,440",
+				"to": "01:26:57,920"
+			},
+			"offsets": {
+				"from": 5213440,
+				"to": 5217920
+			},
+			"text": " do it for the year, you get a little discount on there. And it really helps us out. It lets"
+		},
+		{
+			"timestamps": {
+				"from": "01:26:57,920",
+				"to": "01:27:03,680"
+			},
+			"offsets": {
+				"from": 5217920,
+				"to": 5223680
+			},
+			"text": " us do this thing that hopefully you're enjoying as well. Yeah. And if we break over a certain"
+		},
+		{
+			"timestamps": {
+				"from": "01:27:03,680",
+				"to": "01:27:08,160"
+			},
+			"offsets": {
+				"from": 5223680,
+				"to": 5228160
+			},
+			"text": " month, rather than give you a bonus episode, we will go to community college for geography."
+		},
+		{
+			"timestamps": {
+				"from": "01:27:08,160",
+				"to": "01:27:15,040"
+			},
+			"offsets": {
+				"from": 5228160,
+				"to": 5235040
+			},
+			"text": " That's what we will do. We'll take a CSN course. Speak for yourself. I'd rather bonus episode."
+		},
+		{
+			"timestamps": {
+				"from": "01:27:18,000",
+				"to": "01:27:21,920"
+			},
+			"offsets": {
+				"from": 5238000,
+				"to": 5241920
+			},
+			"text": " Uh, thanks for everybody. Stay safe out there. We love you and we'll see you soon."
+		},
+		{
+			"timestamps": {
+				"from": "01:27:47,440",
+				"to": "01:27:55,200"
+			},
+			"offsets": {
+				"from": 5267440,
+				"to": 5275200
+			},
+			"text": " We're sending that preaching smarts."
+		},
+		{
+			"timestamps": {
+				"from": "01:27:55,200",
+				"to": "01:28:06,560"
+			},
+			"offsets": {
+				"from": 5275200,
+				"to": 5286560
+			},
+			"text": " Never claimed to be paying extra for tire care is BS, you know, bad service. So at Midas,"
+		},
+		{
+			"timestamps": {
+				"from": "01:28:06,560",
+				"to": "01:28:11,600"
+			},
+			"offsets": {
+				"from": 5286560,
+				"to": 5291600
+			},
+			"text": " we're rolling out our BS free tire guarantee included with paid installation and tax on every"
+		},
+		{
+			"timestamps": {
+				"from": "01:28:11,600",
+				"to": "01:28:17,040"
+			},
+			"offsets": {
+				"from": 5291600,
+				"to": 5297040
+			},
+			"text": " purchase. You'll pay nothing for flat replacements, nada for flat repairs and Zilch for tire"
+		},
+		{
+			"timestamps": {
+				"from": "01:28:17,040",
+				"to": "01:28:23,520"
+			},
+			"offsets": {
+				"from": 5297040,
+				"to": 5303520
+			},
+			"text": " rotations every 5,000 miles. That's $0 for all that. So with this limited lifetime tire guarantee,"
+		},
+		{
+			"timestamps": {
+				"from": "01:28:23,520",
+				"to": "01:28:27,760"
+			},
+			"offsets": {
+				"from": 5303520,
+				"to": 5307760
+			},
+			"text": " you'll pay a whole lot of nothing compared to what the other guys charge for tire care."
+		},
+		{
+			"timestamps": {
+				"from": "01:28:27,760",
+				"to": "01:28:31,360"
+			},
+			"offsets": {
+				"from": 5307760,
+				"to": 5311360
+			},
+			"text": " That's the BS free tire guarantee only at Midas."
+		}
+	]
+}

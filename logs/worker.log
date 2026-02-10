@@ -1,0 +1,59 @@
+/Users/ryan/Desktop/Projects/ice-cream-social-app/venv/lib/python3.9/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+
+╔══════════════════════════════════════════════════════════════╗
+║                                                              ║
+║   🍦  ICE CREAM SOCIAL TRANSCRIPTION WORKER  🍦             ║
+║                                                              ║
+║   Automatically transcribing podcast episodes                ║
+║   Using Faster-Whisper AI                                   ║
+║                                                              ║
+╚══════════════════════════════════════════════════════════════╝
+
+                              Worker Configuration                              
+┌────────────────┬─────────────────────────────────────────────────────────────┐
+│ Watching       │ /Users/ryan/Desktop/Projects/ice-cream-social-app/scripts/… │
+│ Output         │ /Users/ryan/Desktop/Projects/ice-cream-social-app/scripts/… │
+│ Model          │ small                                                       │
+│ Check Interval │ 60s                                                         │
+└────────────────┴─────────────────────────────────────────────────────────────┘
+
+ℹ️  Worker ready. Waiting for episodes to be added to queue via UI...
+💤 No files to process. Waiting for new episodes...
+/Users/ryan/Desktop/Projects/ice-cream-social-app/venv/lib/python3.9/site-packages/faster_whisper/feature_extractor.py:224: RuntimeWarning: divide by zero encountered in matmul
+  mel_spec = self.mel_filters @ magnitudes
+/Users/ryan/Desktop/Projects/ice-cream-social-app/venv/lib/python3.9/site-packages/faster_whisper/feature_extractor.py:224: RuntimeWarning: overflow encountered in matmul
+  mel_spec = self.mel_filters @ magnitudes
+/Users/ryan/Desktop/Projects/ice-cream-social-app/venv/lib/python3.9/site-packages/faster_whisper/feature_extractor.py:224: RuntimeWarning: invalid value encountered in matmul
+  mel_spec = self.mel_filters @ magnitudes
+
+Transcribing: /Users/ryan/Desktop/Projects/ice-cream-social-app/scripts/episodes/1268 - Ad Free 1268 Interview With The Jazz Demon.mp3
+Processing segments...
+Completed in 98761.1 seconds
+Detected language: en (99.6% confidence)
+Saved JSON: /Users/ryan/Desktop/Projects/ice-cream-social-app/scripts/transcripts/1268 - Ad Free 1268 Interview With The Jazz Demon.json
+Saved text: /Users/ryan/Desktop/Projects/ice-cream-social-app/scripts/transcripts/1268 - Ad Free 1268 Interview With The Jazz Demon.txt
+Saved SRT: /Users/ryan/Desktop/Projects/ice-cream-social-app/scripts/transcripts/1268 - Ad Free 1268 Interview With The Jazz Demon.srt
+Saved Markdown: /Users/ryan/Desktop/Projects/ice-cream-social-app/scripts/transcripts/1268 - Ad Free 1268 Interview With The Jazz Demon.md
+
+Transcribing: /Users/ryan/Desktop/Projects/ice-cream-social-app/scripts/episodes/1267 - Ad Free 1267 OppenSockHoppenheimer.mp3
+Processing segments...
+Completed in 78185.8 seconds
+Detected language: en (99.4% confidence)
+Saved JSON: /Users/ryan/Desktop/Projects/ice-cream-social-app/scripts/transcripts/1267 - Ad Free 1267 OppenSockHoppenheimer.json
+Saved text: /Users/ryan/Desktop/Projects/ice-cream-social-app/scripts/transcripts/1267 - Ad Free 1267 OppenSockHoppenheimer.txt
+Saved SRT: /Users/ryan/Desktop/Projects/ice-cream-social-app/scripts/transcripts/1267 - Ad Free 1267 OppenSockHoppenheimer.srt
+Saved Markdown: /Users/ryan/Desktop/Projects/ice-cream-social-app/scripts/transcripts/1267 - Ad Free 1267 OppenSockHoppenheimer.md
+💤 No files to process. Waiting for new episodes...
+
+============================================================
+🍦 TRANSCRIPTION WORKER STOPPED
+============================================================
+┌───────────────┬───────────┐
+│ Total Runtime │ 149:05:23 │
+│ Completed     │ 0         │
+│ Pending       │ 0         │
+│ Failed        │ 0         │
+└───────────────┴───────────┘
+============================================================
+

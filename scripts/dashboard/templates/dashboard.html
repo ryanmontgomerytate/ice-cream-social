@@ -1,0 +1,1188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🍦 Ice Cream Social - Transcription Dashboard</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-primary: #1a1d29;
+            --bg-secondary: #252836;
+            --bg-card: #2d3142;
+            --text-primary: #ffffff;
+            --text-secondary: #b0b3c1;
+            --accent: #5b8dff;
+            --success: #4caf50;
+            --warning: #ff9800;
+            --error: #f44336;
+            --border: #3a3d4f;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+        }
+
+        .header {
+            background: var(--bg-secondary);
+            padding: 1.5rem 2rem;
+            border-bottom: 2px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .header h1 {
+            font-size: 1.8rem;
+            font-weight: 600;
+        }
+
+        .status-badge {
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+
+        .status-active {
+            background: var(--success);
+            color: white;
+        }
+
+        .status-idle {
+            background: var(--bg-card);
+            color: var(--text-secondary);
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: var(--bg-card);
+            padding: 1.5rem;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            cursor: pointer;
+            transition: transform 0.2s, border-color 0.2s;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-2px);
+            border-color: var(--accent);
+        }
+
+        .stat-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin: 0.5rem 0;
+        }
+
+        .stat-label {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .section {
+            background: var(--bg-card);
+            padding: 1.5rem;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            margin-bottom: 1.5rem;
+        }
+
+        .section-title {
+            font-size: 1.3rem;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .section-title-text {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid var(--border);
+        }
+
+        .tab {
+            padding: 0.75rem 1.5rem;
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 500;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+            transition: all 0.2s;
+        }
+
+        .tab:hover {
+            color: var(--text-primary);
+        }
+
+        .tab.active {
+            color: var(--accent);
+            border-bottom-color: var(--accent);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .search-bar {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .search-input {
+            flex: 1;
+            padding: 0.75rem;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 0.95rem;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .filter-select {
+            padding: 0.75rem;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-primary);
+            cursor: pointer;
+        }
+
+        .episode-list {
+            list-style: none;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+
+        .episode-item {
+            padding: 1rem;
+            background: var(--bg-secondary);
+            margin-bottom: 0.5rem;
+            border-radius: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .episode-item:hover {
+            background: var(--bg-primary);
+        }
+
+        .episode-info {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .episode-checkbox {
+            cursor: pointer;
+            width: 18px;
+            height: 18px;
+        }
+
+        .episode-title {
+            font-weight: 500;
+            margin-bottom: 0.25rem;
+        }
+
+        .episode-meta {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+        }
+
+        .episode-actions {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+
+        .btn {
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: opacity 0.2s;
+        }
+
+        .btn:hover:not(:disabled) {
+            opacity: 0.8;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: white;
+        }
+
+        .btn-success {
+            background: var(--success);
+            color: white;
+        }
+
+        .btn-small {
+            padding: 0.35rem 0.75rem;
+            font-size: 0.85rem;
+        }
+
+        .badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+
+        .badge-processing {
+            background: var(--accent);
+        }
+
+        .badge-completed {
+            background: var(--success);
+        }
+
+        .badge-pending {
+            background: var(--warning);
+        }
+
+        .badge-downloaded {
+            background: var(--success);
+        }
+
+        .badge-available {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+        }
+
+        .badge-failed {
+            background: var(--error);
+        }
+
+        .queue-item {
+            padding: 1rem;
+            background: var(--bg-secondary);
+            margin-bottom: 0.5rem;
+            border-radius: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .queue-item.processing {
+            border-left: 4px solid var(--accent);
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: var(--text-secondary);
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid var(--bg-secondary);
+            border-top: 3px solid var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: var(--bg-card);
+            border-radius: 12px;
+            max-width: 900px;
+            width: 90%;
+            max-height: 90vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .modal-header {
+            padding: 1.5rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            color: var(--text-primary);
+            font-size: 2rem;
+            cursor: pointer;
+            padding: 0;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-body {
+            padding: 1.5rem;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .modal-footer {
+            padding: 1rem 1.5rem;
+            border-top: 1px solid var(--border);
+            display: flex;
+            gap: 0.5rem;
+            justify-content: flex-end;
+        }
+
+        .transcript-content {
+            background: var(--bg-primary);
+            padding: 1rem;
+            border-radius: 8px;
+            font-family: 'Monaco', 'Courier New', monospace;
+            font-size: 0.9rem;
+            line-height: 1.8;
+            white-space: pre-wrap;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        .transcript-search {
+            margin-bottom: 1rem;
+        }
+
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+        }
+
+        @media (max-width: 768px) {
+            .grid-2 {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--bg-secondary);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--text-secondary);
+        }
+
+        .progress-bar {
+            background: var(--bg-secondary);
+            height: 8px;
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 1rem 0;
+        }
+
+        .progress-fill {
+            background: var(--accent);
+            height: 100%;
+            transition: width 0.3s ease;
+        }
+
+        .batch-controls {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+            padding: 0.75rem;
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            align-items: center;
+        }
+
+        .batch-controls-left {
+            flex: 1;
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+
+        .notification {
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            background: var(--bg-card);
+            padding: 1rem 1.5rem;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            z-index: 1001;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        .notification.success {
+            border-left: 4px solid var(--success);
+        }
+
+        .notification.error {
+            border-left: 4px solid var(--error);
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🍦 Ice Cream Social Transcription</h1>
+        <span id="worker-status" class="status-badge status-idle">Connecting...</span>
+    </div>
+
+    <div class="container">
+        <!-- Statistics -->
+        <div class="stats-grid">
+            <div class="stat-card" onclick="filterEpisodes('all')">
+                <div class="stat-label">Total Episodes</div>
+                <div class="stat-value" id="stat-total">0</div>
+            </div>
+            <div class="stat-card" onclick="filterEpisodes('completed')">
+                <div class="stat-label">Transcribed</div>
+                <div class="stat-value" id="stat-transcribed" style="color: var(--success);">0</div>
+            </div>
+            <div class="stat-card" onclick="filterEpisodes('pending')">
+                <div class="stat-label">Pending</div>
+                <div class="stat-value" id="stat-pending" style="color: var(--warning);">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Completion</div>
+                <div class="stat-value" id="stat-completion" style="color: var(--accent);">0%</div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progress-fill" style="width: 0%"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Current Activity -->
+        <div class="section">
+            <div class="section-title">
+                <div class="section-title-text">
+                    <span>⚡</span>
+                    <span>Current Activity</span>
+                </div>
+            </div>
+            <div id="current-activity">
+                <div class="empty-state">No active transcription</div>
+            </div>
+        </div>
+
+        <!-- Episodes with Tabs -->
+        <div class="section">
+            <div class="section-title">
+                <div class="section-title-text">
+                    <span>📚</span>
+                    <span>Episodes</span>
+                </div>
+                <span id="episode-count" class="stat-label">0 episodes</span>
+            </div>
+
+            <div class="tabs">
+                <button class="tab active" onclick="switchTab('local')">Downloaded Episodes</button>
+                <button class="tab" onclick="switchTab('feed')">Browse Podcast Feed</button>
+            </div>
+
+            <!-- Tab 1: Local Downloaded Episodes -->
+            <div id="tab-local" class="tab-content active">
+                <div class="search-bar">
+                    <input
+                        type="text"
+                        id="episode-search"
+                        class="search-input"
+                        placeholder="Search episodes..."
+                        oninput="searchEpisodes()"
+                    >
+                    <select id="episode-filter" class="filter-select" onchange="filterEpisodes(this.value)">
+                        <option value="all">All Episodes</option>
+                        <option value="completed">Transcribed</option>
+                        <option value="pending">Not Transcribed</option>
+                    </select>
+                </div>
+
+                <ul id="episode-list" class="episode-list">
+                    <li class="empty-state">Loading episodes...</li>
+                </ul>
+            </div>
+
+            <!-- Tab 2: Browse RSS Feed -->
+            <div id="tab-feed" class="tab-content">
+                <div class="search-bar">
+                    <input
+                        type="text"
+                        id="feed-search"
+                        class="search-input"
+                        placeholder="Search podcast feed..."
+                        oninput="searchFeed()"
+                    >
+                    <select id="feed-source-filter" class="filter-select" onchange="filterFeedSource(this.value)">
+                        <option value="all">All Sources</option>
+                        <option value="patreon">Patreon</option>
+                        <option value="apple">Apple Podcasts</option>
+                    </select>
+                    <select id="feed-status-filter" class="filter-select" onchange="filterFeedStatus(this.value)">
+                        <option value="all">All</option>
+                        <option value="downloaded">Downloaded</option>
+                        <option value="available">Not Downloaded</option>
+                    </select>
+                </div>
+
+                <div class="batch-controls">
+                    <div class="batch-controls-left">
+                        <input type="checkbox" id="select-all" onchange="toggleSelectAll(this.checked)">
+                        <label for="select-all">Select All</label>
+                        <span id="selected-count" style="color: var(--text-secondary); margin-left: 1rem;">0 selected</span>
+                    </div>
+                    <button class="btn btn-success btn-small" onclick="batchDownload()" id="batch-download-btn" disabled>
+                        Download Selected
+                    </button>
+                </div>
+
+                <ul id="feed-list" class="episode-list">
+                    <li class="empty-state">Loading podcast feed...</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="grid-2">
+            <!-- Queue -->
+            <div class="section">
+                <div class="section-title">
+                    <div class="section-title-text">
+                        <span>📋</span>
+                        <span>Queue</span>
+                    </div>
+                </div>
+                <ul id="queue-list" class="queue-list">
+                    <li class="empty-state">Queue is empty</li>
+                </ul>
+            </div>
+
+            <!-- Recent Completions -->
+            <div class="section">
+                <div class="section-title">
+                    <div class="section-title-text">
+                        <span>✅</span>
+                        <span>Recent Completions</span>
+                    </div>
+                </div>
+                <ul id="completed-list" class="queue-list">
+                    <li class="empty-state">No completed transcriptions yet</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- Transcript Modal -->
+    <div id="transcript-modal" class="modal" onclick="closeModal(event)">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <div class="modal-title" id="modal-episode-title">Episode Transcript</div>
+                <button class="modal-close" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="transcript-search">
+                    <input
+                        type="text"
+                        id="transcript-search"
+                        class="search-input"
+                        placeholder="Search in transcript..."
+                        oninput="searchTranscript()"
+                    >
+                </div>
+                <div id="modal-episode-meta" class="episode-meta" style="margin-bottom: 1rem;"></div>
+                <div id="transcript-content" class="transcript-content">
+                    Loading transcript...
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary btn-small" id="download-json-btn">Download JSON</button>
+                <button class="btn btn-primary btn-small" id="download-txt-btn">Download TXT</button>
+                <button class="btn btn-primary btn-small" id="download-srt-btn">Download SRT</button>
+                <button class="btn btn-primary btn-small" id="download-md-btn">Download MD</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let allEpisodes = [];
+        let allFeedEpisodes = [];
+        let currentFilter = 'all';
+        let currentTab = 'local';
+        let currentEpisode = null;
+        let selectedEpisodes = new Set();
+        let currentFeedSourceFilter = 'all';
+        let currentFeedStatusFilter = 'all';
+
+        // Connect to WebSocket
+        socket.on('connect', () => {
+            console.log('Connected to server');
+            updateWorkerStatus('active');
+            socket.emit('request_update');
+            loadEpisodes();
+            loadFeedEpisodes();
+        });
+
+        socket.on('disconnect', () => {
+            console.log('Disconnected from server');
+            updateWorkerStatus('idle');
+        });
+
+        socket.on('download_complete', (data) => {
+            showNotification(`Downloaded: ${data.episode}`, 'success');
+            loadEpisodes();
+            loadFeedEpisodes();
+        });
+
+        socket.on('download_error', (data) => {
+            showNotification(`Error downloading ${data.episode}: ${data.error}`, 'error');
+        });
+
+        // Update worker status badge
+        function updateWorkerStatus(status) {
+            const badge = document.getElementById('worker-status');
+            if (status === 'active') {
+                badge.textContent = '● Worker Active';
+                badge.className = 'status-badge status-active';
+            } else {
+                badge.textContent = '○ Worker Idle';
+                badge.className = 'status-badge status-idle';
+            }
+        }
+
+        // Handle updates
+        socket.on('status_update', (data) => {
+            updateCurrentActivity(data);
+        });
+
+        socket.on('queue_update', (data) => {
+            updateQueue(data);
+        });
+
+        socket.on('stats_update', (data) => {
+            updateStats(data);
+        });
+
+        function updateStats(stats) {
+            document.getElementById('stat-total').textContent = stats.total_episodes || 0;
+            document.getElementById('stat-transcribed').textContent = stats.transcribed || 0;
+            document.getElementById('stat-pending').textContent = stats.pending || 0;
+            document.getElementById('stat-completion').textContent = (stats.completion_rate || 0) + '%';
+            document.getElementById('progress-fill').style.width = (stats.completion_rate || 0) + '%';
+        }
+
+        function updateCurrentActivity(status) {
+            const container = document.getElementById('current-activity');
+
+            if (status.status === 'processing' || status.current_file) {
+                const filename = status.current_file || 'Unknown file';
+                container.innerHTML = `
+                    <div class="queue-item processing">
+                        <div>
+                            <div><strong>${filename}</strong></div>
+                            <div class="episode-meta">Processing...</div>
+                        </div>
+                        <span class="spinner"></span>
+                    </div>
+                `;
+                updateWorkerStatus('active');
+            } else if (status.status === 'completed') {
+                container.innerHTML = `
+                    <div class="queue-item">
+                        <div>
+                            <div><strong>${status.current_file || 'Last file'}</strong></div>
+                            <div class="episode-meta">Completed ${formatTime(status.processing_time)}</div>
+                        </div>
+                        <span class="badge badge-completed">✓ Done</span>
+                    </div>
+                `;
+            } else {
+                container.innerHTML = '<div class="empty-state">💤 No active transcription</div>';
+                updateWorkerStatus('idle');
+            }
+        }
+
+        function updateQueue(queue) {
+            const pendingList = document.getElementById('queue-list');
+            const completedList = document.getElementById('completed-list');
+
+            // Update pending
+            const pending = queue.pending || [];
+            if (pending.length === 0) {
+                pendingList.innerHTML = '<li class="empty-state">Queue is empty</li>';
+            } else {
+                pendingList.innerHTML = pending.slice(0, 5).map(file => {
+                    const filename = file.split('/').pop();
+                    return `
+                        <li class="queue-item">
+                            <div>${filename}</div>
+                            <span class="badge badge-pending">Pending</span>
+                        </li>
+                    `;
+                }).join('');
+            }
+
+            // Update completed
+            const completed = queue.completed || [];
+            if (completed.length === 0) {
+                completedList.innerHTML = '<li class="empty-state">No completed transcriptions yet</li>';
+            } else {
+                completedList.innerHTML = completed.slice(-5).reverse().map(file => {
+                    const filename = file.split('/').pop();
+                    return `
+                        <li class="queue-item">
+                            <div>${filename}</div>
+                            <span class="badge badge-completed">✓</span>
+                        </li>
+                    `;
+                }).join('');
+            }
+        }
+
+        // Tab switching
+        function switchTab(tab) {
+            currentTab = tab;
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+
+            event.target.classList.add('active');
+            document.getElementById(`tab-${tab}`).classList.add('active');
+
+            if (tab === 'feed' && allFeedEpisodes.length === 0) {
+                loadFeedEpisodes();
+            }
+        }
+
+        // Load local episodes
+        function loadEpisodes() {
+            fetch('/api/episodes')
+                .then(r => r.json())
+                .then(episodes => {
+                    allEpisodes = episodes;
+                    displayEpisodes(episodes);
+                    document.getElementById('episode-count').textContent = `${episodes.length} episodes`;
+                });
+        }
+
+        // Load feed episodes
+        function loadFeedEpisodes() {
+            const feedList = document.getElementById('feed-list');
+            feedList.innerHTML = '<li class="empty-state"><div class="spinner"></div><br>Loading podcast feed...</li>';
+
+            fetch('/api/feeds/episodes')
+                .then(r => r.json())
+                .then(data => {
+                    allFeedEpisodes = data.episodes || [];
+                    displayFeedEpisodes(allFeedEpisodes);
+                })
+                .catch(err => {
+                    feedList.innerHTML = `<li class="empty-state">Error loading feed: ${err.message}</li>`;
+                });
+        }
+
+        function displayEpisodes(episodes) {
+            const list = document.getElementById('episode-list');
+
+            if (episodes.length === 0) {
+                list.innerHTML = '<li class="empty-state">No episodes found</li>';
+                return;
+            }
+
+            list.innerHTML = episodes.map(ep => {
+                const status = ep.transcribed ?
+                    '<span class="badge badge-completed">✓ Transcribed</span>' :
+                    '<span class="badge badge-pending">Pending</span>';
+
+                const duration = ep.duration ? formatDuration(ep.duration) : '';
+                const size = ep.size_mb ? `${ep.size_mb} MB` : '';
+
+                return `
+                    <li class="episode-item" onclick='viewEpisode(${JSON.stringify(ep).replace(/'/g, "&#39;")})'>
+                        <div class="episode-info">
+                            <div>
+                                <div class="episode-title">${ep.filename}</div>
+                                <div class="episode-meta">${duration} • ${size} • ${new Date(ep.added_date).toLocaleDateString()}</div>
+                            </div>
+                        </div>
+                        <div class="episode-actions">
+                            ${status}
+                            ${ep.transcribed ? '<button class="btn btn-primary btn-small" onclick="event.stopPropagation(); viewTranscript(\'' + ep.filename + '\')">View</button>' : ''}
+                        </div>
+                    </li>
+                `;
+            }).join('');
+        }
+
+        function displayFeedEpisodes(episodes) {
+            const list = document.getElementById('feed-list');
+
+            if (episodes.length === 0) {
+                list.innerHTML = '<li class="empty-state">No episodes found in feed</li>';
+                return;
+            }
+
+            list.innerHTML = episodes.map((ep, idx) => {
+                const epNum = ep.episode_number || ep.index;
+                const downloaded = ep.downloaded;
+                const status = downloaded ?
+                    '<span class="badge badge-downloaded">✓ Downloaded</span>' :
+                    '<span class="badge badge-available">Available</span>';
+
+                const duration = ep.duration || '';
+                const source = ep.source_name || 'Unknown Source';
+                const epId = `feed-ep-${idx}`;
+
+                return `
+                    <li class="episode-item">
+                        <div class="episode-info">
+                            <input type="checkbox" class="episode-checkbox" id="${epId}"
+                                   data-episode='${JSON.stringify(ep).replace(/'/g, "&#39;")}'
+                                   onchange="updateSelectedCount()"
+                                   ${downloaded ? 'disabled' : ''}>
+                            <div>
+                                <div class="episode-title">${ep.title}</div>
+                                <div class="episode-meta">
+                                    ${epNum ? `#${epNum} • ` : ''}
+                                    ${duration || 'Duration unknown'} •
+                                    ${source} •
+                                    ${ep.published ? new Date(ep.published).toLocaleDateString() : 'Date unknown'}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="episode-actions">
+                            ${status}
+                            ${!downloaded ? `<button class="btn btn-success btn-small" onclick="downloadEpisode(${idx})">Download</button>` : ''}
+                        </div>
+                    </li>
+                `;
+            }).join('');
+        }
+
+        function searchEpisodes() {
+            const query = document.getElementById('episode-search').value.toLowerCase();
+            const filtered = allEpisodes.filter(ep =>
+                ep.filename.toLowerCase().includes(query)
+            );
+            displayEpisodes(filterByStatus(filtered));
+        }
+
+        function searchFeed() {
+            const query = document.getElementById('feed-search').value.toLowerCase();
+            let filtered = allFeedEpisodes.filter(ep =>
+                ep.title.toLowerCase().includes(query)
+            );
+            filtered = filterFeedBySource(filtered);
+            filtered = filterFeedByStatus(filtered);
+            displayFeedEpisodes(filtered);
+        }
+
+        function filterEpisodes(status) {
+            currentFilter = status;
+            document.getElementById('episode-filter').value = status;
+            const query = document.getElementById('episode-search').value.toLowerCase();
+            let filtered = allEpisodes;
+
+            if (query) {
+                filtered = filtered.filter(ep => ep.filename.toLowerCase().includes(query));
+            }
+
+            displayEpisodes(filterByStatus(filtered));
+        }
+
+        function filterByStatus(episodes) {
+            if (currentFilter === 'all') return episodes;
+            if (currentFilter === 'completed') return episodes.filter(ep => ep.transcribed);
+            if (currentFilter === 'pending') return episodes.filter(ep => !ep.transcribed);
+            return episodes;
+        }
+
+        function filterFeedSource(source) {
+            currentFeedSourceFilter = source;
+            searchFeed();
+        }
+
+        function filterFeedStatus(status) {
+            currentFeedStatusFilter = status;
+            searchFeed();
+        }
+
+        function filterFeedBySource(episodes) {
+            if (currentFeedSourceFilter === 'all') return episodes;
+            return episodes.filter(ep => ep.source === currentFeedSourceFilter);
+        }
+
+        function filterFeedByStatus(episodes) {
+            if (currentFeedStatusFilter === 'all') return episodes;
+            if (currentFeedStatusFilter === 'downloaded') return episodes.filter(ep => ep.downloaded);
+            if (currentFeedStatusFilter === 'available') return episodes.filter(ep => !ep.downloaded);
+            return episodes;
+        }
+
+        function toggleSelectAll(checked) {
+            const checkboxes = document.querySelectorAll('.episode-checkbox:not(:disabled)');
+            checkboxes.forEach(cb => cb.checked = checked);
+            updateSelectedCount();
+        }
+
+        function updateSelectedCount() {
+            const checkboxes = document.querySelectorAll('.episode-checkbox:checked');
+            const count = checkboxes.length;
+            document.getElementById('selected-count').textContent = `${count} selected`;
+            document.getElementById('batch-download-btn').disabled = count === 0;
+        }
+
+        function downloadEpisode(index) {
+            const episode = allFeedEpisodes[index];
+            if (!episode) return;
+
+            fetch('/api/episodes/download', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({episode: episode})
+            })
+            .then(r => r.json())
+            .then(data => {
+                showNotification(`Downloading: ${episode.title}`, 'success');
+            })
+            .catch(err => {
+                showNotification(`Error: ${err.message}`, 'error');
+            });
+        }
+
+        function batchDownload() {
+            const checkboxes = document.querySelectorAll('.episode-checkbox:checked');
+            const episodes = Array.from(checkboxes).map(cb => JSON.parse(cb.dataset.episode));
+
+            if (episodes.length === 0) return;
+
+            fetch('/api/episodes/batch-download', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({episodes: episodes})
+            })
+            .then(r => r.json())
+            .then(data => {
+                showNotification(`Downloading ${episodes.length} episodes...`, 'success');
+                // Clear selection
+                document.getElementById('select-all').checked = false;
+                toggleSelectAll(false);
+            })
+            .catch(err => {
+                showNotification(`Error: ${err.message}`, 'error');
+            });
+        }
+
+        function showNotification(message, type = 'success') {
+            const notification = document.createElement('div');
+            notification.className = `notification ${type}`;
+            notification.textContent = message;
+            document.body.appendChild(notification);
+
+            setTimeout(() => {
+                notification.remove();
+            }, 5000);
+        }
+
+        function viewEpisode(episode) {
+            if (episode.transcribed) {
+                viewTranscript(episode.filename);
+            }
+        }
+
+        function viewTranscript(filename) {
+            const baseName = filename.replace(/\.[^/.]+$/, '');
+            currentEpisode = baseName;
+
+            document.getElementById('modal-episode-title').textContent = filename;
+            document.getElementById('transcript-modal').classList.add('active');
+
+            // Load transcript
+            fetch(`/api/episodes/${encodeURIComponent(baseName)}/transcript`)
+                .then(r => r.json())
+                .then(data => {
+                    const duration = data.duration ? formatDuration(data.duration) : '';
+                    const lang = data.language || 'Unknown';
+                    document.getElementById('modal-episode-meta').innerHTML =
+                        `Duration: ${duration} • Language: ${lang}`;
+
+                    document.getElementById('transcript-content').textContent = data.full_text;
+
+                    // Setup download buttons
+                    setupDownloadButtons(baseName);
+                })
+                .catch(err => {
+                    document.getElementById('transcript-content').textContent =
+                        'Error loading transcript: ' + err.message;
+                });
+        }
+
+        function setupDownloadButtons(baseName) {
+            const formats = ['json', 'txt', 'srt', 'md'];
+            formats.forEach(format => {
+                const btn = document.getElementById(`download-${format}-btn`);
+                btn.onclick = () => downloadTranscript(baseName, format);
+            });
+        }
+
+        function downloadTranscript(baseName, format) {
+            const link = document.createElement('a');
+            link.href = `/api/episodes/${encodeURIComponent(baseName)}/download/${format}`;
+            link.download = `${baseName}.${format}`;
+            link.click();
+        }
+
+        function searchTranscript() {
+            const query = document.getElementById('transcript-search').value.toLowerCase();
+            const content = document.getElementById('transcript-content');
+            const text = content.textContent;
+
+            if (!query) {
+                content.textContent = text;
+                return;
+            }
+
+            // Simple highlight (could be improved)
+            const highlighted = text.replace(
+                new RegExp(query, 'gi'),
+                match => `**${match}**`
+            );
+            content.textContent = highlighted;
+        }
+
+        function closeModal(event) {
+            if (!event || event.target.id === 'transcript-modal') {
+                document.getElementById('transcript-modal').classList.remove('active');
+                document.getElementById('transcript-search').value = '';
+                currentEpisode = null;
+            }
+        }
+
+        function formatTime(seconds) {
+            if (!seconds) return '';
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `in ${mins}m ${secs}s`;
+        }
+
+        function formatDuration(seconds) {
+            if (!seconds) return '';
+            const hours = Math.floor(seconds / 3600);
+            const mins = Math.floor((seconds % 3600) / 60);
+            if (hours > 0) {
+                return `${hours}h ${mins}m`;
+            }
+            return `${mins}m`;
+        }
+
+        // Fetch initial data
+        fetch('/api/stats').then(r => r.json()).then(updateStats);
+        fetch('/api/queue').then(r => r.json()).then(updateQueue);
+        fetch('/api/status').then(r => r.json()).then(updateCurrentActivity);
+        loadEpisodes();
+    </script>
+</body>
+</html>

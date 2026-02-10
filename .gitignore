@@ -1,0 +1,29 @@
+# Environment variables (secrets)
+.env
+.env.local
+.env.*.local
+*.secret.*
+*credentials*
+
+# Claude Code local settings (may contain secrets)
+.claude/settings.local.json
+
+# Playwright
+node_modules/
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/
+
+# Rust/Tauri
+/src-tauri/target/
+
+# Python
+__pycache__/
+*.pyc
+venv/
+
+# Data files (large)
+scripts/episodes/*.mp3
+data/*.db

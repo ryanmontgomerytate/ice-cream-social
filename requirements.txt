@@ -1,0 +1,38 @@
+# Ice Cream Social Fandom App - Python Dependencies
+
+# Transcription
+faster-whisper>=1.0.0
+
+# Audio processing (optional, for speaker diarization)
+# pyannote.audio>=3.1.0  # Uncomment if adding speaker diarization
+
+# Podcast feed handling
+feedparser>=6.0.0
+requests>=2.28.0
+
+# Progress bars and CLI
+tqdm>=4.65.0
+
+# Configuration
+pyyaml>=6.0.0
+
+# Terminal UI
+rich>=13.0.0
+
+# System monitoring
+psutil>=5.9.0
+
+# Web Dashboard
+flask>=3.0.0
+flask-cors>=4.0.0
+flask-socketio>=5.3.0
+python-socketio>=5.11.0
+
+# Database
+sqlalchemy>=2.0.0
+
+# Data processing
+# pandas>=2.0.0  # Uncomment for data analysis features
+
+# If using AssemblyAI instead of local transcription
+# assemblyai>=0.20.0
