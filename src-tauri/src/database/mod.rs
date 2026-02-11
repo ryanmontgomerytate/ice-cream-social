@@ -453,6 +453,12 @@ Mark the start time of each segment.',
             [],
         ); // Ignore error if column already exists
 
+        // Migration: Add queue_type column to transcription_queue (idempotent)
+        let _ = conn.execute(
+            "ALTER TABLE transcription_queue ADD COLUMN queue_type TEXT DEFAULT 'full'",
+            [],
+        ); // Ignore error if column already exists
+
         Ok(())
     }
 
@@ -923,6 +929,16 @@ Mark the start time of each segment.',
         Ok(item)
     }
 
+    /// Reset a processing item back to pending (when pipeline can't handle it yet)
+    pub fn reset_to_pending(&self, episode_id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE transcription_queue SET status = 'pending', started_date = NULL WHERE episode_id = ?",
+            params![episode_id],
+        )?;
+        Ok(())
+    }
+
     pub fn mark_processing(&self, episode_id: i64) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
@@ -971,6 +987,144 @@ Mark the start time of each segment.',
             params![num_speakers, episode_id],
         )?;
         Ok(())
+    }
+
+    /// Requeue an episode for diarization only, with race condition protection.
+    /// Returns error if the episode is currently being processed.
+    pub fn requeue_for_diarization(&self, episode_id: i64, priority: i32) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+
+        // Check current queue status
+        let current_status: Option<String> = conn
+            .query_row(
+                "SELECT status FROM transcription_queue WHERE episode_id = ?",
+                params![episode_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+
+        match current_status.as_deref() {
+            Some("processing") => {
+                return Err(anyhow::anyhow!(
+                    "Episode is currently being processed. Wait for it to finish."
+                ));
+            }
+            Some("pending") => {
+                // Already pending, just update priority and queue_type
+                conn.execute(
+                    "UPDATE transcription_queue SET priority = ?, queue_type = 'diarize_only' WHERE episode_id = ?",
+                    params![priority, episode_id],
+                )?;
+            }
+            Some(_) => {
+                // completed or failed - update to pending
+                let now = chrono::Utc::now().to_rfc3339();
+                conn.execute(
+                    "UPDATE transcription_queue SET status = 'pending', priority = ?, queue_type = 'diarize_only', \
+                     added_to_queue_date = ?, retry_count = 0, error_message = NULL, \
+                     started_date = NULL, completed_date = NULL WHERE episode_id = ?",
+                    params![priority, now, episode_id],
+                )?;
+            }
+            None => {
+                // No row exists - insert
+                let now = chrono::Utc::now().to_rfc3339();
+                conn.execute(
+                    "INSERT INTO transcription_queue (episode_id, priority, status, queue_type, added_to_queue_date, retry_count) \
+                     VALUES (?, ?, 'pending', 'diarize_only', ?, 0)",
+                    params![episode_id, priority, now],
+                )?;
+            }
+        }
+
+        conn.execute(
+            "UPDATE episodes SET is_in_queue = 1 WHERE id = ?",
+            params![episode_id],
+        )?;
+
+        Ok(())
+    }
+
+    /// Get upcoming queue items that need audio downloaded (for pre-fetching)
+    pub fn get_upcoming_undownloaded(&self, limit: i64) -> Result<Vec<QueueItemWithEpisode>> {
+        let conn = self.conn.lock().unwrap();
+        let sql = r#"
+            SELECT q.id, q.episode_id, q.added_to_queue_date, q.priority, q.retry_count,
+                   q.status, q.started_date, q.completed_date, q.error_message,
+                   e.id, e.episode_number, e.title, e.description, e.audio_url,
+                   e.audio_file_path, e.duration, e.file_size, e.published_date,
+                   e.added_date, e.downloaded_date, e.transcribed_date, e.is_downloaded,
+                   e.is_transcribed, e.is_in_queue, e.transcript_path, e.transcription_status,
+                   e.transcription_error, e.processing_time, e.feed_source, e.metadata_json,
+                   e.has_diarization, e.num_speakers
+            FROM transcription_queue q
+            JOIN episodes e ON q.episode_id = e.id
+            WHERE q.status = 'pending' AND (e.is_downloaded = 0 OR e.audio_file_path IS NULL)
+            ORDER BY q.priority DESC, q.added_to_queue_date ASC
+            LIMIT ?
+        "#;
+
+        let mut stmt = conn.prepare(sql)?;
+        let items = stmt
+            .query_map(params![limit], |row| {
+                Ok(QueueItemWithEpisode {
+                    queue_item: TranscriptionQueueItem {
+                        id: row.get(0)?,
+                        episode_id: row.get(1)?,
+                        added_to_queue_date: row.get(2)?,
+                        priority: row.get(3)?,
+                        retry_count: row.get(4)?,
+                        status: row.get(5)?,
+                        started_date: row.get(6)?,
+                        completed_date: row.get(7)?,
+                        error_message: row.get(8)?,
+                    },
+                    episode: Episode {
+                        id: row.get(9)?,
+                        episode_number: row.get(10)?,
+                        title: row.get(11)?,
+                        description: row.get(12)?,
+                        audio_url: row.get(13)?,
+                        audio_file_path: row.get(14)?,
+                        duration: row.get(15)?,
+                        file_size: row.get(16)?,
+                        published_date: row.get(17)?,
+                        added_date: row.get(18)?,
+                        downloaded_date: row.get(19)?,
+                        transcribed_date: row.get(20)?,
+                        is_downloaded: row.get::<_, i32>(21)? == 1,
+                        is_transcribed: row.get::<_, i32>(22)? == 1,
+                        is_in_queue: row.get::<_, i32>(23)? == 1,
+                        transcript_path: row.get(24)?,
+                        transcription_status: row
+                            .get::<_, String>(25)
+                            .unwrap_or_default()
+                            .into(),
+                        transcription_error: row.get(26)?,
+                        processing_time: row.get(27)?,
+                        feed_source: row.get(28)?,
+                        metadata_json: row.get(29)?,
+                        has_diarization: row.get::<_, i32>(30).unwrap_or(0) == 1,
+                        num_speakers: row.get(31)?,
+                    },
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(items)
+    }
+
+    /// Get the queue_type for an episode in the queue
+    pub fn get_queue_type(&self, episode_id: i64) -> Result<Option<String>> {
+        let conn = self.conn.lock().unwrap();
+        let result = conn
+            .query_row(
+                "SELECT queue_type FROM transcription_queue WHERE episode_id = ?",
+                params![episode_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(result)
     }
 
     // =========================================================================

@@ -763,10 +763,9 @@ pub async fn retry_diarization(
     db.update_diarization(episode_id, 0)
         .map_err(|e| format!("Failed to reset diarization: {}", e))?;
 
-    // Add to queue with high priority for re-diarization
-    // The worker will detect it has transcript but no diarization and run diarization only
-    db.add_to_queue(episode_id, 100)
-        .map_err(|e| format!("Failed to add to queue: {}", e))?;
+    // Use race-condition-safe requeue method
+    db.requeue_for_diarization(episode_id, 100)
+        .map_err(|e| format!("Failed to requeue for diarization: {}", e))?;
 
     log::info!("Episode {} queued for re-diarization", episode_id);
     Ok(())
@@ -852,9 +851,9 @@ pub async fn reprocess_diarization(
     db.update_diarization(episode_id, 0)
         .map_err(|e| format!("Failed to reset diarization: {}", e))?;
 
-    // Add to queue with high priority
-    db.add_to_queue(episode_id, 100)
-        .map_err(|e| format!("Failed to add to queue: {}", e))?;
+    // Use race-condition-safe requeue method
+    db.requeue_for_diarization(episode_id, 100)
+        .map_err(|e| format!("Failed to requeue for diarization: {}", e))?;
 
     log::info!("Episode {} queued for re-diarization with hints", episode_id);
     Ok(())

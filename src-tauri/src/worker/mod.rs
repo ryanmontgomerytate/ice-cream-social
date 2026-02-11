@@ -1,44 +1,84 @@
-use crate::database::{Database, EpisodeSummary, QueueItemWithEpisode};
+pub mod diarize;
+pub mod download;
+pub mod transcribe;
+
+use crate::database::{Database, EpisodeSummary};
 use chrono::{DateTime, Utc};
-use futures_util::StreamExt;
+use serde::Serialize;
+use std::collections::HashMap;
 use std::path::PathBuf;
-use std::process::Stdio;
 use std::sync::Arc;
 use tauri::Emitter;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::Command;
-use tokio::sync::RwLock;
+use tokio::sync::{mpsc, RwLock};
+use tokio_util::sync::CancellationToken;
+
+use diarize::{DiarizeJob, DiarizeResult};
+use download::{DownloadJob, DownloadResult};
+use transcribe::{TranscribeJob, TranscribeResult};
+
+/// Progress update from any pipeline stage
+pub struct ProgressUpdate {
+    pub episode_id: i64,
+    pub stage: String,
+    pub progress: Option<i32>,
+    pub estimated_remaining: Option<i64>,
+}
+
+/// A single active pipeline slot
+#[derive(Debug, Clone, Serialize)]
+pub struct PipelineSlot {
+    pub episode: EpisodeSummary,
+    pub stage: String, // "downloading" | "transcribing" | "diarizing"
+    pub progress: Option<i32>,
+    pub estimated_remaining: Option<i64>,
+    pub started_at: DateTime<Utc>,
+}
 
 /// Shared worker state for status reporting
 #[derive(Debug, Clone)]
 pub struct WorkerState {
-    pub is_processing: bool,
-    pub current_episode: Option<EpisodeSummary>,
-    pub progress: Option<i32>,
-    pub stage: String, // "downloading", "transcribing", "saving"
-    pub started_at: Option<DateTime<Utc>>,
-    pub estimated_remaining: Option<i64>,
-    pub last_activity: Option<DateTime<Utc>>,
+    pub slots: Vec<PipelineSlot>,
     pub model: String,
     pub processed_today: i32,
+    pub last_activity: Option<DateTime<Utc>>,
     pub cancel_requested: bool,
 }
 
 impl Default for WorkerState {
     fn default() -> Self {
         Self {
-            is_processing: false,
-            current_episode: None,
-            progress: None,
-            stage: "idle".to_string(),
-            started_at: None,
-            estimated_remaining: None,
-            last_activity: Some(Utc::now()),
+            slots: Vec::new(),
             model: "large-v3".to_string(),
             processed_today: 0,
+            last_activity: Some(Utc::now()),
             cancel_requested: false,
         }
     }
+}
+
+impl WorkerState {
+    /// Get the "primary" slot for backward compatibility
+    /// Priority: transcribing > diarizing > downloading
+    pub fn primary_slot(&self) -> Option<&PipelineSlot> {
+        self.slots
+            .iter()
+            .find(|s| s.stage == "transcribing")
+            .or_else(|| self.slots.iter().find(|s| s.stage == "diarizing"))
+            .or_else(|| self.slots.iter().find(|s| s.stage == "downloading"))
+    }
+
+    pub fn is_processing(&self) -> bool {
+        !self.slots.is_empty()
+    }
+}
+
+/// Tracks what stage each episode is in within the pipeline
+struct PipelineEntry {
+    episode: EpisodeSummary,
+    audio_path: Option<String>,
+    transcript_path: Option<PathBuf>,
+    stage: String,
+    queue_type: String, // "full" or "diarize_only"
 }
 
 pub struct TranscriptionWorker {
@@ -48,7 +88,6 @@ pub struct TranscriptionWorker {
     models_path: PathBuf,
     transcripts_path: PathBuf,
     episodes_path: PathBuf,
-    // Diarization config
     venv_python_path: PathBuf,
     diarization_script_path: PathBuf,
     huggingface_token: Option<String>,
@@ -79,658 +118,685 @@ impl TranscriptionWorker {
         }
     }
 
-    /// Start the background worker loop
+    /// Start the pipeline scheduler
     pub async fn run(&self, app_handle: tauri::AppHandle) {
-        log::info!("Transcription worker started");
+        log::info!("Pipeline worker started");
 
         // Reset any stuck "processing" items from previous runs
         if let Err(e) = self.db.reset_stuck_processing() {
             log::warn!("Failed to reset stuck processing items: {}", e);
         }
-
-        // Retry previously failed downloads
         if let Err(e) = self.db.retry_failed_downloads() {
             log::warn!("Failed to retry failed downloads: {}", e);
         }
 
+        // Create cancellation token
+        let cancel = CancellationToken::new();
+
+        // Create channels
+        let (download_tx, download_rx) = mpsc::channel::<DownloadJob>(4);
+        let (transcribe_tx, transcribe_rx) = mpsc::channel::<TranscribeJob>(4);
+        let (diarize_tx, diarize_rx) = mpsc::channel::<DiarizeJob>(4);
+
+        // Event channels (all tasks send results back to scheduler)
+        let (event_tx, mut event_rx) = mpsc::channel::<PipelineEvent>(16);
+        let (progress_tx, mut progress_rx) = mpsc::channel::<ProgressUpdate>(32);
+
+        // Spawn download task
+        let download_event_tx = event_tx.clone();
+        let download_db = self.db.clone();
+        let download_cancel = cancel.clone();
+        tokio::spawn(async move {
+            let (result_tx, mut result_rx) = mpsc::channel::<DownloadResult>(4);
+            let task_handle = tokio::spawn(download::download_task(
+                download_db,
+                download_rx,
+                result_tx,
+                download_cancel,
+            ));
+            // Forward results to scheduler
+            while let Some(result) = result_rx.recv().await {
+                let _ = download_event_tx
+                    .send(PipelineEvent::DownloadComplete(result))
+                    .await;
+            }
+            let _ = task_handle.await;
+        });
+
+        // Spawn transcribe task
+        let transcribe_event_tx = event_tx.clone();
+        let transcribe_db = self.db.clone();
+        let whisper_cli = self.whisper_cli_path.clone();
+        let models = self.models_path.clone();
+        let transcripts = self.transcripts_path.clone();
+        let transcribe_cancel = cancel.clone();
+        let transcribe_progress_tx = progress_tx.clone();
+        tokio::spawn(async move {
+            let (result_tx, mut result_rx) = mpsc::channel::<TranscribeResult>(4);
+            let task_handle = tokio::spawn(transcribe::transcribe_task(
+                transcribe_db,
+                whisper_cli,
+                models,
+                transcripts,
+                transcribe_rx,
+                result_tx,
+                transcribe_progress_tx,
+                transcribe_cancel,
+            ));
+            while let Some(result) = result_rx.recv().await {
+                let _ = transcribe_event_tx
+                    .send(PipelineEvent::TranscribeComplete(result))
+                    .await;
+            }
+            let _ = task_handle.await;
+        });
+
+        // Spawn diarize task (only if HF token is set)
+        let has_diarization = self.huggingface_token.is_some();
+        if let Some(ref token) = self.huggingface_token {
+            let diarize_event_tx = event_tx.clone();
+            let venv_python = self.venv_python_path.clone();
+            let diarize_script = self.diarization_script_path.clone();
+            let hf_token = token.clone();
+            let diarize_cancel = cancel.clone();
+            let diarize_progress_tx = progress_tx.clone();
+            tokio::spawn(async move {
+                let (result_tx, mut result_rx) = mpsc::channel::<DiarizeResult>(4);
+                let task_handle = tokio::spawn(diarize::diarize_task(
+                    venv_python,
+                    diarize_script,
+                    hf_token,
+                    diarize_rx,
+                    result_tx,
+                    diarize_progress_tx,
+                    diarize_cancel,
+                ));
+                while let Some(result) = result_rx.recv().await {
+                    let _ = diarize_event_tx
+                        .send(PipelineEvent::DiarizeComplete(result))
+                        .await;
+                }
+                let _ = task_handle.await;
+            });
+        }
+
+        // Scheduler state
+        let mut active: HashMap<i64, PipelineEntry> = HashMap::new();
+        let mut download_busy = false;
+        let mut transcribe_busy = false;
+        let mut diarize_busy = false;
+
+        // Scheduler loop
         loop {
-            // Check if we should stop
+            // Check cancellation from user
             {
-                let state = self.state.read().await;
-                if state.cancel_requested {
+                let ws = self.state.read().await;
+                if ws.cancel_requested {
+                    log::info!("Cancel requested, shutting down pipeline");
+                    cancel.cancel();
                     break;
                 }
             }
 
-            // Check for next item in queue
-            match self.db.get_next_queue_item() {
-                Ok(Some(mut item)) => {
-                    log::info!("Processing episode: {}", item.episode.title);
+            // Try to fill slots from the queue
+            self.try_fill_slots(
+                &mut active,
+                &mut download_busy,
+                &mut transcribe_busy,
+                &mut diarize_busy,
+                &download_tx,
+                &transcribe_tx,
+                &diarize_tx,
+                has_diarization,
+                &app_handle,
+            )
+            .await;
 
-                    // Update state - starting
+            // Update shared state for UI
+            self.sync_state(&active).await;
+            let _ = app_handle.emit("status_update", ());
+
+            // Wait for events or timeout
+            tokio::select! {
+                event = event_rx.recv() => {
+                    match event {
+                        Some(PipelineEvent::DownloadComplete(result)) => {
+                            download_busy = false;
+                            self.handle_download_complete(
+                                result,
+                                &mut active,
+                                &mut transcribe_busy,
+                                &transcribe_tx,
+                                has_diarization,
+                                &mut diarize_busy,
+                                &diarize_tx,
+                                &app_handle,
+                            ).await;
+                        }
+                        Some(PipelineEvent::TranscribeComplete(result)) => {
+                            transcribe_busy = false;
+                            self.handle_transcribe_complete(
+                                result,
+                                &mut active,
+                                has_diarization,
+                                &mut diarize_busy,
+                                &diarize_tx,
+                                &app_handle,
+                            ).await;
+                        }
+                        Some(PipelineEvent::DiarizeComplete(result)) => {
+                            diarize_busy = false;
+                            self.handle_diarize_complete(result, &mut active, &app_handle).await;
+                        }
+                        None => {
+                            log::info!("All event channels closed");
+                            break;
+                        }
+                    }
+                }
+                progress = progress_rx.recv() => {
+                    if let Some(update) = progress {
+                        // Update the slot's progress
+                        if let Some(entry) = active.get_mut(&update.episode_id) {
+                            entry.stage = update.stage.clone();
+                        }
+                        // Update shared state
+                        {
+                            let mut ws = self.state.write().await;
+                            for slot in &mut ws.slots {
+                                if slot.episode.id == update.episode_id {
+                                    slot.progress = update.progress;
+                                    slot.estimated_remaining = update.estimated_remaining;
+                                    slot.stage = update.stage.clone();
+                                }
+                            }
+                        }
+                        let _ = app_handle.emit("status_update", ());
+                    }
+                }
+                _ = tokio::time::sleep(std::time::Duration::from_secs(10)) => {
+                    // Periodic poll — try to fill empty slots and check auto-transcribe
+                    self.check_auto_transcribe(&app_handle).await;
+                }
+            }
+        }
+
+        log::info!("Pipeline worker stopped");
+    }
+
+    /// Try to fill empty pipeline slots from the queue
+    async fn try_fill_slots(
+        &self,
+        active: &mut HashMap<i64, PipelineEntry>,
+        download_busy: &mut bool,
+        transcribe_busy: &mut bool,
+        diarize_busy: &mut bool,
+        download_tx: &mpsc::Sender<DownloadJob>,
+        transcribe_tx: &mpsc::Sender<TranscribeJob>,
+        diarize_tx: &mpsc::Sender<DiarizeJob>,
+        has_diarization: bool,
+        app_handle: &tauri::AppHandle,
+    ) {
+        // If transcribe slot is free, look for a ready item
+        if !*transcribe_busy {
+            // First check active entries that have been downloaded but not yet transcribed
+            let ready_id = active
+                .iter()
+                .find(|(_, entry)| {
+                    entry.stage == "downloaded"
+                        && entry.audio_path.is_some()
+                        && entry.queue_type == "full"
+                })
+                .map(|(id, _)| *id);
+
+            if let Some(episode_id) = ready_id {
+                if let Some(entry) = active.get_mut(&episode_id) {
+                    entry.stage = "transcribing".to_string();
+                    *transcribe_busy = true;
+                    let _ = transcribe_tx
+                        .send(TranscribeJob {
+                            episode_id,
+                            episode_summary: entry.episode.clone(),
+                            audio_path: entry.audio_path.clone().unwrap(),
+                            duration: entry.episode.duration,
+                        })
+                        .await;
+                }
+            } else {
+                // Pull from DB queue
+                if let Ok(Some(item)) = self.db.get_next_queue_item() {
+                    let episode_id = item.episode.id;
+
+                    // Skip if already active in pipeline
+                    if active.contains_key(&episode_id) {
+                        return;
+                    }
+
+                    // Mark processing in DB
+                    if let Err(e) = self.db.mark_processing(episode_id) {
+                        log::error!("Failed to mark episode as processing: {}", e);
+                        return;
+                    }
+
+                    let queue_type = self
+                        .db
+                        .get_queue_type(episode_id)
+                        .unwrap_or(None)
+                        .unwrap_or_else(|| "full".to_string());
+
+                    let summary = EpisodeSummary {
+                        id: item.episode.id,
+                        title: item.episode.title.clone(),
+                        duration: item.episode.duration,
+                        episode_number: item.episode.episode_number.clone(),
+                    };
+
+                    // Check if this is diarize-only and already has transcript
+                    if queue_type == "diarize_only"
+                        && item.episode.is_transcribed
+                        && item.episode.transcript_path.is_some()
                     {
-                        let mut state = self.state.write().await;
-                        state.is_processing = true;
-                        state.current_episode = Some(EpisodeSummary {
+                        // Skip straight to diarization
+                        if has_diarization && !*diarize_busy {
+                            let audio_path = item.episode.audio_file_path.clone();
+                            let transcript_path =
+                                PathBuf::from(item.episode.transcript_path.as_ref().unwrap());
+
+                            // Check for hints file
+                            let hints_path = self
+                                .transcripts_path
+                                .join(format!("{}_hints.json", episode_id));
+                            let hints = if hints_path.exists() {
+                                Some(hints_path)
+                            } else {
+                                None
+                            };
+
+                            active.insert(
+                                episode_id,
+                                PipelineEntry {
+                                    episode: summary,
+                                    audio_path,
+                                    transcript_path: Some(transcript_path.clone()),
+                                    stage: "diarizing".to_string(),
+                                    queue_type,
+                                },
+                            );
+
+                            *diarize_busy = true;
+                            let _ = diarize_tx
+                                .send(DiarizeJob {
+                                    episode_id,
+                                    audio_path: item
+                                        .episode
+                                        .audio_file_path
+                                        .unwrap_or_default(),
+                                    transcript_path,
+                                    hints_path: hints,
+                                })
+                                .await;
+
+                            let _ = app_handle.emit("status_update", ());
+                            return;
+                        }
+                        // Diarize slot is busy, don't take this item yet — leave it pending
+                        if let Err(e) = self.db.reset_to_pending(episode_id) {
+                            log::error!("Failed to reset episode to pending: {}", e);
+                        }
+                        return;
+                    }
+
+                    // Full pipeline: check if audio needs downloading
+                    let needs_download = item.episode.audio_file_path.is_none()
+                        || item
+                            .episode
+                            .audio_file_path
+                            .as_ref()
+                            .map(|p| !std::path::Path::new(p).exists())
+                            .unwrap_or(true);
+
+                    if needs_download {
+                        if !*download_busy {
+                            active.insert(
+                                episode_id,
+                                PipelineEntry {
+                                    episode: summary,
+                                    audio_path: None,
+                                    transcript_path: None,
+                                    stage: "downloading".to_string(),
+                                    queue_type,
+                                },
+                            );
+                            *download_busy = true;
+                            let _ = download_tx
+                                .send(DownloadJob {
+                                    episode: item.episode,
+                                    episodes_path: self.episodes_path.clone(),
+                                })
+                                .await;
+                        } else {
+                            // Download slot busy, reset to pending
+                            if let Err(e) = self.db.reset_to_pending(episode_id) {
+                                log::error!("Failed to reset episode to pending: {}", e);
+                            }
+                        }
+                    } else {
+                        // Audio ready, go straight to transcription
+                        let audio_path = item.episode.audio_file_path.clone();
+                        active.insert(
+                            episode_id,
+                            PipelineEntry {
+                                episode: summary.clone(),
+                                audio_path: audio_path.clone(),
+                                transcript_path: None,
+                                stage: "transcribing".to_string(),
+                                queue_type,
+                            },
+                        );
+                        *transcribe_busy = true;
+                        let _ = transcribe_tx
+                            .send(TranscribeJob {
+                                episode_id,
+                                episode_summary: summary,
+                                audio_path: audio_path.unwrap(),
+                                duration: item.episode.duration,
+                            })
+                            .await;
+                    }
+
+                    let _ = app_handle.emit("status_update", ());
+                }
+            }
+        }
+
+        // Pre-fetch: if download slot is idle and other slots are busy, pre-download next
+        if !*download_busy && (*transcribe_busy || *diarize_busy) {
+            if let Ok(undownloaded) = self.db.get_upcoming_undownloaded(1) {
+                if let Some(item) = undownloaded.into_iter().next() {
+                    let episode_id = item.episode.id;
+                    if !active.contains_key(&episode_id) {
+                        let summary = EpisodeSummary {
                             id: item.episode.id,
                             title: item.episode.title.clone(),
                             duration: item.episode.duration,
                             episode_number: item.episode.episode_number.clone(),
-                        });
-                        state.started_at = Some(Utc::now());
-                        state.progress = Some(0);
-                        state.stage = "downloading".to_string();
-                        state.cancel_requested = false;
+                        };
+                        active.insert(
+                            episode_id,
+                            PipelineEntry {
+                                episode: summary,
+                                audio_path: None,
+                                transcript_path: None,
+                                stage: "downloading".to_string(),
+                                queue_type: "full".to_string(),
+                            },
+                        );
+                        *download_busy = true;
+                        let _ = download_tx
+                            .send(DownloadJob {
+                                episode: item.episode,
+                                episodes_path: self.episodes_path.clone(),
+                            })
+                            .await;
                     }
+                }
+            }
+        }
+    }
 
-                    // Mark as processing in DB
-                    if let Err(e) = self.db.mark_processing(item.episode.id) {
-                        log::error!("Failed to mark episode as processing: {}", e);
-                    }
+    async fn handle_download_complete(
+        &self,
+        result: DownloadResult,
+        active: &mut HashMap<i64, PipelineEntry>,
+        transcribe_busy: &mut bool,
+        transcribe_tx: &mpsc::Sender<TranscribeJob>,
+        has_diarization: bool,
+        diarize_busy: &mut bool,
+        diarize_tx: &mpsc::Sender<DiarizeJob>,
+        app_handle: &tauri::AppHandle,
+    ) {
+        let episode_id = result.episode_id;
 
-                    // Emit status event
-                    let _ = app_handle.emit("status_update", ());
+        match result.result {
+            Ok(file_path) => {
+                log::info!("Download completed for episode {}: {}", episode_id, file_path);
+                if let Some(entry) = active.get_mut(&episode_id) {
+                    entry.audio_path = Some(file_path.clone());
+                    entry.stage = "downloaded".to_string();
 
-                    // Auto-download if needed
-                    let needs_download = item.episode.audio_file_path.is_none()
-                        || item.episode.audio_file_path.as_ref().map(|p| !std::path::Path::new(p).exists()).unwrap_or(true);
-
-                    if needs_download {
-                        log::info!("Downloading episode: {}", item.episode.title);
-                        match self.download_episode(&item.episode, &app_handle).await {
-                            Ok(file_path) => {
-                                log::info!("Download completed: {}", file_path);
-                                // Update the item with the new path
-                                item.episode.audio_file_path = Some(file_path);
-                                item.episode.is_downloaded = true;
-                            }
-                            Err(e) => {
-                                log::error!("Download failed: {}", e);
-                                if let Err(db_err) = self.db.mark_failed(item.episode.id, &format!("Download failed: {}", e)) {
-                                    log::error!("Failed to mark episode as failed: {}", db_err);
-                                }
-                                // Reset state and continue to next item
-                                {
-                                    let mut state = self.state.write().await;
-                                    state.is_processing = false;
-                                    state.current_episode = None;
-                                    state.progress = None;
-                                    state.stage = "idle".to_string();
-                                }
-                                let _ = app_handle.emit("queue_update", ());
-                                continue;
-                            }
-                        }
-                    }
-
-                    // Skip transcription if already transcribed (e.g., re-diarization only)
-                    let transcript_result = if item.episode.is_transcribed && item.episode.transcript_path.is_some() {
-                        log::info!("Episode already transcribed, skipping to diarization: {}", item.episode.title);
-                        Ok(PathBuf::from(item.episode.transcript_path.as_ref().unwrap()))
-                    } else {
-                        // Update stage to transcribing
-                        {
-                            let mut state = self.state.write().await;
-                            state.stage = "transcribing".to_string();
-                            state.progress = Some(0);
-                        }
-                        let _ = app_handle.emit("status_update", ());
-
-                        // Process transcription with progress tracking
-                        self.transcribe_with_progress(&item, &app_handle).await
-                    };
-
-                    match transcript_result {
-                        Ok(transcript_path) => {
-                            log::info!("Transcript ready: {}", item.episode.title);
-
-                            // Run diarization if HuggingFace token is configured
-                            if self.huggingface_token.is_some() {
-                                // Update stage to diarizing
-                                {
-                                    let mut state = self.state.write().await;
-                                    state.stage = "diarizing".to_string();
-                                    state.progress = Some(0);
-                                }
-                                let _ = app_handle.emit("status_update", ());
-
-                                if let Some(audio_path) = &item.episode.audio_file_path {
-                                    // Check for hints file (from reprocess_diarization)
-                                    let hints_path = self.transcripts_path
-                                        .join(format!("{}_hints.json", item.episode.id));
-                                    let hints = if hints_path.exists() {
-                                        Some(hints_path.clone())
+                    // If transcribe slot is free, send immediately
+                    if !*transcribe_busy && entry.queue_type == "full" {
+                        entry.stage = "transcribing".to_string();
+                        *transcribe_busy = true;
+                        let _ = transcribe_tx
+                            .send(TranscribeJob {
+                                episode_id,
+                                episode_summary: entry.episode.clone(),
+                                audio_path: file_path.clone(),
+                                duration: entry.episode.duration,
+                            })
+                            .await;
+                    } else if entry.queue_type == "diarize_only" && has_diarization && !*diarize_busy
+                    {
+                        // Diarize-only with download done
+                        if let Some(tp) = &entry.transcript_path {
+                            entry.stage = "diarizing".to_string();
+                            *diarize_busy = true;
+                            let hints_path = self
+                                .transcripts_path
+                                .join(format!("{}_hints.json", episode_id));
+                            let _ = diarize_tx
+                                .send(DiarizeJob {
+                                    episode_id,
+                                    audio_path: file_path,
+                                    transcript_path: tp.clone(),
+                                    hints_path: if hints_path.exists() {
+                                        Some(hints_path)
                                     } else {
                                         None
-                                    };
-
-                                    match self.diarize_with_progress(
-                                        &PathBuf::from(audio_path),
-                                        &transcript_path,
-                                        &app_handle,
-                                        hints.as_ref(),
-                                    ).await {
-                                        Ok(num_speakers) => {
-                                            log::info!("Diarization completed: {}, {} speakers", item.episode.title, num_speakers);
-                                            // Update database with diarization info
-                                            if num_speakers > 0 {
-                                                if let Err(e) = self.db.update_diarization(item.episode.id, num_speakers) {
-                                                    log::error!("Failed to update diarization status: {}", e);
-                                                }
-                                            }
-                                        }
-                                        Err(e) => {
-                                            log::warn!("Diarization failed (continuing anyway): {}", e);
-                                        }
-                                    }
-
-                                    // Clean up hints file after diarization
-                                    if let Some(ref hp) = hints {
-                                        let _ = std::fs::remove_file(hp);
-                                    }
-                                }
-                            }
-
-                            // Update stage to saving
-                            {
-                                let mut state = self.state.write().await;
-                                state.stage = "saving".to_string();
-                                state.progress = Some(100);
-                            }
-                            let _ = app_handle.emit("status_update", ());
-
-                            if let Err(e) = self.db.mark_completed(
-                                item.episode.id,
-                                transcript_path.to_str(),
-                            ) {
-                                log::error!("Failed to mark episode as completed: {}", e);
-                            }
-
-                            // Update state
-                            {
-                                let mut state = self.state.write().await;
-                                state.processed_today += 1;
-                            }
-
-                            // Emit completion event
-                            let _ = app_handle.emit("transcription_complete", item.episode.id);
-                        }
-                        Err(e) => {
-                            log::error!("Transcription failed: {}", e);
-                            if let Err(db_err) =
-                                self.db.mark_failed(item.episode.id, &e.to_string())
-                            {
-                                log::error!("Failed to mark episode as failed: {}", db_err);
-                            }
-
-                            // Emit failure event
-                            let _ = app_handle
-                                .emit("transcription_failed", (item.episode.id, e.to_string()));
+                                    },
+                                })
+                                .await;
                         }
                     }
-
-                    // Reset state
-                    {
-                        let mut state = self.state.write().await;
-                        state.is_processing = false;
-                        state.current_episode = None;
-                        state.progress = None;
-                        state.stage = "idle".to_string();
-                        state.started_at = None;
-                        state.last_activity = Some(Utc::now());
-                    }
-
-                    // Emit queue update
-                    let _ = app_handle.emit("queue_update", ());
-                    let _ = app_handle.emit("status_update", ());
-                }
-                Ok(None) => {
-                    // No items in queue - check if auto-transcribe is enabled
-                    let auto_transcribe = self.db.get_setting("auto_transcribe")
-                        .unwrap_or(None)
-                        .map(|v| v == "true")
-                        .unwrap_or(false);
-
-                    if auto_transcribe {
-                        // Find next untranscribed episode and add to queue
-                        if let Ok(Some(episode)) = self.db.get_next_untranscribed_episode() {
-                            log::info!("Auto-transcribe: adding episode {} to queue", episode.title);
-                            if let Err(e) = self.db.add_to_queue(episode.id, 0) {
-                                log::error!("Failed to auto-add episode to queue: {}", e);
-                            } else {
-                                let _ = app_handle.emit("queue_update", ());
-                                // Don't sleep, process immediately
-                                continue;
-                            }
-                        }
-                    }
-
-                    // Wait before checking again
-                    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
-                }
-                Err(e) => {
-                    log::error!("Failed to get next queue item: {}", e);
-                    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+                    // Otherwise it stays as "downloaded" and will be picked up later
                 }
             }
+            Err(e) => {
+                log::error!("Download failed for episode {}: {}", episode_id, e);
+                if let Err(db_err) = self.db.mark_failed(episode_id, &format!("Download failed: {}", e)) {
+                    log::error!("Failed to mark episode as failed: {}", db_err);
+                }
+                active.remove(&episode_id);
+                let _ = app_handle.emit("queue_update", ());
+            }
         }
-
-        log::info!("Transcription worker stopped");
     }
 
-    /// Transcribe with real-time progress tracking
-    /// Returns the path to the JSON transcript file
-    async fn transcribe_with_progress(
+    async fn handle_transcribe_complete(
         &self,
-        item: &QueueItemWithEpisode,
+        result: TranscribeResult,
+        active: &mut HashMap<i64, PipelineEntry>,
+        has_diarization: bool,
+        diarize_busy: &mut bool,
+        diarize_tx: &mpsc::Sender<DiarizeJob>,
         app_handle: &tauri::AppHandle,
-    ) -> anyhow::Result<PathBuf> {
-        let audio_path = item
-            .episode
-            .audio_file_path
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("No audio file path"))?;
+    ) {
+        let episode_id = result.episode_id;
 
-        let audio_path = PathBuf::from(audio_path);
-        if !audio_path.exists() {
-            return Err(anyhow::anyhow!("Audio file not found: {:?}", audio_path));
-        }
+        match result.result {
+            Ok(transcript_path) => {
+                log::info!("Transcription completed for episode {}", episode_id);
 
-        // Create output path
-        let output_base = self.transcripts_path.join(
-            audio_path
-                .file_stem()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string(),
-        );
+                if has_diarization && !*diarize_busy {
+                    // Send to diarization
+                    if let Some(entry) = active.get_mut(&episode_id) {
+                        entry.transcript_path = Some(transcript_path.clone());
+                        entry.stage = "diarizing".to_string();
 
-        // Get model from database setting (falls back to large-v3 if not set)
-        let model = self.db.get_setting("transcription_model")
-            .unwrap_or(None)
-            .unwrap_or_else(|| "large-v3".to_string());
+                        let hints_path = self
+                            .transcripts_path
+                            .join(format!("{}_hints.json", episode_id));
 
-        // Update state with current model
-        {
-            let mut state = self.state.write().await;
-            state.model = model.clone();
-        }
-
-        let model_path = self.models_path.join(format!("ggml-{}.bin", model));
-
-        if !model_path.exists() {
-            return Err(anyhow::anyhow!("Model not found: {:?}", model_path));
-        }
-
-        // Get episode duration for progress estimation
-        let duration = item.episode.duration.unwrap_or(3600.0); // Default 1 hour
-
-        log::info!(
-            "Running whisper-cli with progress tracking: {:?}",
-            audio_path
-        );
-
-        // Spawn whisper-cli with piped stderr for progress
-        // Note: stdout must be null to prevent pipe buffer deadlock
-        let mut child = Command::new(&self.whisper_cli_path)
-            .args([
-                "-m",
-                model_path.to_str().unwrap(),
-                "-f",
-                audio_path.to_str().unwrap(),
-                "-oj",  // Output JSON
-                "-otxt", // Output TXT
-                "-osrt", // Output SRT
-                "-of",
-                output_base.to_str().unwrap(),
-                "-pp", // Print progress to stderr
-            ])
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .spawn()?;
-
-        // Read stderr for progress updates
-        let stderr = child.stderr.take().expect("Failed to get stderr");
-        let mut reader = BufReader::new(stderr).lines();
-
-        let state = self.state.clone();
-        let app_handle = app_handle.clone();
-        let start_time = Utc::now();
-
-        // Process stderr line by line
-        while let Ok(Some(line)) = reader.next_line().await {
-            // Parse progress from whisper-cli output
-            if let Some(progress) = parse_progress(&line) {
-                let elapsed = Utc::now().signed_duration_since(start_time).num_seconds();
-                let estimated_total = if progress > 0 {
-                    (elapsed as f64 / progress as f64 * 100.0) as i64
+                        *diarize_busy = true;
+                        let _ = diarize_tx
+                            .send(DiarizeJob {
+                                episode_id,
+                                audio_path: entry.audio_path.clone().unwrap_or_default(),
+                                transcript_path: transcript_path.clone(),
+                                hints_path: if hints_path.exists() {
+                                    Some(hints_path)
+                                } else {
+                                    None
+                                },
+                            })
+                            .await;
+                    }
+                } else if has_diarization {
+                    // Diarize slot is busy; mark as waiting
+                    if let Some(entry) = active.get_mut(&episode_id) {
+                        entry.transcript_path = Some(transcript_path);
+                        entry.stage = "waiting_diarize".to_string();
+                    }
                 } else {
-                    0
-                };
-                let remaining = estimated_total - elapsed;
+                    // No diarization — mark as completed
+                    self.finish_episode(episode_id, &transcript_path, active, app_handle)
+                        .await;
+                }
+            }
+            Err(e) => {
+                log::error!("Transcription failed for episode {}: {}", episode_id, e);
+                if let Err(db_err) = self.db.mark_failed(episode_id, &e) {
+                    log::error!("Failed to mark episode as failed: {}", db_err);
+                }
+                active.remove(&episode_id);
+                let _ = app_handle.emit("transcription_failed", (episode_id, e));
+                let _ = app_handle.emit("queue_update", ());
+            }
+        }
+    }
 
-                // Update state
-                {
-                    let mut s = state.write().await;
-                    s.progress = Some(progress);
-                    s.estimated_remaining = Some(remaining.max(0));
+    async fn handle_diarize_complete(
+        &self,
+        result: DiarizeResult,
+        active: &mut HashMap<i64, PipelineEntry>,
+        app_handle: &tauri::AppHandle,
+    ) {
+        let episode_id = result.episode_id;
+
+        match result.result {
+            Ok(num_speakers) => {
+                log::info!(
+                    "Diarization completed for episode {}: {} speakers",
+                    episode_id,
+                    num_speakers
+                );
+                if num_speakers > 0 {
+                    if let Err(e) = self.db.update_diarization(episode_id, num_speakers) {
+                        log::error!("Failed to update diarization status: {}", e);
+                    }
                 }
 
-                // Emit progress event
-                let _ = app_handle.emit("status_update", ());
+                // Get transcript path from entry
+                let transcript_path = active
+                    .get(&episode_id)
+                    .and_then(|e| e.transcript_path.clone());
 
-                log::debug!("Transcription progress: {}% ({}s elapsed, ~{}s remaining)",
-                    progress, elapsed, remaining);
+                if let Some(tp) = transcript_path {
+                    self.finish_episode(episode_id, &tp, active, app_handle)
+                        .await;
+                } else {
+                    // Shouldn't happen, but clean up
+                    active.remove(&episode_id);
+                }
+            }
+            Err(e) => {
+                log::warn!("Diarization failed for episode {} (completing anyway): {}", episode_id, e);
+
+                // Still complete the episode — diarization failure is non-fatal
+                let transcript_path = active
+                    .get(&episode_id)
+                    .and_then(|e| e.transcript_path.clone());
+
+                if let Some(tp) = transcript_path {
+                    self.finish_episode(episode_id, &tp, active, app_handle)
+                        .await;
+                } else {
+                    active.remove(&episode_id);
+                }
             }
         }
 
-        // Wait for process to complete
-        let status = child.wait().await?;
-
-        if !status.success() {
-            return Err(anyhow::anyhow!("whisper-cli failed with status: {}", status));
-        }
-
-        let transcript_path = output_base.with_extension("json");
-        log::info!("Transcription output saved to: {:?}", transcript_path);
-
-        Ok(transcript_path)
+        // Check if any entries are waiting for diarize slot
+        // (will be picked up in next try_fill_slots cycle via the scheduler loop)
     }
 
-    /// Run speaker diarization with progress tracking
-    async fn diarize_with_progress(
+    async fn finish_episode(
         &self,
-        audio_path: &PathBuf,
+        episode_id: i64,
         transcript_path: &PathBuf,
+        active: &mut HashMap<i64, PipelineEntry>,
         app_handle: &tauri::AppHandle,
-        hints_file: Option<&PathBuf>,
-    ) -> anyhow::Result<i32> {
-        let token = self.huggingface_token.as_ref()
-            .ok_or_else(|| anyhow::anyhow!("HuggingFace token not configured"))?;
-
-        log::info!("Running speaker diarization on: {:?}", audio_path);
-
-        // Build command args
-        let mut args = vec![
-            self.diarization_script_path.to_str().unwrap().to_string(),
-            audio_path.to_str().unwrap().to_string(),
-            transcript_path.to_str().unwrap().to_string(),
-            "--token".to_string(),
-            token.clone(),
-        ];
-
-        // Pass hints file if available
-        if let Some(hints_path) = hints_file {
-            log::info!("Passing diarization hints: {:?}", hints_path);
-            args.push("--hints-file".to_string());
-            args.push(hints_path.to_str().unwrap().to_string());
-
-            // Parse hints to get num_speakers_hint
-            if let Ok(content) = std::fs::read_to_string(hints_path) {
-                if let Ok(hints) = serde_json::from_str::<serde_json::Value>(&content) {
-                    if let Some(num) = hints.get("num_speakers_hint").and_then(|v| v.as_i64()) {
-                        args.push("--speakers".to_string());
-                        args.push(num.to_string());
-                    }
-                }
-            }
+    ) {
+        if let Err(e) = self.db.mark_completed(episode_id, transcript_path.to_str()) {
+            log::error!("Failed to mark episode as completed: {}", e);
         }
 
-        // Run Python diarization script
-        let mut child = Command::new(&self.venv_python_path)
-            .args(&args)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped()) // Capture errors for debugging
-            .spawn()?;
-
-        // Read stdout for progress updates
-        let stdout = child.stdout.take().expect("Failed to get stdout");
-        let mut reader = BufReader::new(stdout).lines();
-
-        let state = self.state.clone();
-        let app_handle = app_handle.clone();
-
-        // Process stdout line by line for progress
-        while let Ok(Some(line)) = reader.next_line().await {
-            // Parse progress from diarization output: "DIARIZATION_PROGRESS: 45"
-            if line.starts_with("DIARIZATION_PROGRESS:") {
-                if let Some(progress_str) = line.split(':').nth(1) {
-                    if let Ok(progress) = progress_str.trim().parse::<i32>() {
-                        // Update state
-                        {
-                            let mut s = state.write().await;
-                            s.progress = Some(progress);
-                        }
-                        // Emit progress event
-                        let _ = app_handle.emit("status_update", ());
-                        log::debug!("Diarization progress: {}%", progress);
-                    }
-                }
-            }
+        {
+            let mut ws = self.state.write().await;
+            ws.processed_today += 1;
+            ws.last_activity = Some(Utc::now());
         }
 
-        // Wait for process to complete and capture stderr
-        let output = child.wait_with_output().await?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            log::error!("Diarization stderr: {}", stderr);
-            return Err(anyhow::anyhow!("Diarization failed: {}", stderr));
-        }
-
-        // Read the _with_speakers.json file to get number of speakers
-        let with_speakers_path = transcript_path.with_file_name(format!(
-            "{}_with_speakers.json",
-            transcript_path.file_stem().and_then(|s| s.to_str()).unwrap_or("transcript")
-        ));
-
-        let num_speakers = if with_speakers_path.exists() {
-            match std::fs::read_to_string(&with_speakers_path) {
-                Ok(content) => {
-                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
-                        json.get("diarization")
-                            .and_then(|d| d.get("num_speakers"))
-                            .and_then(|n| n.as_i64())
-                            .map(|n| n as i32)
-                            .unwrap_or(0)
-                    } else {
-                        0
-                    }
-                }
-                Err(_) => 0,
-            }
-        } else {
-            0
-        };
-
-        log::info!("Diarization complete for: {:?}, {} speakers", audio_path, num_speakers);
-        Ok(num_speakers)
+        active.remove(&episode_id);
+        let _ = app_handle.emit("transcription_complete", episode_id);
+        let _ = app_handle.emit("queue_update", ());
     }
 
-    /// Download episode audio file with streaming, timeouts, and automatic retry
-    async fn download_episode(
-        &self,
-        episode: &crate::database::Episode,
-        app_handle: &tauri::AppHandle,
-    ) -> anyhow::Result<String> {
-        // Generate filename from title
-        let safe_title: String = episode
-            .title
-            .chars()
-            .map(|c| {
-                if c.is_alphanumeric() || c == ' ' || c == '-' || c == '_' {
-                    c
-                } else {
-                    '_'
-                }
+    /// Sync the active pipeline entries to the shared WorkerState
+    async fn sync_state(&self, active: &HashMap<i64, PipelineEntry>) {
+        let mut ws = self.state.write().await;
+        ws.slots = active
+            .values()
+            .filter(|e| e.stage != "downloaded" && e.stage != "waiting_diarize")
+            .map(|e| PipelineSlot {
+                episode: e.episode.clone(),
+                stage: e.stage.clone(),
+                progress: None,
+                estimated_remaining: None,
+                started_at: Utc::now(), // Approximate; real start time would need tracking
             })
             .collect();
-        let filename = format!("{}.mp3", safe_title.trim());
-        let file_path = self.episodes_path.join(&filename);
-
-        let backoff_delays = [2u64, 8, 30];
-
-        for attempt in 0..3usize {
-            match self
-                .try_download(episode, &file_path, app_handle)
-                .await
-            {
-                Ok(file_size) => {
-                    let file_path_str = file_path.to_string_lossy().to_string();
-
-                    // Update database
-                    self.db.mark_downloaded(episode.id, &file_path_str)?;
-                    self.db.update_episode_file_size(episode.id, file_size)?;
-
-                    return Ok(file_path_str);
-                }
-                Err(e) => {
-                    // Clean up partial file
-                    let _ = tokio::fs::remove_file(&file_path).await;
-
-                    if attempt < 2 {
-                        let delay = backoff_delays[attempt];
-                        log::warn!(
-                            "Download attempt {} failed, retrying in {}s: {}",
-                            attempt + 1,
-                            delay,
-                            e
-                        );
-                        tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
-                    } else {
-                        return Err(anyhow::anyhow!(
-                            "Download failed after 3 attempts: {}",
-                            e
-                        ));
-                    }
-                }
-            }
-        }
-
-        unreachable!()
     }
 
-    /// Single download attempt with streaming and validation
-    async fn try_download(
-        &self,
-        episode: &crate::database::Episode,
-        file_path: &PathBuf,
-        app_handle: &tauri::AppHandle,
-    ) -> anyhow::Result<i64> {
-        log::info!("Downloading to: {:?}", file_path);
+    /// Check auto-transcribe setting and add episodes if enabled
+    async fn check_auto_transcribe(&self, app_handle: &tauri::AppHandle) {
+        let auto_transcribe = self
+            .db
+            .get_setting("auto_transcribe")
+            .unwrap_or(None)
+            .map(|v| v == "true")
+            .unwrap_or(false);
 
-        let client = reqwest::Client::builder()
-            .connect_timeout(std::time::Duration::from_secs(30))
-            .timeout(std::time::Duration::from_secs(600))
-            .build()?;
-
-        let response = client
-            .get(&episode.audio_url)
-            .send()
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to start download: {}", e))?;
-
-        if !response.status().is_success() {
-            return Err(anyhow::anyhow!(
-                "Download failed with status: {}",
-                response.status()
-            ));
-        }
-
-        let content_length = response.content_length();
-        let mut stream = response.bytes_stream();
-        let mut file = tokio::fs::File::create(&file_path).await?;
-        let mut downloaded: u64 = 0;
-        let mut last_progress: i32 = -1;
-
-        while let Some(chunk_result) = stream.next().await {
-            let chunk = chunk_result
-                .map_err(|e| anyhow::anyhow!("Error reading download stream: {}", e))?;
-            file.write_all(&chunk).await?;
-            downloaded += chunk.len() as u64;
-
-            // Emit progress if we know the total size
-            if let Some(total) = content_length {
-                let progress = ((downloaded as f64 / total as f64) * 100.0) as i32;
-                if progress != last_progress {
-                    last_progress = progress;
-                    {
-                        let mut state = self.state.write().await;
-                        state.progress = Some(progress);
-                    }
-                    let _ = app_handle.emit("status_update", ());
+        if auto_transcribe {
+            if let Ok(Some(episode)) = self.db.get_next_untranscribed_episode() {
+                log::info!(
+                    "Auto-transcribe: adding episode {} to queue",
+                    episode.title
+                );
+                if let Err(e) = self.db.add_to_queue(episode.id, 0) {
+                    log::error!("Failed to auto-add episode to queue: {}", e);
+                } else {
+                    let _ = app_handle.emit("queue_update", ());
                 }
             }
         }
-
-        file.flush().await?;
-
-        // Validate file size against Content-Length
-        if let Some(expected) = content_length {
-            if downloaded != expected {
-                return Err(anyhow::anyhow!(
-                    "Download incomplete: got {} bytes, expected {}",
-                    downloaded,
-                    expected
-                ));
-            }
-        }
-
-        log::info!("Download complete: {} bytes", downloaded);
-        Ok(downloaded as i64)
     }
 }
 
-/// Parse progress percentage from whisper-cli output
-fn parse_progress(line: &str) -> Option<i32> {
-    // whisper-cli outputs: "progress = 45%" or similar
-    if line.contains("progress") {
-        // Try to find a percentage
-        for part in line.split_whitespace() {
-            if let Some(num_str) = part.strip_suffix('%') {
-                if let Ok(num) = num_str.parse::<i32>() {
-                    return Some(num.clamp(0, 100));
-                }
-            }
-            // Also try parsing just numbers
-            if let Ok(num) = part.parse::<i32>() {
-                if num >= 0 && num <= 100 {
-                    return Some(num);
-                }
-            }
-        }
-    }
-
-    // Alternative: parse timestamp progress like "[00:05:30 --> 00:05:35]"
-    // This indicates progress through the audio
-    if line.starts_with('[') && line.contains("-->") {
-        if let Some(time_str) = line.split("-->").next() {
-            if let Some(seconds) = parse_timestamp(time_str.trim_matches(|c| c == '[' || c == ' ')) {
-                // Return progress as percentage (assuming we don't know total, estimate based on line)
-                // This is a fallback - real progress from -pp flag is better
-                return None; // Don't use timestamp for now
-            }
-        }
-    }
-
-    None
-}
-
-/// Parse timestamp like "00:05:30" to seconds
-fn parse_timestamp(ts: &str) -> Option<f64> {
-    let parts: Vec<&str> = ts.split(':').collect();
-    match parts.len() {
-        2 => {
-            let mins: f64 = parts[0].parse().ok()?;
-            let secs: f64 = parts[1].parse().ok()?;
-            Some(mins * 60.0 + secs)
-        }
-        3 => {
-            let hours: f64 = parts[0].parse().ok()?;
-            let mins: f64 = parts[1].parse().ok()?;
-            let secs: f64 = parts[2].parse().ok()?;
-            Some(hours * 3600.0 + mins * 60.0 + secs)
-        }
-        _ => None,
-    }
+/// Events sent from task workers back to the scheduler
+enum PipelineEvent {
+    DownloadComplete(DownloadResult),
+    TranscribeComplete(TranscribeResult),
+    DiarizeComplete(DiarizeResult),
 }

@@ -6,9 +6,20 @@ use tauri::State;
 use tokio::sync::RwLock;
 
 #[derive(Debug, Serialize)]
+pub struct PipelineSlotInfo {
+    pub episode: EpisodeSummary,
+    pub stage: String,
+    pub progress: Option<i32>,
+    pub elapsed_seconds: Option<i64>,
+    pub estimated_remaining_seconds: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
 pub struct WorkerStatus {
     pub status: String, // "idle" | "processing"
-    pub stage: String,  // "idle" | "transcribing" | "diarizing" | "saving"
+    pub slots: Vec<PipelineSlotInfo>,
+    // Backward-compat: primary slot fields
+    pub stage: String,
     pub current_episode: Option<EpisodeSummary>,
     pub progress: Option<i32>,
     pub elapsed_seconds: Option<i64>,
@@ -35,21 +46,45 @@ pub async fn get_worker_status(
 
     let memory_info = get_memory_info();
 
+    // Convert slots to serializable info
+    let slot_infos: Vec<PipelineSlotInfo> = state
+        .slots
+        .iter()
+        .map(|slot| {
+            let elapsed = chrono::Utc::now()
+                .signed_duration_since(slot.started_at)
+                .num_seconds();
+            PipelineSlotInfo {
+                episode: slot.episode.clone(),
+                stage: slot.stage.clone(),
+                progress: slot.progress,
+                elapsed_seconds: Some(elapsed),
+                estimated_remaining_seconds: slot.estimated_remaining,
+            }
+        })
+        .collect();
+
+    // Primary slot for backward compat
+    let primary = state.primary_slot();
+
     Ok(WorkerStatus {
-        status: if state.is_processing {
+        status: if state.is_processing() {
             "processing".to_string()
         } else {
             "idle".to_string()
         },
-        stage: state.stage.clone(),
-        current_episode: state.current_episode.clone(),
-        progress: state.progress,
-        elapsed_seconds: state.started_at.map(|t| {
+        slots: slot_infos,
+        stage: primary
+            .map(|s| s.stage.clone())
+            .unwrap_or_else(|| "idle".to_string()),
+        current_episode: primary.map(|s| s.episode.clone()),
+        progress: primary.and_then(|s| s.progress),
+        elapsed_seconds: primary.map(|s| {
             chrono::Utc::now()
-                .signed_duration_since(t)
+                .signed_duration_since(s.started_at)
                 .num_seconds()
         }),
-        estimated_remaining_seconds: state.estimated_remaining,
+        estimated_remaining_seconds: primary.and_then(|s| s.estimated_remaining),
         last_activity: state.last_activity.map(|t| t.to_rfc3339()),
         next_check_seconds: Some(10),
         worker_info: WorkerInfo {
