@@ -79,6 +79,9 @@ struct PipelineEntry {
     transcript_path: Option<PathBuf>,
     stage: String,
     queue_type: String, // "full" or "diarize_only"
+    entered_pipeline_at: std::time::Instant,
+    download_duration: Option<f64>,
+    transcribe_duration: Option<f64>,
 }
 
 pub struct TranscriptionWorker {
@@ -225,6 +228,20 @@ impl TranscriptionWorker {
         let mut download_busy = false;
         let mut transcribe_busy = false;
         let mut diarize_busy = false;
+
+        // On startup: auto-queue transcribed episodes that lack diarization
+        if has_diarization {
+            match self.db.count_undiarized_transcribed() {
+                Ok(count) if count > 0 => {
+                    log::info!("Found {} transcribed episodes without diarization, auto-queuing", count);
+                    if let Err(e) = self.db.queue_undiarized_transcribed() {
+                        log::error!("Failed to auto-queue undiarized episodes: {}", e);
+                    }
+                }
+                Ok(_) => {}
+                Err(e) => log::error!("Failed to check undiarized episodes: {}", e),
+            }
+        }
 
         // Scheduler loop
         loop {
@@ -420,6 +437,9 @@ impl TranscriptionWorker {
                                     transcript_path: Some(transcript_path.clone()),
                                     stage: "diarizing".to_string(),
                                     queue_type,
+                                    entered_pipeline_at: std::time::Instant::now(),
+                                    download_duration: None,
+                                    transcribe_duration: None,
                                 },
                             );
 
@@ -465,6 +485,9 @@ impl TranscriptionWorker {
                                     transcript_path: None,
                                     stage: "downloading".to_string(),
                                     queue_type,
+                                    entered_pipeline_at: std::time::Instant::now(),
+                                    download_duration: None,
+                                    transcribe_duration: None,
                                 },
                             );
                             *download_busy = true;
@@ -491,6 +514,9 @@ impl TranscriptionWorker {
                                 transcript_path: None,
                                 stage: "transcribing".to_string(),
                                 queue_type,
+                                entered_pipeline_at: std::time::Instant::now(),
+                                download_duration: None,
+                                transcribe_duration: None,
                             },
                         );
                         *transcribe_busy = true;
@@ -505,6 +531,143 @@ impl TranscriptionWorker {
                     }
 
                     let _ = app_handle.emit("status_update", ());
+                }
+            }
+        }
+
+        // If diarize slot is free, check for diarize_only items independently of transcribe slot
+        if !*diarize_busy && has_diarization {
+            // First check active entries that are downloaded diarize_only items
+            let diarize_ready_id = active
+                .iter()
+                .find(|(_, entry)| {
+                    entry.queue_type == "diarize_only"
+                        && (entry.stage == "downloaded" || entry.stage == "waiting_diarize")
+                        && entry.transcript_path.is_some()
+                })
+                .map(|(id, _)| *id);
+
+            if let Some(episode_id) = diarize_ready_id {
+                if let Some(entry) = active.get_mut(&episode_id) {
+                    entry.stage = "diarizing".to_string();
+                    *diarize_busy = true;
+                    let hints_path = self
+                        .transcripts_path
+                        .join(format!("{}_hints.json", episode_id));
+                    let _ = diarize_tx
+                        .send(DiarizeJob {
+                            episode_id,
+                            audio_path: entry.audio_path.clone().unwrap_or_default(),
+                            transcript_path: entry.transcript_path.clone().unwrap(),
+                            hints_path: if hints_path.exists() {
+                                Some(hints_path)
+                            } else {
+                                None
+                            },
+                        })
+                        .await;
+                    let _ = app_handle.emit("status_update", ());
+                }
+            } else {
+                // Pull diarize_only items from DB queue (independent of transcribe slot)
+                if let Ok(Some(item)) = self.db.get_next_diarize_only_item() {
+                    let episode_id = item.episode.id;
+
+                    if !active.contains_key(&episode_id) {
+                        if let Err(e) = self.db.mark_processing(episode_id) {
+                            log::error!("Failed to mark diarize-only episode as processing: {}", e);
+                        } else if item.episode.is_transcribed
+                            && item.episode.transcript_path.is_some()
+                        {
+                            let summary = EpisodeSummary {
+                                id: item.episode.id,
+                                title: item.episode.title.clone(),
+                                duration: item.episode.duration,
+                                episode_number: item.episode.episode_number.clone(),
+                            };
+                            let transcript_path =
+                                PathBuf::from(item.episode.transcript_path.as_ref().unwrap());
+                            let hints_path = self
+                                .transcripts_path
+                                .join(format!("{}_hints.json", episode_id));
+                            let hints = if hints_path.exists() {
+                                Some(hints_path)
+                            } else {
+                                None
+                            };
+
+                            // Check if audio is available for diarization
+                            let audio_available = item
+                                .episode
+                                .audio_file_path
+                                .as_ref()
+                                .map(|p| std::path::Path::new(p).exists())
+                                .unwrap_or(false);
+
+                            if audio_available {
+                                active.insert(
+                                    episode_id,
+                                    PipelineEntry {
+                                        episode: summary,
+                                        audio_path: item.episode.audio_file_path.clone(),
+                                        transcript_path: Some(transcript_path.clone()),
+                                        stage: "diarizing".to_string(),
+                                        queue_type: "diarize_only".to_string(),
+                                        entered_pipeline_at: std::time::Instant::now(),
+                                        download_duration: None,
+                                        transcribe_duration: None,
+                                    },
+                                );
+                                *diarize_busy = true;
+                                let _ = diarize_tx
+                                    .send(DiarizeJob {
+                                        episode_id,
+                                        audio_path: item
+                                            .episode
+                                            .audio_file_path
+                                            .unwrap_or_default(),
+                                        transcript_path,
+                                        hints_path: hints,
+                                    })
+                                    .await;
+                                let _ = app_handle.emit("status_update", ());
+                            } else if !*download_busy {
+                                // Need to download audio first
+                                active.insert(
+                                    episode_id,
+                                    PipelineEntry {
+                                        episode: summary,
+                                        audio_path: None,
+                                        transcript_path: Some(transcript_path),
+                                        stage: "downloading".to_string(),
+                                        queue_type: "diarize_only".to_string(),
+                                        entered_pipeline_at: std::time::Instant::now(),
+                                        download_duration: None,
+                                        transcribe_duration: None,
+                                    },
+                                );
+                                *download_busy = true;
+                                let _ = download_tx
+                                    .send(DownloadJob {
+                                        episode: item.episode,
+                                        episodes_path: self.episodes_path.clone(),
+                                    })
+                                    .await;
+                                let _ = app_handle.emit("status_update", ());
+                            } else {
+                                // Both download and diarize busy, reset
+                                if let Err(e) = self.db.reset_to_pending(episode_id) {
+                                    log::error!("Failed to reset diarize-only to pending: {}", e);
+                                }
+                            }
+                        } else {
+                            // Not transcribed yet, can't diarize-only — reset
+                            log::warn!("Diarize-only item {} has no transcript, resetting", episode_id);
+                            if let Err(e) = self.db.reset_to_pending(episode_id) {
+                                log::error!("Failed to reset: {}", e);
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -529,6 +692,9 @@ impl TranscriptionWorker {
                                 transcript_path: None,
                                 stage: "downloading".to_string(),
                                 queue_type: "full".to_string(),
+                                entered_pipeline_at: std::time::Instant::now(),
+                                download_duration: None,
+                                transcribe_duration: None,
                             },
                         );
                         *download_busy = true;
@@ -560,8 +726,15 @@ impl TranscriptionWorker {
         match result.result {
             Ok(file_path) => {
                 log::info!("Download completed for episode {}: {}", episode_id, file_path);
+                // Save download duration to DB
+                if let Some(dur) = result.duration_seconds {
+                    if let Err(e) = self.db.update_download_duration(episode_id, dur) {
+                        log::warn!("Failed to save download duration: {}", e);
+                    }
+                }
                 if let Some(entry) = active.get_mut(&episode_id) {
                     entry.audio_path = Some(file_path.clone());
+                    entry.download_duration = result.duration_seconds;
                     entry.stage = "downloaded".to_string();
 
                     // If transcribe slot is free, send immediately
@@ -627,6 +800,15 @@ impl TranscriptionWorker {
         match result.result {
             Ok(transcript_path) => {
                 log::info!("Transcription completed for episode {}", episode_id);
+                // Save transcribe duration to DB and entry
+                if let Some(dur) = result.duration_seconds {
+                    if let Err(e) = self.db.update_transcribe_duration(episode_id, dur) {
+                        log::warn!("Failed to save transcribe duration: {}", e);
+                    }
+                    if let Some(entry) = active.get_mut(&episode_id) {
+                        entry.transcribe_duration = result.duration_seconds;
+                    }
+                }
 
                 if has_diarization && !*diarize_busy {
                     // Send to diarization
@@ -691,6 +873,12 @@ impl TranscriptionWorker {
                     episode_id,
                     num_speakers
                 );
+                // Save diarize duration to DB
+                if let Some(dur) = result.duration_seconds {
+                    if let Err(e) = self.db.update_diarize_duration(episode_id, dur) {
+                        log::warn!("Failed to save diarize duration: {}", e);
+                    }
+                }
                 if num_speakers > 0 {
                     if let Err(e) = self.db.update_diarization(episode_id, num_speakers) {
                         log::error!("Failed to update diarization status: {}", e);
@@ -738,6 +926,21 @@ impl TranscriptionWorker {
         active: &mut HashMap<i64, PipelineEntry>,
         app_handle: &tauri::AppHandle,
     ) {
+        // Save total pipeline processing time
+        if let Some(entry) = active.get(&episode_id) {
+            let total_seconds = entry.entered_pipeline_at.elapsed().as_secs_f64();
+            if let Err(e) = self.db.update_pipeline_duration(episode_id, total_seconds) {
+                log::warn!("Failed to save pipeline duration: {}", e);
+            }
+            log::info!(
+                "Episode {} total pipeline time: {:.1}s (download: {:?}s, transcribe: {:?}s)",
+                episode_id,
+                total_seconds,
+                entry.download_duration,
+                entry.transcribe_duration,
+            );
+        }
+
         if let Err(e) = self.db.mark_completed(episode_id, transcript_path.to_str()) {
             log::error!("Failed to mark episode as completed: {}", e);
         }

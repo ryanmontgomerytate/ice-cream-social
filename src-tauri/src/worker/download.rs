@@ -16,6 +16,7 @@ pub struct DownloadJob {
 pub struct DownloadResult {
     pub episode_id: i64,
     pub result: Result<String, String>,
+    pub duration_seconds: Option<f64>,
 }
 
 /// Run the download task loop, receiving jobs and sending results
@@ -37,10 +38,13 @@ pub async fn download_task(
                 match job {
                     Some(job) => {
                         let episode_id = job.episode.id;
+                        let start = std::time::Instant::now();
                         let result = download_episode(&db, &job.episode, &job.episodes_path, &cancel).await;
+                        let duration_seconds = if result.is_ok() { Some(start.elapsed().as_secs_f64()) } else { None };
                         let _ = result_tx.send(DownloadResult {
                             episode_id,
                             result,
+                            duration_seconds,
                         }).await;
                     }
                     None => {

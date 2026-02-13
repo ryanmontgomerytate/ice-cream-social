@@ -4,18 +4,17 @@
 # Podcast Feed Settings
 podcast:
   name: "Matt and Mattingly's Ice Cream Social"
-  # Multiple feed sources
+  # Feed URLs are loaded from .env (PATREON_RSS_URL, APPLE_RSS_URL)
+  # See .env.example for setup instructions
   feeds:
     patreon:
       name: "Patreon (Full Archive)"
-      url: "https://www.patreon.com/rss/heyscoops?auth=REDACTED_PATREON_AUTH_TOKEN&show=876202"
+      env_var: "PATREON_RSS_URL"
       enabled: true
     apple:
       name: "Apple Podcasts"
-      url: "https://feed.cdnstream1.com/zjb/feed/download/91/7e/43/917e43a3-1a10-46f7-9fde-348c9360fa41.xml"
+      env_var: "APPLE_RSS_URL"
       enabled: true
-  # Default feed for backward compatibility
-  rss_feed_url: "https://www.patreon.com/rss/heyscoops?auth=REDACTED_PATREON_AUTH_TOKEN&show=876202"
 
 # Directory Paths (relative to project root)
 paths:

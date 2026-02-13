@@ -222,6 +222,72 @@ export const episodesAPI = {
     }
     throw new Error('Reprocess diarization requires Tauri');
   },
+
+  async getCategoryRules() {
+    if (isTauri) {
+      try {
+        return await tauriAPI.episodesAPI.getCategoryRules();
+      } catch (e) {
+        console.error('Tauri getCategoryRules failed:', e);
+        return [];
+      }
+    }
+    return [];
+  },
+
+  async recategorizeAllEpisodes() {
+    if (isTauri) {
+      return await tauriAPI.episodesAPI.recategorizeAllEpisodes();
+    }
+    throw new Error('Recategorize requires Tauri');
+  },
+
+  async linkCrossFeedEpisodes() {
+    if (isTauri) {
+      return await tauriAPI.episodesAPI.linkCrossFeedEpisodes();
+    }
+    throw new Error('Link cross-feed requires Tauri');
+  },
+
+  async getEpisodeVariants(episodeId) {
+    if (isTauri) {
+      try {
+        return await tauriAPI.episodesAPI.getEpisodeVariants(episodeId);
+      } catch (e) {
+        console.error('Tauri getEpisodeVariants failed:', e);
+        return [];
+      }
+    }
+    return [];
+  },
+
+  async addCategoryRule(rule) {
+    if (isTauri) {
+      return await tauriAPI.episodesAPI.addCategoryRule(rule);
+    }
+    throw new Error('Category rules require Tauri');
+  },
+
+  async updateCategoryRule(rule) {
+    if (isTauri) {
+      return await tauriAPI.episodesAPI.updateCategoryRule(rule);
+    }
+    throw new Error('Category rules require Tauri');
+  },
+
+  async deleteCategoryRule(id) {
+    if (isTauri) {
+      return await tauriAPI.episodesAPI.deleteCategoryRule(id);
+    }
+    throw new Error('Category rules require Tauri');
+  },
+
+  async testCategoryRule(pattern, keywords = null) {
+    if (isTauri) {
+      return await tauriAPI.episodesAPI.testCategoryRule(pattern, keywords);
+    }
+    throw new Error('Category rules require Tauri');
+  },
 };
 
 // ============================================================================
@@ -333,6 +399,18 @@ export const statsAPI = {
       }
     }
     return fetchJSON(`${API_BASE}/stats`);
+  },
+
+  async getPipelineStats(limit = 20) {
+    if (isTauri) {
+      try {
+        return await tauriAPI.statsAPI.getPipelineStats(limit);
+      } catch (e) {
+        console.error('Tauri getPipelineStats failed:', e);
+        return { timing: null, recent: [] };
+      }
+    }
+    return { timing: null, recent: [] };
   },
 };
 
@@ -925,6 +1003,31 @@ export const extractionAPI = {
   },
 };
 
+// ============================================================================
+// WIKI API - Fandom wiki integration
+// ============================================================================
+
+export const wikiAPI = {
+  async syncWikiEpisode(episodeNumber) {
+    if (isTauri) {
+      return await tauriAPI.wikiAPI.syncWikiEpisode(episodeNumber);
+    }
+    throw new Error('Wiki sync only available in Tauri mode');
+  },
+
+  async getWikiEpisodeMeta(episodeId) {
+    if (isTauri) {
+      try {
+        return await tauriAPI.wikiAPI.getWikiEpisodeMeta(episodeId);
+      } catch (e) {
+        console.error('Tauri getWikiEpisodeMeta failed:', e);
+        return null;
+      }
+    }
+    return null;
+  },
+};
+
 // Export everything
 export default {
   isTauri,
@@ -939,5 +1042,6 @@ export default {
   content: contentAPI,
   search: searchAPI,
   extraction: extractionAPI,
+  wiki: wikiAPI,
   setupEventListeners,
 };

@@ -99,6 +99,13 @@ pub fn run() {
                 worker.run(app_handle).await;
             });
 
+            // Spawn daily feed sync scheduler (runs at 1:00 AM)
+            let sync_db = db.clone();
+            let sync_app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                feed_sync_scheduler(sync_db, sync_app_handle).await;
+            });
+
             log::info!("Ice Cream Social app initialized");
 
             Ok(())
@@ -118,6 +125,15 @@ pub fn run() {
             commands::reprocess_diarization,
             commands::save_voice_samples,
             commands::analyze_episode_content,
+            // Category commands
+            commands::get_category_rules,
+            commands::add_category_rule,
+            commands::update_category_rule,
+            commands::delete_category_rule,
+            commands::test_category_rule,
+            commands::recategorize_all_episodes,
+            commands::link_cross_feed_episodes,
+            commands::get_episode_variants,
             // Queue commands
             commands::get_queue,
             commands::get_queue_status,
@@ -126,6 +142,7 @@ pub fn run() {
             commands::retry_transcription,
             // Stats commands
             commands::get_stats,
+            commands::get_pipeline_stats,
             // Worker commands
             commands::get_worker_status,
             commands::stop_current_transcription,
@@ -186,6 +203,9 @@ pub fn run() {
             commands::add_audio_drop_instance,
             commands::get_audio_drop_instances,
             commands::delete_audio_drop_instance,
+            // Wiki lore commands
+            commands::sync_wiki_episode,
+            commands::get_wiki_episode_meta,
             // Extraction commands (Ollama/LLM)
             commands::get_ollama_status,
             commands::get_extraction_prompts,
@@ -201,50 +221,100 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
-/// Load HuggingFace token from .env file (preferred) or config.yaml (fallback)
-fn load_huggingface_token(project_dir: &std::path::Path) -> Option<String> {
-    // First try .env file (preferred for secrets)
+/// Load a value from the .env file by key name
+pub fn load_env_value(project_dir: &std::path::Path, key: &str) -> Option<String> {
     let env_path = project_dir.join(".env");
+    let prefix = format!("{}=", key);
     if let Ok(content) = std::fs::read_to_string(&env_path) {
         for line in content.lines() {
             let trimmed = line.trim();
-            if trimmed.starts_with("HUGGINGFACE_TOKEN=") {
-                let value = trimmed
-                    .trim_start_matches("HUGGINGFACE_TOKEN=")
+            if trimmed.starts_with(&prefix) {
+                let value = trimmed[prefix.len()..]
                     .trim()
                     .trim_matches('"')
                     .trim_matches('\'');
-
-                if !value.is_empty() && value.starts_with("hf_") {
-                    log::info!("HuggingFace token loaded from .env");
+                if !value.is_empty() {
                     return Some(value.to_string());
                 }
             }
         }
     }
+    None
+}
 
-    // Fallback: try config.yaml (deprecated for secrets)
-    let config_path = project_dir.join("config.yaml");
-    if let Ok(content) = std::fs::read_to_string(&config_path) {
-        for line in content.lines() {
-            let trimmed = line.trim();
-            if trimmed.starts_with("huggingface_token:") {
-                let mut value = trimmed
-                    .trim_start_matches("huggingface_token:")
-                    .trim();
+/// Daily feed sync scheduler — syncs all feeds at 1:00 AM local time
+async fn feed_sync_scheduler(db: Arc<Database>, app_handle: tauri::AppHandle) {
+    use chrono::Local;
+    use tauri::Emitter;
 
-                // Remove inline comments
-                if let Some(comment_pos) = value.find('#') {
-                    value = value[..comment_pos].trim();
+    log::info!("Feed sync scheduler started (daily at 1:00 AM)");
+
+    loop {
+        // Calculate time until next 1:00 AM
+        let now = Local::now();
+        let target_hour = 1u32;
+        let today_target = now
+            .date_naive()
+            .and_hms_opt(target_hour, 0, 0)
+            .unwrap();
+
+        let next_run = if now.naive_local() < today_target {
+            today_target
+        } else {
+            // Already past 1 AM today, schedule for tomorrow
+            today_target + chrono::Duration::days(1)
+        };
+
+        let wait_duration = (next_run - now.naive_local())
+            .to_std()
+            .unwrap_or(std::time::Duration::from_secs(3600));
+
+        log::info!(
+            "Next feed sync scheduled for {} (in {:.1} hours)",
+            next_run.format("%Y-%m-%d %H:%M"),
+            wait_duration.as_secs_f64() / 3600.0
+        );
+
+        tokio::time::sleep(wait_duration).await;
+
+        log::info!("Running scheduled feed sync...");
+
+        for source in &["patreon", "apple"] {
+            match commands::sync_feed(&db, source).await {
+                Ok(result) => {
+                    log::info!(
+                        "Scheduled sync [{}]: {} added, {} updated",
+                        source,
+                        result.added,
+                        result.updated
+                    );
+                    if result.added > 0 {
+                        let _ = app_handle.emit("stats_update", ());
+                    }
                 }
-
-                let value = value.trim_matches('"').trim_matches('\'');
-
-                if !value.is_empty() && value.starts_with("hf_") {
-                    log::warn!("HuggingFace token loaded from config.yaml - consider moving to .env");
-                    return Some(value.to_string());
+                Err(e) => {
+                    log::error!("Scheduled sync [{}] failed: {}", source, e);
                 }
             }
+        }
+
+        let _ = app_handle.emit("stats_update", ());
+    }
+}
+
+/// Load HuggingFace token from .env file (preferred) or config.yaml (fallback)
+fn load_huggingface_token(project_dir: &std::path::Path) -> Option<String> {
+    // Try HF_TOKEN first, then HUGGINGFACE_TOKEN
+    if let Some(token) = load_env_value(project_dir, "HF_TOKEN") {
+        if token.starts_with("hf_") {
+            log::info!("HuggingFace token loaded from .env (HF_TOKEN)");
+            return Some(token);
+        }
+    }
+    if let Some(token) = load_env_value(project_dir, "HUGGINGFACE_TOKEN") {
+        if token.starts_with("hf_") {
+            log::info!("HuggingFace token loaded from .env (HUGGINGFACE_TOKEN)");
+            return Some(token);
         }
     }
 

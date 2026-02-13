@@ -459,6 +459,131 @@ Mark the start time of each segment.',
             [],
         ); // Ignore error if column already exists
 
+        // Migration: Add category columns to episodes (idempotent)
+        let _ = conn.execute(
+            "ALTER TABLE episodes ADD COLUMN category TEXT DEFAULT 'episode'",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE episodes ADD COLUMN category_number TEXT",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE episodes ADD COLUMN sub_series TEXT",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE episodes ADD COLUMN canonical_id INTEGER REFERENCES episodes(id)",
+            [],
+        );
+
+        // Indexes for category columns
+        let _ = conn.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_episodes_category ON episodes(category);
+             CREATE INDEX IF NOT EXISTS idx_episodes_canonical ON episodes(canonical_id);",
+        );
+
+        // Migration: Add pipeline timing columns to episodes (idempotent)
+        let _ = conn.execute(
+            "ALTER TABLE episodes ADD COLUMN download_duration REAL",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE episodes ADD COLUMN transcribe_duration REAL",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE episodes ADD COLUMN diarize_duration REAL",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE episodes ADD COLUMN diarized_date TEXT",
+            [],
+        );
+
+        // Category rules table (data-driven categorization)
+        conn.execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS category_rules (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                category TEXT NOT NULL UNIQUE,
+                display_name TEXT NOT NULL,
+                title_pattern TEXT NOT NULL,
+                number_pattern TEXT,
+                priority INTEGER DEFAULT 0,
+                icon TEXT,
+                color TEXT,
+                keywords TEXT
+            );
+
+            INSERT OR IGNORE INTO category_rules (category, display_name, title_pattern, number_pattern, priority, icon, color) VALUES
+                ('fubts', 'FUBTS', '(?i)P?&?T?\s*FUBTS', '(?i)FUBTS\s*([\d.]+)', 1, '🎭', '#ef4444'),
+                ('scoopflix', 'Scoopflix', '(?i)scoopfl?i?x|Not Furlong', NULL, 2, '🎬', '#f59e0b'),
+                ('abracababble', 'Abracababble', '(?i)abracababble', '(?i)abracababble\s*(\d+)', 3, '🔮', '#8b5cf6'),
+                ('shituational', 'Shituational', '(?i)shituational\s*aware', '(\d+)', 4, '💩', '#a3e635'),
+                ('episode', 'Episode', '(?i)^(Episode|Ad Free)\s+\d+', '(?i)(?:Episode|Ad Free)\s+(\d+)', 5, '🎙️', '#6366f1'),
+                ('bonus', 'Bonus', '.', NULL, 99, '🎁', '#6b7280');
+            "#,
+        )?;
+
+        // Migration: add keywords column if it doesn't exist
+        let has_keywords: bool = conn
+            .prepare("SELECT COUNT(*) FROM pragma_table_info('category_rules') WHERE name='keywords'")?
+            .query_row([], |row| row.get::<_, i64>(0))
+            .map(|c| c > 0)
+            .unwrap_or(false);
+        if !has_keywords {
+            conn.execute_batch("ALTER TABLE category_rules ADD COLUMN keywords TEXT")?;
+        }
+
+        // Wiki lore tables (fandom wiki integration)
+        conn.execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS wiki_lore (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                category TEXT NOT NULL,
+                description TEXT,
+                wiki_url TEXT,
+                wiki_page_id INTEGER,
+                first_episode_id INTEGER REFERENCES episodes(id),
+                aliases TEXT,
+                last_synced TEXT,
+                is_wiki_sourced INTEGER DEFAULT 1
+            );
+
+            CREATE TABLE IF NOT EXISTS wiki_lore_mentions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                lore_id INTEGER NOT NULL REFERENCES wiki_lore(id) ON DELETE CASCADE,
+                episode_id INTEGER NOT NULL REFERENCES episodes(id) ON DELETE CASCADE,
+                segment_idx INTEGER,
+                start_time REAL,
+                end_time REAL,
+                context_snippet TEXT,
+                source TEXT DEFAULT 'auto',
+                confidence REAL DEFAULT 1.0,
+                UNIQUE(lore_id, episode_id, segment_idx)
+            );
+
+            CREATE TABLE IF NOT EXISTS wiki_episode_meta (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                episode_id INTEGER UNIQUE REFERENCES episodes(id) ON DELETE CASCADE,
+                wiki_page_id INTEGER,
+                wiki_url TEXT,
+                summary TEXT,
+                recording_location TEXT,
+                air_date TEXT,
+                topics_json TEXT,
+                guests_json TEXT,
+                bits_json TEXT,
+                scoopmail_json TEXT,
+                jock_vs_nerd TEXT,
+                raw_wikitext TEXT,
+                last_synced TEXT
+            );
+            "#,
+        )?;
+
         Ok(())
     }
 
@@ -471,15 +596,30 @@ Mark the start time of each segment.',
         feed_source: Option<&str>,
         transcribed_only: bool,
         in_queue_only: bool,
+        failed_only: bool,
+        downloaded_only: bool,
+        not_downloaded_only: bool,
+        diarized_only: bool,
         sort_by: Option<&str>,
         sort_desc: bool,
         search: Option<&str>,
         limit: i64,
         offset: i64,
+        category: Option<&str>,
+        include_variants: bool,
     ) -> Result<(Vec<Episode>, i64)> {
         let conn = self.conn.lock().unwrap();
 
         let mut conditions = Vec::new();
+
+        // Hide cross-feed variants by default
+        if !include_variants {
+            conditions.push("canonical_id IS NULL".to_string());
+        }
+
+        if let Some(cat) = category {
+            conditions.push(format!("category = '{}'", cat.replace("'", "''")));
+        }
         if let Some(source) = feed_source {
             conditions.push(format!("feed_source = '{}'", source));
         }
@@ -488,6 +628,18 @@ Mark the start time of each segment.',
         }
         if in_queue_only {
             conditions.push("is_in_queue = 1".to_string());
+        }
+        if failed_only {
+            conditions.push("(transcription_status = 'failed' OR id IN (SELECT episode_id FROM transcription_queue WHERE status = 'failed'))".to_string());
+        }
+        if downloaded_only {
+            conditions.push("is_downloaded = 1".to_string());
+        }
+        if not_downloaded_only {
+            conditions.push("(is_downloaded = 0 OR is_downloaded IS NULL)".to_string());
+        }
+        if diarized_only {
+            conditions.push("has_diarization = 1".to_string());
         }
         if let Some(search_term) = search {
             if !search_term.is_empty() {
@@ -527,7 +679,9 @@ Mark the start time of each segment.',
                     duration, file_size, published_date, added_date, downloaded_date,
                     transcribed_date, is_downloaded, is_transcribed, is_in_queue,
                     transcript_path, transcription_status, transcription_error,
-                    processing_time, feed_source, metadata_json, has_diarization, num_speakers
+                    processing_time, feed_source, metadata_json, has_diarization, num_speakers,
+                    category, category_number, sub_series, canonical_id,
+                    download_duration, transcribe_duration, diarize_duration, diarized_date
              FROM episodes {}
              ORDER BY {} {}
              LIMIT ? OFFSET ?",
@@ -564,6 +718,14 @@ Mark the start time of each segment.',
                     metadata_json: row.get(20)?,
                     has_diarization: row.get::<_, i32>(21).unwrap_or(0) == 1,
                     num_speakers: row.get(22)?,
+                    category: row.get(23)?,
+                    category_number: row.get(24)?,
+                    sub_series: row.get(25)?,
+                    canonical_id: row.get(26)?,
+                    download_duration: row.get(27)?,
+                    transcribe_duration: row.get(28)?,
+                    diarize_duration: row.get(29)?,
+                    diarized_date: row.get(30)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -578,7 +740,9 @@ Mark the start time of each segment.',
                     duration, file_size, published_date, added_date, downloaded_date,
                     transcribed_date, is_downloaded, is_transcribed, is_in_queue,
                     transcript_path, transcription_status, transcription_error,
-                    processing_time, feed_source, metadata_json, has_diarization, num_speakers
+                    processing_time, feed_source, metadata_json, has_diarization, num_speakers,
+                    category, category_number, sub_series, canonical_id,
+                    download_duration, transcribe_duration, diarize_duration, diarized_date
              FROM episodes WHERE id = ?",
         )?;
 
@@ -611,11 +775,275 @@ Mark the start time of each segment.',
                     metadata_json: row.get(20)?,
                     has_diarization: row.get::<_, i32>(21).unwrap_or(0) == 1,
                     num_speakers: row.get(22)?,
+                    category: row.get(23)?,
+                    category_number: row.get(24)?,
+                    sub_series: row.get(25)?,
+                    canonical_id: row.get(26)?,
+                    download_duration: row.get(27)?,
+                    transcribe_duration: row.get(28)?,
+                    diarize_duration: row.get(29)?,
+                    diarized_date: row.get(30)?,
                 })
             })
             .ok();
 
         Ok(episode)
+    }
+
+    /// Get category rules ordered by priority
+    pub fn get_category_rules(&self) -> Result<Vec<CategoryRule>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, category, display_name, title_pattern, number_pattern, priority, icon, color, keywords
+             FROM category_rules ORDER BY priority ASC"
+        )?;
+        let rules = stmt
+            .query_map([], |row| {
+                Ok(CategoryRule {
+                    id: row.get(0)?,
+                    category: row.get(1)?,
+                    display_name: row.get(2)?,
+                    title_pattern: row.get(3)?,
+                    number_pattern: row.get(4)?,
+                    priority: row.get(5)?,
+                    icon: row.get(6)?,
+                    color: row.get(7)?,
+                    keywords: row.get(8)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rules)
+    }
+
+    /// Add a new category rule
+    pub fn add_category_rule(&self, rule: &CategoryRule) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO category_rules (category, display_name, title_pattern, number_pattern, priority, icon, color, keywords)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                rule.category,
+                rule.display_name,
+                rule.title_pattern,
+                rule.number_pattern,
+                rule.priority,
+                rule.icon,
+                rule.color,
+                rule.keywords,
+            ],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    /// Update an existing category rule
+    pub fn update_category_rule(&self, rule: &CategoryRule) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE category_rules SET category = ?1, display_name = ?2, title_pattern = ?3,
+             number_pattern = ?4, priority = ?5, icon = ?6, color = ?7, keywords = ?8
+             WHERE id = ?9",
+            params![
+                rule.category,
+                rule.display_name,
+                rule.title_pattern,
+                rule.number_pattern,
+                rule.priority,
+                rule.icon,
+                rule.color,
+                rule.keywords,
+                rule.id,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Delete a category rule by id
+    pub fn delete_category_rule(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM category_rules WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    // =========================================================================
+    // Wiki Lore queries
+    // =========================================================================
+
+    /// Upsert wiki episode metadata
+    pub fn upsert_wiki_episode_meta(
+        &self,
+        episode_id: i64,
+        wiki_page_id: i64,
+        wiki_url: &str,
+        summary: Option<&str>,
+        air_date: Option<&str>,
+        topics_json: Option<&str>,
+        guests_json: Option<&str>,
+        bits_json: Option<&str>,
+        scoopmail_json: Option<&str>,
+        jock_vs_nerd: Option<&str>,
+        raw_wikitext: Option<&str>,
+    ) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO wiki_episode_meta (episode_id, wiki_page_id, wiki_url, summary, air_date,
+             topics_json, guests_json, bits_json, scoopmail_json, jock_vs_nerd, raw_wikitext, last_synced)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+             ON CONFLICT(episode_id) DO UPDATE SET
+             wiki_page_id=?2, wiki_url=?3, summary=?4, air_date=?5,
+             topics_json=?6, guests_json=?7, bits_json=?8, scoopmail_json=?9,
+             jock_vs_nerd=?10, raw_wikitext=?11, last_synced=?12",
+            params![episode_id, wiki_page_id, wiki_url, summary, air_date,
+                    topics_json, guests_json, bits_json, scoopmail_json, jock_vs_nerd,
+                    raw_wikitext, now],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    /// Get wiki episode metadata for an episode
+    pub fn get_wiki_episode_meta(&self, episode_id: i64) -> Result<Option<WikiEpisodeMeta>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, episode_id, wiki_page_id, wiki_url, summary, recording_location,
+                    air_date, topics_json, guests_json, bits_json, scoopmail_json,
+                    jock_vs_nerd, last_synced
+             FROM wiki_episode_meta WHERE episode_id = ?1"
+        )?;
+        let result = stmt.query_row(params![episode_id], |row| {
+            Ok(WikiEpisodeMeta {
+                id: row.get(0)?,
+                episode_id: row.get(1)?,
+                wiki_page_id: row.get(2)?,
+                wiki_url: row.get(3)?,
+                summary: row.get(4)?,
+                recording_location: row.get(5)?,
+                air_date: row.get(6)?,
+                topics_json: row.get(7)?,
+                guests_json: row.get(8)?,
+                bits_json: row.get(9)?,
+                scoopmail_json: row.get(10)?,
+                jock_vs_nerd: row.get(11)?,
+                last_synced: row.get(12)?,
+            })
+        }).optional()?;
+        Ok(result)
+    }
+
+    /// Find episode ID by category_number (for wiki matching)
+    pub fn find_episode_by_number(&self, episode_number: &str, feed_source: Option<&str>) -> Result<Option<i64>> {
+        let conn = self.conn.lock().unwrap();
+        let source = feed_source.unwrap_or("apple");
+        let mut stmt = conn.prepare(
+            "SELECT id FROM episodes
+             WHERE category_number = ?1 AND feed_source = ?2 AND category = 'episode'
+             LIMIT 1"
+        )?;
+        let result = stmt.query_row(params![episode_number, source], |row| {
+            row.get::<_, i64>(0)
+        }).optional()?;
+        Ok(result)
+    }
+
+    /// Get variant episodes that point to a given canonical episode
+    pub fn get_episode_variants(&self, episode_id: i64) -> Result<Vec<Episode>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, episode_number, title, description, audio_url, audio_file_path,
+                    duration, file_size, published_date, added_date, downloaded_date,
+                    transcribed_date, is_downloaded, is_transcribed, is_in_queue,
+                    transcript_path, transcription_status, transcription_error,
+                    processing_time, feed_source, metadata_json, has_diarization, num_speakers,
+                    category, category_number, sub_series, canonical_id,
+                    download_duration, transcribe_duration, diarize_duration, diarized_date
+             FROM episodes WHERE canonical_id = ?"
+        )?;
+        let episodes = stmt
+            .query_map(params![episode_id], |row| {
+                Ok(Episode {
+                    id: row.get(0)?,
+                    episode_number: row.get(1)?,
+                    title: row.get(2)?,
+                    description: row.get(3)?,
+                    audio_url: row.get(4)?,
+                    audio_file_path: row.get(5)?,
+                    duration: row.get(6)?,
+                    file_size: row.get(7)?,
+                    published_date: row.get(8)?,
+                    added_date: row.get(9)?,
+                    downloaded_date: row.get(10)?,
+                    transcribed_date: row.get(11)?,
+                    is_downloaded: row.get::<_, i32>(12)? == 1,
+                    is_transcribed: row.get::<_, i32>(13)? == 1,
+                    is_in_queue: row.get::<_, i32>(14)? == 1,
+                    transcript_path: row.get(15)?,
+                    transcription_status: row
+                        .get::<_, String>(16)
+                        .unwrap_or_default()
+                        .into(),
+                    transcription_error: row.get(17)?,
+                    processing_time: row.get(18)?,
+                    feed_source: row.get(19)?,
+                    metadata_json: row.get(20)?,
+                    has_diarization: row.get::<_, i32>(21).unwrap_or(0) == 1,
+                    num_speakers: row.get(22)?,
+                    category: row.get(23)?,
+                    category_number: row.get(24)?,
+                    sub_series: row.get(25)?,
+                    canonical_id: row.get(26)?,
+                    download_duration: row.get(27)?,
+                    transcribe_duration: row.get(28)?,
+                    diarize_duration: row.get(29)?,
+                    diarized_date: row.get(30)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(episodes)
+    }
+
+    /// Update category fields on an episode
+    pub fn update_episode_category(
+        &self,
+        episode_id: i64,
+        category: &str,
+        episode_number: Option<&str>,
+        category_number: Option<&str>,
+        sub_series: Option<&str>,
+    ) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE episodes SET category = ?, episode_number = COALESCE(?, episode_number), category_number = ?, sub_series = ? WHERE id = ?",
+            params![category, episode_number, category_number, sub_series, episode_id],
+        )?;
+        Ok(())
+    }
+
+    /// Set canonical_id on an episode (linking it as a variant)
+    pub fn set_canonical_id(&self, episode_id: i64, canonical_id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE episodes SET canonical_id = ? WHERE id = ?",
+            params![canonical_id, episode_id],
+        )?;
+        Ok(())
+    }
+
+    /// Get all episodes (minimal query for batch operations like recategorization)
+    pub fn get_all_episodes_for_categorization(&self) -> Result<Vec<(i64, String, String)>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT id, title, feed_source FROM episodes")?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// Delete the stale local test record
+    pub fn delete_local_test_record(&self) -> Result<usize> {
+        let conn = self.conn.lock().unwrap();
+        let count = conn.execute("DELETE FROM episodes WHERE feed_source = 'local'", [])?;
+        Ok(count)
     }
 
     /// Insert a new episode or update if it exists (by audio_url)
@@ -756,13 +1184,15 @@ Mark the start time of each segment.',
 
         let sql = r#"
             SELECT q.id, q.episode_id, q.added_to_queue_date, q.priority, q.retry_count,
-                   q.status, q.started_date, q.completed_date, q.error_message,
+                   q.status, q.started_date, q.completed_date, q.error_message, q.queue_type,
                    e.id, e.episode_number, e.title, e.description, e.audio_url,
                    e.audio_file_path, e.duration, e.file_size, e.published_date,
                    e.added_date, e.downloaded_date, e.transcribed_date, e.is_downloaded,
                    e.is_transcribed, e.is_in_queue, e.transcript_path, e.transcription_status,
                    e.transcription_error, e.processing_time, e.feed_source, e.metadata_json,
-                   e.has_diarization, e.num_speakers
+                   e.has_diarization, e.num_speakers,
+                   e.category, e.category_number, e.sub_series, e.canonical_id,
+                   e.download_duration, e.transcribe_duration, e.diarize_duration, e.diarized_date
             FROM transcription_queue q
             JOIN episodes e ON q.episode_id = e.id
             ORDER BY q.priority DESC, q.added_to_queue_date ASC
@@ -782,34 +1212,43 @@ Mark the start time of each segment.',
                         started_date: row.get(6)?,
                         completed_date: row.get(7)?,
                         error_message: row.get(8)?,
+                        queue_type: row.get(9)?,
                     },
                     episode: Episode {
-                        id: row.get(9)?,
-                        episode_number: row.get(10)?,
-                        title: row.get(11)?,
-                        description: row.get(12)?,
-                        audio_url: row.get(13)?,
-                        audio_file_path: row.get(14)?,
-                        duration: row.get(15)?,
-                        file_size: row.get(16)?,
-                        published_date: row.get(17)?,
-                        added_date: row.get(18)?,
-                        downloaded_date: row.get(19)?,
-                        transcribed_date: row.get(20)?,
-                        is_downloaded: row.get::<_, i32>(21)? == 1,
-                        is_transcribed: row.get::<_, i32>(22)? == 1,
-                        is_in_queue: row.get::<_, i32>(23)? == 1,
-                        transcript_path: row.get(24)?,
+                        id: row.get(10)?,
+                        episode_number: row.get(11)?,
+                        title: row.get(12)?,
+                        description: row.get(13)?,
+                        audio_url: row.get(14)?,
+                        audio_file_path: row.get(15)?,
+                        duration: row.get(16)?,
+                        file_size: row.get(17)?,
+                        published_date: row.get(18)?,
+                        added_date: row.get(19)?,
+                        downloaded_date: row.get(20)?,
+                        transcribed_date: row.get(21)?,
+                        is_downloaded: row.get::<_, i32>(22)? == 1,
+                        is_transcribed: row.get::<_, i32>(23)? == 1,
+                        is_in_queue: row.get::<_, i32>(24)? == 1,
+                        transcript_path: row.get(25)?,
                         transcription_status: row
-                            .get::<_, String>(25)
+                            .get::<_, String>(26)
                             .unwrap_or_default()
                             .into(),
-                        transcription_error: row.get(26)?,
-                        processing_time: row.get(27)?,
-                        feed_source: row.get(28)?,
-                        metadata_json: row.get(29)?,
-                        has_diarization: row.get::<_, i32>(30).unwrap_or(0) == 1,
-                        num_speakers: row.get(31)?,
+                        transcription_error: row.get(27)?,
+                        processing_time: row.get(28)?,
+                        feed_source: row.get(29)?,
+                        metadata_json: row.get(30)?,
+                        has_diarization: row.get::<_, i32>(31).unwrap_or(0) == 1,
+                        num_speakers: row.get(32)?,
+                        category: row.get(33)?,
+                        category_number: row.get(34)?,
+                        sub_series: row.get(35)?,
+                        canonical_id: row.get(36)?,
+                        download_duration: row.get(37)?,
+                        transcribe_duration: row.get(38)?,
+                        diarize_duration: row.get(39)?,
+                        diarized_date: row.get(40)?,
                     },
                 })
             })?
@@ -866,16 +1305,18 @@ Mark the start time of each segment.',
 
         let sql = r#"
             SELECT q.id, q.episode_id, q.added_to_queue_date, q.priority, q.retry_count,
-                   q.status, q.started_date, q.completed_date, q.error_message,
+                   q.status, q.started_date, q.completed_date, q.error_message, q.queue_type,
                    e.id, e.episode_number, e.title, e.description, e.audio_url,
                    e.audio_file_path, e.duration, e.file_size, e.published_date,
                    e.added_date, e.downloaded_date, e.transcribed_date, e.is_downloaded,
                    e.is_transcribed, e.is_in_queue, e.transcript_path, e.transcription_status,
                    e.transcription_error, e.processing_time, e.feed_source, e.metadata_json,
-                   e.has_diarization, e.num_speakers
+                   e.has_diarization, e.num_speakers,
+                   e.category, e.category_number, e.sub_series, e.canonical_id,
+                   e.download_duration, e.transcribe_duration, e.diarize_duration, e.diarized_date
             FROM transcription_queue q
             JOIN episodes e ON q.episode_id = e.id
-            WHERE q.status = 'pending'
+            WHERE q.status = 'pending' AND (q.queue_type IS NULL OR q.queue_type != 'diarize_only')
             ORDER BY q.priority DESC, q.added_to_queue_date ASC
             LIMIT 1
         "#;
@@ -893,34 +1334,123 @@ Mark the start time of each segment.',
                         started_date: row.get(6)?,
                         completed_date: row.get(7)?,
                         error_message: row.get(8)?,
+                        queue_type: row.get(9)?,
                     },
                     episode: Episode {
-                        id: row.get(9)?,
-                        episode_number: row.get(10)?,
-                        title: row.get(11)?,
-                        description: row.get(12)?,
-                        audio_url: row.get(13)?,
-                        audio_file_path: row.get(14)?,
-                        duration: row.get(15)?,
-                        file_size: row.get(16)?,
-                        published_date: row.get(17)?,
-                        added_date: row.get(18)?,
-                        downloaded_date: row.get(19)?,
-                        transcribed_date: row.get(20)?,
-                        is_downloaded: row.get::<_, i32>(21)? == 1,
-                        is_transcribed: row.get::<_, i32>(22)? == 1,
-                        is_in_queue: row.get::<_, i32>(23)? == 1,
-                        transcript_path: row.get(24)?,
+                        id: row.get(10)?,
+                        episode_number: row.get(11)?,
+                        title: row.get(12)?,
+                        description: row.get(13)?,
+                        audio_url: row.get(14)?,
+                        audio_file_path: row.get(15)?,
+                        duration: row.get(16)?,
+                        file_size: row.get(17)?,
+                        published_date: row.get(18)?,
+                        added_date: row.get(19)?,
+                        downloaded_date: row.get(20)?,
+                        transcribed_date: row.get(21)?,
+                        is_downloaded: row.get::<_, i32>(22)? == 1,
+                        is_transcribed: row.get::<_, i32>(23)? == 1,
+                        is_in_queue: row.get::<_, i32>(24)? == 1,
+                        transcript_path: row.get(25)?,
                         transcription_status: row
-                            .get::<_, String>(25)
+                            .get::<_, String>(26)
                             .unwrap_or_default()
                             .into(),
-                        transcription_error: row.get(26)?,
-                        processing_time: row.get(27)?,
-                        feed_source: row.get(28)?,
-                        metadata_json: row.get(29)?,
-                        has_diarization: row.get::<_, i32>(30).unwrap_or(0) == 1,
-                        num_speakers: row.get(31)?,
+                        transcription_error: row.get(27)?,
+                        processing_time: row.get(28)?,
+                        feed_source: row.get(29)?,
+                        metadata_json: row.get(30)?,
+                        has_diarization: row.get::<_, i32>(31).unwrap_or(0) == 1,
+                        num_speakers: row.get(32)?,
+                        category: row.get(33)?,
+                        category_number: row.get(34)?,
+                        sub_series: row.get(35)?,
+                        canonical_id: row.get(36)?,
+                        download_duration: row.get(37)?,
+                        transcribe_duration: row.get(38)?,
+                        diarize_duration: row.get(39)?,
+                        diarized_date: row.get(40)?,
+                    },
+                })
+            })
+            .ok();
+
+        Ok(item)
+    }
+
+    /// Get the next diarize-only item from the queue (independent of full pipeline items)
+    pub fn get_next_diarize_only_item(&self) -> Result<Option<QueueItemWithEpisode>> {
+        let conn = self.conn.lock().unwrap();
+
+        let sql = r#"
+            SELECT q.id, q.episode_id, q.added_to_queue_date, q.priority, q.retry_count,
+                   q.status, q.started_date, q.completed_date, q.error_message, q.queue_type,
+                   e.id, e.episode_number, e.title, e.description, e.audio_url,
+                   e.audio_file_path, e.duration, e.file_size, e.published_date,
+                   e.added_date, e.downloaded_date, e.transcribed_date, e.is_downloaded,
+                   e.is_transcribed, e.is_in_queue, e.transcript_path, e.transcription_status,
+                   e.transcription_error, e.processing_time, e.feed_source, e.metadata_json,
+                   e.has_diarization, e.num_speakers,
+                   e.category, e.category_number, e.sub_series, e.canonical_id,
+                   e.download_duration, e.transcribe_duration, e.diarize_duration, e.diarized_date
+            FROM transcription_queue q
+            JOIN episodes e ON q.episode_id = e.id
+            WHERE q.status = 'pending' AND q.queue_type = 'diarize_only'
+            ORDER BY q.priority DESC, q.added_to_queue_date ASC
+            LIMIT 1
+        "#;
+
+        let item = conn
+            .query_row(sql, [], |row| {
+                Ok(QueueItemWithEpisode {
+                    queue_item: TranscriptionQueueItem {
+                        id: row.get(0)?,
+                        episode_id: row.get(1)?,
+                        added_to_queue_date: row.get(2)?,
+                        priority: row.get(3)?,
+                        retry_count: row.get(4)?,
+                        status: row.get(5)?,
+                        started_date: row.get(6)?,
+                        completed_date: row.get(7)?,
+                        error_message: row.get(8)?,
+                        queue_type: row.get(9)?,
+                    },
+                    episode: Episode {
+                        id: row.get(10)?,
+                        episode_number: row.get(11)?,
+                        title: row.get(12)?,
+                        description: row.get(13)?,
+                        audio_url: row.get(14)?,
+                        audio_file_path: row.get(15)?,
+                        duration: row.get(16)?,
+                        file_size: row.get(17)?,
+                        published_date: row.get(18)?,
+                        added_date: row.get(19)?,
+                        downloaded_date: row.get(20)?,
+                        transcribed_date: row.get(21)?,
+                        is_downloaded: row.get::<_, i32>(22)? == 1,
+                        is_transcribed: row.get::<_, i32>(23)? == 1,
+                        is_in_queue: row.get::<_, i32>(24)? == 1,
+                        transcript_path: row.get(25)?,
+                        transcription_status: row
+                            .get::<_, String>(26)
+                            .unwrap_or_default()
+                            .into(),
+                        transcription_error: row.get(27)?,
+                        processing_time: row.get(28)?,
+                        feed_source: row.get(29)?,
+                        metadata_json: row.get(30)?,
+                        has_diarization: row.get::<_, i32>(31).unwrap_or(0) == 1,
+                        num_speakers: row.get(32)?,
+                        category: row.get(33)?,
+                        category_number: row.get(34)?,
+                        sub_series: row.get(35)?,
+                        canonical_id: row.get(36)?,
+                        download_duration: row.get(37)?,
+                        transcribe_duration: row.get(38)?,
+                        diarize_duration: row.get(39)?,
+                        diarized_date: row.get(40)?,
                     },
                 })
             })
@@ -968,13 +1498,70 @@ Mark the start time of each segment.',
 
     pub fn mark_failed(&self, episode_id: i64, error: &str) -> Result<()> {
         let conn = self.conn.lock().unwrap();
-        conn.execute(
-            "UPDATE transcription_queue SET status = 'failed', error_message = ?, retry_count = retry_count + 1 WHERE episode_id = ?",
-            params![error, episode_id],
+        let is_download_failure = error.to_lowercase().contains("download");
+
+        if is_download_failure {
+            // Download failures: remove from queue entirely (retrying won't help without a new URL)
+            conn.execute(
+                "DELETE FROM transcription_queue WHERE episode_id = ?",
+                params![episode_id],
+            )?;
+            conn.execute(
+                "UPDATE episodes SET transcription_status = 'failed', transcription_error = ?, is_in_queue = 0, is_downloaded = 0 WHERE id = ?",
+                params![error, episode_id],
+            )?;
+        } else {
+            // Other failures: keep in queue as failed for potential retry
+            conn.execute(
+                "UPDATE transcription_queue SET status = 'failed', error_message = ?, retry_count = retry_count + 1 WHERE episode_id = ?",
+                params![error, episode_id],
+            )?;
+            conn.execute(
+                "UPDATE episodes SET transcription_status = 'failed', transcription_error = ? WHERE id = ?",
+                params![error, episode_id],
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Count transcribed episodes that don't have diarization and aren't already queued for it
+    pub fn count_undiarized_transcribed(&self) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM episodes WHERE is_transcribed = 1 AND has_diarization = 0",
+            [],
+            |row| row.get(0),
         )?;
+        Ok(count)
+    }
+
+    /// Auto-queue all transcribed episodes that lack diarization
+    pub fn queue_undiarized_transcribed(&self) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().to_rfc3339();
+        // Insert new diarize_only queue items for episodes not yet in the queue
         conn.execute(
-            "UPDATE episodes SET transcription_status = 'failed', transcription_error = ? WHERE id = ?",
-            params![error, episode_id],
+            "INSERT OR IGNORE INTO transcription_queue (episode_id, priority, status, queue_type, added_to_queue_date, retry_count) \
+             SELECT id, 0, 'pending', 'diarize_only', ?1, 0 FROM episodes \
+             WHERE is_transcribed = 1 AND has_diarization = 0 \
+             AND id NOT IN (SELECT episode_id FROM transcription_queue)",
+            params![now],
+        )?;
+        // Fix stuck episodes: already in queue as 'completed'/'full' but never diarized
+        // Reset them to pending/diarize_only so the worker picks them up
+        let fixed = conn.execute(
+            "UPDATE transcription_queue SET status = 'pending', queue_type = 'diarize_only' \
+             WHERE episode_id IN (SELECT id FROM episodes WHERE is_transcribed = 1 AND has_diarization = 0) \
+             AND status = 'completed' AND queue_type = 'full'",
+            [],
+        )?;
+        if fixed > 0 {
+            log::info!("Fixed {} episodes stuck as completed/full without diarization", fixed);
+        }
+        conn.execute(
+            "UPDATE episodes SET is_in_queue = 1 WHERE is_transcribed = 1 AND has_diarization = 0 \
+             AND id IN (SELECT episode_id FROM transcription_queue WHERE queue_type = 'diarize_only' AND status = 'pending')",
+            [],
         )?;
         Ok(())
     }
@@ -1050,13 +1637,15 @@ Mark the start time of each segment.',
         let conn = self.conn.lock().unwrap();
         let sql = r#"
             SELECT q.id, q.episode_id, q.added_to_queue_date, q.priority, q.retry_count,
-                   q.status, q.started_date, q.completed_date, q.error_message,
+                   q.status, q.started_date, q.completed_date, q.error_message, q.queue_type,
                    e.id, e.episode_number, e.title, e.description, e.audio_url,
                    e.audio_file_path, e.duration, e.file_size, e.published_date,
                    e.added_date, e.downloaded_date, e.transcribed_date, e.is_downloaded,
                    e.is_transcribed, e.is_in_queue, e.transcript_path, e.transcription_status,
                    e.transcription_error, e.processing_time, e.feed_source, e.metadata_json,
-                   e.has_diarization, e.num_speakers
+                   e.has_diarization, e.num_speakers,
+                   e.category, e.category_number, e.sub_series, e.canonical_id,
+                   e.download_duration, e.transcribe_duration, e.diarize_duration, e.diarized_date
             FROM transcription_queue q
             JOIN episodes e ON q.episode_id = e.id
             WHERE q.status = 'pending' AND (e.is_downloaded = 0 OR e.audio_file_path IS NULL)
@@ -1078,34 +1667,43 @@ Mark the start time of each segment.',
                         started_date: row.get(6)?,
                         completed_date: row.get(7)?,
                         error_message: row.get(8)?,
+                        queue_type: row.get(9)?,
                     },
                     episode: Episode {
-                        id: row.get(9)?,
-                        episode_number: row.get(10)?,
-                        title: row.get(11)?,
-                        description: row.get(12)?,
-                        audio_url: row.get(13)?,
-                        audio_file_path: row.get(14)?,
-                        duration: row.get(15)?,
-                        file_size: row.get(16)?,
-                        published_date: row.get(17)?,
-                        added_date: row.get(18)?,
-                        downloaded_date: row.get(19)?,
-                        transcribed_date: row.get(20)?,
-                        is_downloaded: row.get::<_, i32>(21)? == 1,
-                        is_transcribed: row.get::<_, i32>(22)? == 1,
-                        is_in_queue: row.get::<_, i32>(23)? == 1,
-                        transcript_path: row.get(24)?,
+                        id: row.get(10)?,
+                        episode_number: row.get(11)?,
+                        title: row.get(12)?,
+                        description: row.get(13)?,
+                        audio_url: row.get(14)?,
+                        audio_file_path: row.get(15)?,
+                        duration: row.get(16)?,
+                        file_size: row.get(17)?,
+                        published_date: row.get(18)?,
+                        added_date: row.get(19)?,
+                        downloaded_date: row.get(20)?,
+                        transcribed_date: row.get(21)?,
+                        is_downloaded: row.get::<_, i32>(22)? == 1,
+                        is_transcribed: row.get::<_, i32>(23)? == 1,
+                        is_in_queue: row.get::<_, i32>(24)? == 1,
+                        transcript_path: row.get(25)?,
                         transcription_status: row
-                            .get::<_, String>(25)
+                            .get::<_, String>(26)
                             .unwrap_or_default()
                             .into(),
-                        transcription_error: row.get(26)?,
-                        processing_time: row.get(27)?,
-                        feed_source: row.get(28)?,
-                        metadata_json: row.get(29)?,
-                        has_diarization: row.get::<_, i32>(30).unwrap_or(0) == 1,
-                        num_speakers: row.get(31)?,
+                        transcription_error: row.get(27)?,
+                        processing_time: row.get(28)?,
+                        feed_source: row.get(29)?,
+                        metadata_json: row.get(30)?,
+                        has_diarization: row.get::<_, i32>(31).unwrap_or(0) == 1,
+                        num_speakers: row.get(32)?,
+                        category: row.get(33)?,
+                        category_number: row.get(34)?,
+                        sub_series: row.get(35)?,
+                        canonical_id: row.get(36)?,
+                        download_duration: row.get(37)?,
+                        transcribe_duration: row.get(38)?,
+                        diarize_duration: row.get(39)?,
+                        diarized_date: row.get(40)?,
                     },
                 })
             })?
@@ -1146,10 +1744,25 @@ Mark the start time of each segment.',
             [],
             |row| row.get(0),
         )?;
+        let diarized_episodes: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM episodes WHERE has_diarization = 1",
+            [],
+            |row| row.get(0),
+        )?;
         let in_queue: i64 =
             conn.query_row("SELECT COUNT(*) FROM episodes WHERE is_in_queue = 1", [], |row| {
                 row.get(0)
             })?;
+        let in_transcription_queue: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM transcription_queue WHERE status IN ('pending', 'processing') AND (queue_type IS NULL OR queue_type = 'full')",
+            [],
+            |row| row.get(0),
+        )?;
+        let in_diarization_queue: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM transcription_queue WHERE status IN ('pending', 'processing') AND queue_type = 'diarize_only'",
+            [],
+            |row| row.get(0),
+        )?;
         let failed: i64 = conn.query_row(
             "SELECT COUNT(*) FROM episodes WHERE transcription_status = 'failed'",
             [],
@@ -1160,7 +1773,10 @@ Mark the start time of each segment.',
             total_episodes,
             downloaded_episodes,
             transcribed_episodes,
+            diarized_episodes,
             in_queue,
+            in_transcription_queue,
+            in_diarization_queue,
             failed,
             completion_rate: CompletionRate {
                 downloaded: if total_episodes > 0 {
@@ -1175,6 +1791,119 @@ Mark the start time of each segment.',
                 },
             },
         })
+    }
+
+    // =========================================================================
+    // Pipeline Timing
+    // =========================================================================
+
+    pub fn update_download_duration(&self, episode_id: i64, duration: f64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE episodes SET download_duration = ? WHERE id = ?",
+            params![duration, episode_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_transcribe_duration(&self, episode_id: i64, duration: f64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE episodes SET transcribe_duration = ? WHERE id = ?",
+            params![duration, episode_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_diarize_duration(&self, episode_id: i64, duration: f64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE episodes SET diarize_duration = ?, diarized_date = datetime('now') WHERE id = ?",
+            params![duration, episode_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_pipeline_duration(&self, episode_id: i64, duration: f64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE episodes SET processing_time = ? WHERE id = ?",
+            params![duration, episode_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_pipeline_timing_stats(&self) -> Result<PipelineTimingStats> {
+        let conn = self.conn.lock().unwrap();
+
+        let avg_download: f64 = conn.query_row(
+            "SELECT COALESCE(AVG(download_duration), 0) FROM episodes WHERE download_duration IS NOT NULL",
+            [], |row| row.get(0),
+        )?;
+        let avg_transcribe: f64 = conn.query_row(
+            "SELECT COALESCE(AVG(transcribe_duration), 0) FROM episodes WHERE transcribe_duration IS NOT NULL",
+            [], |row| row.get(0),
+        )?;
+        let avg_diarize: f64 = conn.query_row(
+            "SELECT COALESCE(AVG(diarize_duration), 0) FROM episodes WHERE diarize_duration IS NOT NULL",
+            [], |row| row.get(0),
+        )?;
+        let avg_total: f64 = conn.query_row(
+            "SELECT COALESCE(AVG(processing_time), 0) FROM episodes WHERE processing_time IS NOT NULL",
+            [], |row| row.get(0),
+        )?;
+        let total_hours_processed: f64 = conn.query_row(
+            "SELECT COALESCE(SUM(duration), 0) / 3600.0 FROM episodes WHERE transcribe_duration IS NOT NULL AND duration IS NOT NULL",
+            [], |row| row.get(0),
+        )?;
+        let episodes_timed: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM episodes WHERE transcribe_duration IS NOT NULL",
+            [], |row| row.get(0),
+        )?;
+        // Avg transcribe time per hour of audio
+        let avg_transcribe_per_hour: f64 = conn.query_row(
+            "SELECT CASE WHEN SUM(duration) > 0
+                THEN SUM(transcribe_duration) / (SUM(duration) / 3600.0)
+                ELSE 0 END
+             FROM episodes WHERE transcribe_duration IS NOT NULL AND duration IS NOT NULL AND duration > 0",
+            [], |row| row.get(0),
+        )?;
+
+        Ok(PipelineTimingStats {
+            avg_download_seconds: avg_download,
+            avg_transcribe_seconds: avg_transcribe,
+            avg_diarize_seconds: avg_diarize,
+            avg_total_seconds: avg_total,
+            avg_transcribe_per_hour_audio: avg_transcribe_per_hour,
+            total_hours_processed,
+            episodes_timed,
+        })
+    }
+
+    pub fn get_recently_completed_episodes(&self, limit: i64) -> Result<Vec<CompletedEpisodeTiming>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, title, episode_number, duration, download_duration, transcribe_duration,
+                    diarize_duration, processing_time, transcribed_date
+             FROM episodes
+             WHERE transcribe_duration IS NOT NULL
+             ORDER BY transcribed_date DESC
+             LIMIT ?",
+        )?;
+        let items = stmt.query_map(params![limit], |row| {
+            Ok(CompletedEpisodeTiming {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                episode_number: row.get(2)?,
+                audio_duration: row.get(3)?,
+                download_duration: row.get(4)?,
+                transcribe_duration: row.get(5)?,
+                diarize_duration: row.get(6)?,
+                total_duration: row.get(7)?,
+                completed_date: row.get(8)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(items)
     }
 
     // =========================================================================
@@ -1320,7 +2049,9 @@ Mark the start time of each segment.',
                    duration, file_size, published_date, added_date, downloaded_date,
                    transcribed_date, is_downloaded, is_transcribed, is_in_queue,
                    transcript_path, transcription_status, transcription_error,
-                   processing_time, feed_source, metadata_json, has_diarization, num_speakers
+                   processing_time, feed_source, metadata_json, has_diarization, num_speakers,
+                   category, category_number, sub_series, canonical_id,
+                   download_duration, transcribe_duration, diarize_duration, diarized_date
             FROM episodes
             WHERE (is_transcribed = 0 OR is_transcribed IS NULL) AND (is_in_queue = 0 OR is_in_queue IS NULL)
             ORDER BY is_downloaded DESC, published_date DESC
@@ -1351,6 +2082,14 @@ Mark the start time of each segment.',
                 metadata_json: row.get(20)?,
                 has_diarization: row.get::<_, i32>(21).unwrap_or(0) == 1,
                 num_speakers: row.get(22)?,
+                category: row.get(23)?,
+                category_number: row.get(24)?,
+                sub_series: row.get(25)?,
+                canonical_id: row.get(26)?,
+                download_duration: row.get(27)?,
+                transcribe_duration: row.get(28)?,
+                diarize_duration: row.get(29)?,
+                diarized_date: row.get(30)?,
             })
         });
         match episode {
@@ -1679,7 +2418,9 @@ Mark the start time of each segment.',
                    e.duration, e.file_size, e.published_date, e.added_date, e.downloaded_date,
                    e.transcribed_date, e.is_downloaded, e.is_transcribed, e.is_in_queue,
                    e.transcript_path, e.transcription_status, e.transcription_error,
-                   e.processing_time, e.feed_source, e.metadata_json, e.has_diarization, e.num_speakers
+                   e.processing_time, e.feed_source, e.metadata_json, e.has_diarization, e.num_speakers,
+                   e.category, e.category_number, e.sub_series, e.canonical_id,
+                   e.download_duration, e.transcribe_duration, e.diarize_duration, e.diarized_date
             FROM episodes e
             WHERE e.is_transcribed = 1
               AND e.transcript_path IS NOT NULL
@@ -1713,6 +2454,14 @@ Mark the start time of each segment.',
                 metadata_json: row.get(20)?,
                 has_diarization: row.get::<_, i32>(21).unwrap_or(0) == 1,
                 num_speakers: row.get(22)?,
+                category: row.get(23)?,
+                category_number: row.get(24)?,
+                sub_series: row.get(25)?,
+                canonical_id: row.get(26)?,
+                download_duration: row.get(27)?,
+                transcribe_duration: row.get(28)?,
+                diarize_duration: row.get(29)?,
+                diarized_date: row.get(30)?,
             })
         })?.filter_map(|r| r.ok()).collect();
 
@@ -2339,9 +3088,42 @@ pub struct AppStats {
     pub total_episodes: i64,
     pub downloaded_episodes: i64,
     pub transcribed_episodes: i64,
+    pub diarized_episodes: i64,
     pub in_queue: i64,
+    pub in_transcription_queue: i64,
+    pub in_diarization_queue: i64,
     pub failed: i64,
     pub completion_rate: CompletionRate,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PipelineTimingStats {
+    pub avg_download_seconds: f64,
+    pub avg_transcribe_seconds: f64,
+    pub avg_diarize_seconds: f64,
+    pub avg_total_seconds: f64,
+    pub avg_transcribe_per_hour_audio: f64,
+    pub total_hours_processed: f64,
+    pub episodes_timed: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompletedEpisodeTiming {
+    pub id: i64,
+    pub title: String,
+    pub episode_number: Option<String>,
+    pub audio_duration: Option<f64>,
+    pub download_duration: Option<f64>,
+    pub transcribe_duration: Option<f64>,
+    pub diarize_duration: Option<f64>,
+    pub total_duration: Option<f64>,
+    pub completed_date: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PipelineStatsResponse {
+    pub timing: PipelineTimingStats,
+    pub recent: Vec<CompletedEpisodeTiming>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

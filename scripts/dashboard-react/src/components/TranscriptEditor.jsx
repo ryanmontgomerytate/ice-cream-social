@@ -37,6 +37,7 @@ const formatTime = (seconds) => {
 
 export default function TranscriptEditor({
   episode,
+  onClose,
   onNotification,
   onFlaggedSegmentsChange,
   onCharacterAppearancesChange,
@@ -50,6 +51,7 @@ export default function TranscriptEditor({
   onSegmentsChange,
   selectedSegmentIdx,
   onSelectedSegmentChange,
+  onTranscriptLoaded,
 }) {
   const [transcript, setTranscript] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -62,6 +64,7 @@ export default function TranscriptEditor({
   const [chapterTypes, setChapterTypes] = useState([])
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [reprocessing, setReprocessing] = useState(false)
 
   // Local state for segment data
   const [flaggedSegments, setFlaggedSegments] = useState({})
@@ -97,6 +100,7 @@ export default function TranscriptEditor({
     if (episode?.id) {
       loadTranscript()
       loadAudioPath()
+      setReprocessing(false)
     }
   }, [episode?.id])
 
@@ -118,6 +122,7 @@ export default function TranscriptEditor({
       ])
 
       setTranscript(data)
+      onTranscriptLoaded?.(true)
       setVoiceLibrary(voices)
       setChapterTypes(types)
       setCharacters(allCharacters)
@@ -142,6 +147,7 @@ export default function TranscriptEditor({
     } catch (err) {
       console.error('Error loading transcript:', err)
       setError(err.message || 'Failed to load transcript')
+      onTranscriptLoaded?.(false)
     } finally {
       setLoading(false)
     }
@@ -881,22 +887,78 @@ export default function TranscriptEditor({
     return (
       <div className="h-full flex items-center justify-center bg-gray-50">
         <div className="text-center">
-          <div className="w-10 h-10 border-4 border-purple-200 border-t-purple-500 rounded-full animate-spin mx-auto mb-4"></div>
-          <div className="text-gray-500">Loading transcript...</div>
+          <style>{`
+            @keyframes scoop-drop {
+              0% { transform: translateY(-30px); opacity: 0; }
+              40% { transform: translateY(0px); opacity: 1; }
+              60% { transform: translateY(0px); opacity: 1; }
+              100% { transform: translateY(30px) scale(0.3); opacity: 0; }
+            }
+            .scoop-anim { animation: scoop-drop 2s ease-in-out infinite; }
+          `}</style>
+          <div className="relative mx-auto mb-6 w-20 h-28">
+            {/* Scoops dropping into cone - neapolitan */}
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-14 h-14 rounded-full bg-pink-400 shadow-md scoop-anim" style={{ animationDelay: '0s', zIndex: 3 }}></div>
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-14 h-14 rounded-full bg-amber-100 shadow-md scoop-anim" style={{ animationDelay: '0.6s', zIndex: 2 }}></div>
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-14 h-14 rounded-full bg-amber-800 shadow-md scoop-anim" style={{ animationDelay: '1.2s', zIndex: 1 }}></div>
+            {/* Cone */}
+            <div className="absolute bottom-0 left-1/2 -translate-x-1/2" style={{ width: 0, height: 0, borderLeft: '24px solid transparent', borderRight: '24px solid transparent', borderTop: '40px solid #d97706', zIndex: 4 }}></div>
+            {/* Cone texture lines */}
+            <div className="absolute bottom-0 left-1/2 -translate-x-1/2" style={{ width: 0, height: 0, borderLeft: '20px solid transparent', borderRight: '20px solid transparent', borderTop: '34px solid #b45309', zIndex: 4, opacity: 0.3 }}></div>
+          </div>
+          <div className="text-gray-500 text-sm font-medium">Scooping up transcript...</div>
+          <div className="text-gray-400 text-xs mt-1 max-w-xs mx-auto truncate">{episode?.title}</div>
         </div>
       </div>
     )
   }
 
   if (error) {
+    const isFailed = episode?.transcription_status === 'failed'
+    const transcriptionError = episode?.transcription_error
+    const isDownloadFail = transcriptionError?.toLowerCase().includes('download')
+
     return (
       <div className="h-full flex items-center justify-center bg-gray-50">
-        <div className="text-center">
+        <div className="text-center max-w-md px-6">
           <div className="text-red-500 text-4xl mb-4">⚠</div>
-          <div className="text-red-600 font-medium mb-4">{error}</div>
-          <button onClick={loadTranscript} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm">
-            Try Again
-          </button>
+          <div className="text-red-600 font-medium mb-2">Failed to load transcript</div>
+          {isFailed && transcriptionError && (
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-left">
+              <div className="text-xs font-medium text-red-700 mb-1">
+                {isDownloadFail ? 'Download Error' : 'Processing Error'}
+              </div>
+              <div className="text-xs text-red-600">{transcriptionError}</div>
+              {isDownloadFail && (
+                <div className="text-xs text-gray-500 mt-2">
+                  The audio file could not be downloaded from the RSS feed. This usually means the CDN link has expired or the file is temporarily unavailable.
+                </div>
+              )}
+            </div>
+          )}
+          {!isFailed && (
+            <div className="text-sm text-gray-500 mb-4">{error}</div>
+          )}
+          <div className="flex gap-2 justify-center">
+            {isDownloadFail && (
+              <button
+                onClick={async () => {
+                  try {
+                    await episodesAPI.downloadEpisode(episode.id)
+                    onNotification?.('Download started - episode will be queued when complete', 'success')
+                  } catch (err) {
+                    onNotification?.(`Download failed: ${err.message}`, 'error')
+                  }
+                }}
+                className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium"
+              >
+                Retry Download
+              </button>
+            )}
+            <button onClick={loadTranscript} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm">
+              Try Again
+            </button>
+          </div>
         </div>
       </div>
     )
@@ -917,7 +979,20 @@ export default function TranscriptEditor({
     <div className="h-full flex flex-col bg-white">
       {/* Header with episode info */}
       <div className="px-4 py-3 border-b border-gray-200 flex-shrink-0">
-        <h2 className="text-lg font-bold text-gray-800 truncate">{episode.title}</h2>
+        <div className="flex items-center gap-2">
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors flex-shrink-0"
+              title="Close transcript and return to library"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+              </svg>
+            </button>
+          )}
+          <h2 className="text-lg font-bold text-gray-800 truncate">{episode.title}</h2>
+        </div>
         <div className="flex items-center gap-2 mt-1 text-sm text-gray-500 flex-wrap">
           {transcript?.language && <span className="px-2 py-0.5 bg-gray-100 rounded text-xs">{transcript.language}</span>}
           {transcript?.has_diarization && (
@@ -946,16 +1021,27 @@ export default function TranscriptEditor({
             </span>
           )}
           {episode.is_transcribed && (
-            <button onClick={async () => {
-              if (!confirm('Reprocess diarization for this episode? This will use any speaker corrections as hints to improve results.')) return
-              try {
-                await episodesAPI.reprocessDiarization(episode.id)
-                onNotification?.('Episode queued for re-diarization with hints', 'success')
-              } catch (err) {
-                onNotification?.(`Failed to queue re-diarization: ${err.message}`, 'error')
-              }
-            }} className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded text-xs hover:bg-orange-200 transition-colors cursor-pointer" title="Reprocess diarization using speaker correction flags as hints">
-              🔄 Reprocess Diarization
+            <button
+              disabled={reprocessing}
+              onClick={async () => {
+                if (!confirm('Reprocess diarization for this episode? This will use any speaker corrections as hints to improve results.')) return
+                setReprocessing(true)
+                try {
+                  await episodesAPI.reprocessDiarization(episode.id)
+                  onNotification?.('Episode queued for re-diarization with hints', 'success')
+                } catch (err) {
+                  onNotification?.(`Failed to queue re-diarization: ${err.message}`, 'error')
+                  setReprocessing(false)
+                }
+              }}
+              className={`px-2.5 py-1 rounded text-xs font-medium transition-all duration-300 ${
+                reprocessing
+                  ? 'bg-green-100 text-green-700 border border-green-300 cursor-not-allowed'
+                  : 'bg-orange-100 text-orange-700 border border-orange-300 hover:bg-orange-200 cursor-pointer'
+              }`}
+              title="Reprocess diarization using speaker correction flags as hints"
+            >
+              {reprocessing ? '✓ Queued for Diarization' : '🔄 Reprocess Diarization'}
             </button>
           )}
           {hasUnsavedChanges && (

@@ -10,11 +10,17 @@ pub struct EpisodeFilters {
     pub feed_source: Option<String>,
     pub transcribed_only: Option<bool>,
     pub in_queue_only: Option<bool>,
+    pub failed_only: Option<bool>,
+    pub downloaded_only: Option<bool>,
+    pub not_downloaded_only: Option<bool>,
+    pub diarized_only: Option<bool>,
     pub sort_by: Option<String>,
     pub sort_desc: Option<bool>,
     pub limit: Option<i64>,
     pub offset: Option<i64>,
     pub search: Option<String>,
+    pub category: Option<String>,
+    pub include_variants: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
@@ -45,11 +51,17 @@ pub async fn get_episodes(
         feed_source: None,
         transcribed_only: None,
         in_queue_only: None,
+        failed_only: None,
+        downloaded_only: None,
+        not_downloaded_only: None,
+        diarized_only: None,
         sort_by: None,
         sort_desc: None,
         limit: None,
         offset: None,
         search: None,
+        category: None,
+        include_variants: None,
     });
 
     let limit = filters.limit.unwrap_or(50);
@@ -61,11 +73,17 @@ pub async fn get_episodes(
             filters.feed_source.as_deref(),
             filters.transcribed_only.unwrap_or(false),
             filters.in_queue_only.unwrap_or(false),
+            filters.failed_only.unwrap_or(false),
+            filters.downloaded_only.unwrap_or(false),
+            filters.not_downloaded_only.unwrap_or(false),
+            filters.diarized_only.unwrap_or(false),
             filters.sort_by.as_deref(),
             sort_desc,
             filters.search.as_deref(),
             limit,
             offset,
+            filters.category.as_deref(),
+            filters.include_variants.unwrap_or(false),
         )
         .map_err(|e| e.to_string())?;
 
@@ -80,47 +98,80 @@ pub async fn get_episodes(
     })
 }
 
-/// Refresh feed from RSS
-#[tauri::command]
-pub async fn refresh_feed(
-    db: State<'_, Arc<Database>>,
-    source: String,
-    _force: bool,
-) -> Result<RefreshResult, String> {
-    log::info!("refresh_feed called for source: {}", source);
+/// Core feed sync logic — callable from command or scheduler
+pub async fn sync_feed(db: &Arc<Database>, source: &str) -> Result<RefreshResult, String> {
+    log::info!("sync_feed called for source: {}", source);
 
-    // Get RSS feed URL from config
     let home_dir = dirs::home_dir().ok_or("Failed to get home directory")?;
-    let config_path = home_dir
+    let project_dir = home_dir
         .join("Desktop")
         .join("Projects")
-        .join("ice-cream-social-app")
-        .join("config.yaml");
+        .join("ice-cream-social-app");
 
-    let config_content = std::fs::read_to_string(&config_path)
-        .map_err(|e| format!("Failed to read config: {}", e))?;
-
-    // Parse RSS URL from config based on source
-    // Look for the specific feed URL in the feeds section
-    let rss_url = parse_feed_url(&config_content, &source)
-        .ok_or_else(|| format!("RSS feed URL not found for source: {}", source))?;
+    let rss_url = resolve_feed_url(&project_dir, source)
+        .ok_or_else(|| format!("RSS feed URL not found for source: {}. Check your .env file.", source))?;
 
     log::info!("Fetching RSS from: {}", rss_url);
 
-    // Fetch and parse RSS feed
-    let response = reqwest::get(&rss_url)
+    // Fetch RSS feed with a proper User-Agent (some feeds reject default/empty UA)
+    let client = reqwest::Client::builder()
+        .user_agent("IceCreamSocial/2.0")
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+
+    let response = client
+        .get(&rss_url)
+        .send()
         .await
         .map_err(|e| format!("Failed to fetch RSS: {}", e))?;
+
+    let status = response.status();
+    if !status.is_success() {
+        return Err(format!(
+            "RSS feed returned HTTP {}: {}",
+            status.as_u16(),
+            status.canonical_reason().unwrap_or("Unknown")
+        ));
+    }
+
+    let content_type = response
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
 
     let body = response
         .text()
         .await
         .map_err(|e| format!("Failed to read RSS body: {}", e))?;
 
-    let feed = feed_rs::parser::parse(body.as_bytes())
-        .map_err(|e| format!("Failed to parse RSS: {}", e))?;
+    if body.trim().is_empty() {
+        return Err("RSS feed returned empty response body".to_string());
+    }
+
+    // Log first 200 chars for debugging if parse fails
+    let feed = match feed_rs::parser::parse(body.as_bytes()) {
+        Ok(f) => f,
+        Err(e) => {
+            let preview: String = body.chars().take(200).collect();
+            log::error!(
+                "RSS parse failed. Content-Type: {}, Body preview: {}",
+                content_type,
+                preview
+            );
+            return Err(format!(
+                "Failed to parse RSS (Content-Type: {}): {}. The feed URL may be expired or returning an error page.",
+                content_type, e
+            ));
+        }
+    };
 
     log::info!("Parsed {} entries from RSS feed", feed.entries.len());
+
+    // Load category rules for episode categorization
+    let rules = db.get_category_rules().map_err(|e| e.to_string())?;
 
     let mut added = 0i64;
     let mut updated = 0i64;
@@ -148,8 +199,10 @@ pub async fn refresh_feed(
         let description = entry.summary.map(|s| s.content);
         let published_date = entry.published.map(|d| d.to_rfc3339());
 
-        // Extract episode number from title (e.g., "Episode 123:" or "#123")
-        let episode_number = extract_episode_number(&title);
+        // Categorize episode from title using rules
+        let cat_result = categorize_episode(&title, &rules);
+        // Use category-derived episode_number if available, else fallback to basic extraction
+        let episode_number = cat_result.episode_number.or_else(|| extract_episode_number(&title));
 
         // Get duration from media content if available
         let duration = entry
@@ -158,7 +211,7 @@ pub async fn refresh_feed(
             .and_then(|m| m.content.first())
             .and_then(|c| c.duration.map(|d| d.as_secs() as f64));
 
-        let (_, is_new) = db
+        let (ep_id, is_new) = db
             .upsert_episode(
                 episode_number.as_deref(),
                 &title,
@@ -167,9 +220,18 @@ pub async fn refresh_feed(
                 duration,
                 None, // file_size
                 published_date.as_deref(),
-                &source,
+                source,
             )
             .map_err(|e| e.to_string())?;
+
+        // Update category fields
+        let _ = db.update_episode_category(
+            ep_id,
+            &cat_result.category,
+            episode_number.as_deref(),
+            cat_result.category_number.as_deref(),
+            cat_result.sub_series.as_deref(),
+        );
 
         if is_new {
             added += 1;
@@ -178,13 +240,23 @@ pub async fn refresh_feed(
         }
     }
 
-    log::info!("refresh_feed completed: {} added, {} updated", added, updated);
+    log::info!("sync_feed completed: {} added, {} updated", added, updated);
 
     Ok(RefreshResult {
         added,
         updated,
         total: added + updated,
     })
+}
+
+/// Refresh feed from RSS (Tauri command wrapper)
+#[tauri::command]
+pub async fn refresh_feed(
+    db: State<'_, Arc<Database>>,
+    source: String,
+    _force: bool,
+) -> Result<RefreshResult, String> {
+    sync_feed(&db, &source).await
 }
 
 /// Get transcript for an episode
@@ -380,11 +452,11 @@ fn parse_transcript_json(content: &str) -> ParsedTranscript {
 }
 
 fn extract_episode_number(title: &str) -> Option<String> {
-    // Try patterns like "Episode 123", "#123", "Ep. 123", "Ep 123"
+    // Try patterns like "Episode 123", "#123", "Ep. 123", "Ep 123", "Ad Free 123"
     let patterns = [
-        r"Episode\s*(\d+)",
+        r"(?i)(?:Episode|Ad Free)\s+(\d+)",
         r"#(\d+)",
-        r"Ep\.?\s*(\d+)",
+        r"(?i)Ep\.?\s*(\d+)",
         r"^\s*(\d+)\s*[-:.]",
     ];
 
@@ -398,6 +470,305 @@ fn extract_episode_number(title: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// Result of categorizing an episode
+#[derive(Debug, Clone, Serialize)]
+pub struct CategorizeResult {
+    pub category: String,
+    pub episode_number: Option<String>,
+    pub category_number: Option<String>,
+    pub sub_series: Option<String>,
+}
+
+/// Categorize an episode based on its title using the category_rules from DB
+fn categorize_episode(title: &str, rules: &[crate::database::CategoryRule]) -> CategorizeResult {
+    let title_lower = title.to_lowercase();
+
+    for rule in rules {
+        // Skip the fallback "bonus" rule (priority 99) — it matches everything
+        if rule.priority == 99 {
+            continue;
+        }
+
+        // Check keywords first (case-insensitive substring match)
+        let keyword_match = rule.keywords.as_ref().map_or(false, |kw| {
+            kw.split(',')
+                .map(|k| k.trim().to_lowercase())
+                .filter(|k| !k.is_empty())
+                .any(|k| title_lower.contains(&k))
+        });
+
+        let regex_match = if !keyword_match {
+            regex::Regex::new(&rule.title_pattern)
+                .map(|re| re.is_match(title))
+                .unwrap_or(false)
+        } else {
+            false
+        };
+
+        if keyword_match || regex_match {
+            let mut category_number = None;
+            let mut episode_number = None;
+            let mut sub_series = None;
+
+            // Extract number using the rule's number_pattern
+            if let Some(ref num_pattern) = rule.number_pattern {
+                if let Ok(num_re) = regex::Regex::new(num_pattern) {
+                    if let Some(caps) = num_re.captures(title) {
+                        if let Some(num) = caps.get(1) {
+                            category_number = Some(num.as_str().to_string());
+                        }
+                    }
+                }
+            }
+
+            // For 'episode' category, category_number is also the episode_number
+            if rule.category == "episode" {
+                episode_number = category_number.clone();
+            }
+
+            // For scoopflix, extract sub_series
+            if rule.category == "scoopflix" {
+                sub_series = extract_scoopflix_sub_series(title);
+            }
+
+            return CategorizeResult {
+                category: rule.category.clone(),
+                episode_number,
+                category_number,
+                sub_series,
+            };
+        }
+    }
+
+    // Fallback to bonus (catch-all)
+    CategorizeResult {
+        category: "bonus".to_string(),
+        episode_number: extract_episode_number(title),
+        category_number: None,
+        sub_series: None,
+    }
+}
+
+/// Extract the sub-series name from a Scoopflix/Not Furlong title
+fn extract_scoopflix_sub_series(title: &str) -> Option<String> {
+    // "Not Furlong" sub-series
+    if regex::Regex::new(r"(?i)not\s+furlong").unwrap().is_match(title) {
+        return Some("Not Furlong".to_string());
+    }
+
+    // Scoopflix show name patterns:
+    // "ScoopFlix and Chill: Highway to Heaven" / "Scoopflix: Arrow" etc.
+    if let Ok(re) = regex::Regex::new(r"(?i)scoopfl?i?x\s*(?:and Chill)?[:\s]+(.+?)(?:\s*[-–]\s*Episode|\s*\d+\s*$|\s*$)") {
+        if let Some(caps) = re.captures(title) {
+            if let Some(show) = caps.get(1) {
+                let show_name = show.as_str().trim().to_string();
+                if !show_name.is_empty() && show_name.len() > 1 {
+                    return Some(show_name);
+                }
+            }
+        }
+    }
+
+    None
+}
+
+/// Recategorize all episodes using category_rules from database
+#[tauri::command]
+pub async fn recategorize_all_episodes(
+    db: State<'_, Arc<Database>>,
+) -> Result<serde_json::Value, String> {
+    log::info!("recategorize_all_episodes called");
+
+    let rules = db.get_category_rules().map_err(|e| e.to_string())?;
+    let episodes = db.get_all_episodes_for_categorization().map_err(|e| e.to_string())?;
+
+    let mut counts: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+
+    for (id, title, _feed_source) in &episodes {
+        let result = categorize_episode(title, &rules);
+
+        db.update_episode_category(
+            *id,
+            &result.category,
+            result.episode_number.as_deref(),
+            result.category_number.as_deref(),
+            result.sub_series.as_deref(),
+        )
+        .map_err(|e| e.to_string())?;
+
+        *counts.entry(result.category.clone()).or_insert(0) += 1;
+    }
+
+    // Also delete stale local test record
+    let deleted = db.delete_local_test_record().map_err(|e| e.to_string())?;
+    if deleted > 0 {
+        log::info!("Deleted {} stale local test record(s)", deleted);
+    }
+
+    log::info!("Recategorized {} episodes: {:?}", episodes.len(), counts);
+
+    Ok(serde_json::json!({
+        "total": episodes.len(),
+        "counts": counts,
+        "deleted_local": deleted,
+    }))
+}
+
+/// Link cross-feed duplicates: set canonical_id on "Ad Free" variants pointing to apple episodes
+#[tauri::command]
+pub async fn link_cross_feed_episodes(
+    db: State<'_, Arc<Database>>,
+) -> Result<serde_json::Value, String> {
+    log::info!("link_cross_feed_episodes called");
+
+    // Get all episode-category rows with a category_number, grouped by feed
+    // We need episodes with category info to group by number
+    let (all_episodes, _) = db.get_episodes(
+        None, false, false, false, false, false, false,
+        None, true, None, 10000, 0, None, true, // include_variants = true
+    ).map_err(|e| e.to_string())?;
+
+    // Group episode-category episodes by category_number
+    let mut by_number: std::collections::HashMap<String, Vec<&crate::database::Episode>> = std::collections::HashMap::new();
+    for ep in &all_episodes {
+        if ep.category.as_deref() == Some("episode") {
+            if let Some(ref num) = ep.category_number {
+                by_number.entry(num.clone()).or_default().push(ep);
+            }
+        }
+    }
+
+    let mut linked = 0i64;
+    for (_num, eps) in &by_number {
+        if eps.len() < 2 {
+            continue;
+        }
+
+        // Find the apple episode (canonical) and patreon episode (variant)
+        let apple = eps.iter().find(|e| e.feed_source == "apple");
+        let patreon = eps.iter().find(|e| e.feed_source == "patreon");
+
+        if let (Some(canonical), Some(variant)) = (apple, patreon) {
+            // Only link if not already linked
+            if variant.canonical_id.is_none() {
+                db.set_canonical_id(variant.id, canonical.id)
+                    .map_err(|e| e.to_string())?;
+                linked += 1;
+            }
+        }
+    }
+
+    log::info!("Linked {} cross-feed episode pairs", linked);
+
+    Ok(serde_json::json!({
+        "linked": linked,
+        "episode_numbers_with_duplicates": by_number.len(),
+    }))
+}
+
+/// Get category rules
+#[tauri::command]
+pub async fn get_category_rules(
+    db: State<'_, Arc<Database>>,
+) -> Result<Vec<crate::database::CategoryRule>, String> {
+    db.get_category_rules().map_err(|e| e.to_string())
+}
+
+/// Get variant episodes for a given episode
+#[tauri::command]
+pub async fn get_episode_variants(
+    db: State<'_, Arc<Database>>,
+    episode_id: i64,
+) -> Result<Vec<crate::database::Episode>, String> {
+    db.get_episode_variants(episode_id).map_err(|e| e.to_string())
+}
+
+/// Add a new category rule
+#[tauri::command]
+pub async fn add_category_rule(
+    db: State<'_, Arc<Database>>,
+    rule: crate::database::CategoryRule,
+) -> Result<i64, String> {
+    log::info!("add_category_rule called: {:?}", rule);
+    db.add_category_rule(&rule).map_err(|e| e.to_string())
+}
+
+/// Update an existing category rule
+#[tauri::command]
+pub async fn update_category_rule(
+    db: State<'_, Arc<Database>>,
+    rule: crate::database::CategoryRule,
+) -> Result<(), String> {
+    log::info!("update_category_rule called: {:?}", rule);
+    db.update_category_rule(&rule).map_err(|e| e.to_string())
+}
+
+/// Delete a category rule (protects the bonus catch-all)
+#[tauri::command]
+pub async fn delete_category_rule(
+    db: State<'_, Arc<Database>>,
+    id: i64,
+) -> Result<(), String> {
+    log::info!("delete_category_rule called for id: {}", id);
+
+    // Check if this is the bonus catch-all rule
+    let rules = db.get_category_rules().map_err(|e| e.to_string())?;
+    if let Some(rule) = rules.iter().find(|r| r.id == id) {
+        if rule.category == "bonus" && rule.priority == 99 {
+            return Err("Cannot delete the bonus catch-all rule".to_string());
+        }
+    }
+
+    db.delete_category_rule(id).map_err(|e| e.to_string())
+}
+
+/// Test a category rule pattern against episode titles
+#[tauri::command]
+pub async fn test_category_rule(
+    db: State<'_, Arc<Database>>,
+    pattern: String,
+    keywords: Option<String>,
+) -> Result<serde_json::Value, String> {
+    log::info!("test_category_rule called with pattern: {}", pattern);
+
+    // Validate regex
+    let re = regex::Regex::new(&pattern).map_err(|e| format!("Invalid regex: {}", e))?;
+
+    let episodes = db.get_all_episodes_for_categorization().map_err(|e| e.to_string())?;
+
+    let keyword_list: Vec<String> = keywords
+        .as_ref()
+        .map(|kw| {
+            kw.split(',')
+                .map(|k| k.trim().to_lowercase())
+                .filter(|k| !k.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let mut matches: Vec<serde_json::Value> = Vec::new();
+    for (_id, title, _feed_source) in &episodes {
+        let title_lower = title.to_lowercase();
+        let keyword_hit = keyword_list.iter().any(|k| title_lower.contains(k));
+        let regex_hit = re.is_match(title);
+
+        if keyword_hit || regex_hit {
+            matches.push(serde_json::json!({
+                "title": title,
+                "matched_by": if keyword_hit { "keyword" } else { "regex" },
+            }));
+        }
+    }
+
+    let total = matches.len();
+    let sample: Vec<_> = matches.into_iter().take(20).collect();
+
+    Ok(serde_json::json!({
+        "match_count": total,
+        "samples": sample,
+    }))
 }
 
 fn parse_duration(duration_str: &str) -> Option<f64> {
@@ -423,37 +794,64 @@ fn parse_duration(duration_str: &str) -> Option<f64> {
     }
 }
 
-/// Parse feed URL from config.yaml based on source
-fn parse_feed_url(config_content: &str, source: &str) -> Option<String> {
-    // Simple approach: look for the pattern "source:\n...url: VALUE"
+/// Resolve feed URL: check .env first, then fall back to config.yaml
+fn resolve_feed_url(project_dir: &std::path::Path, source: &str) -> Option<String> {
+    // Map source name to .env variable name
+    let env_key = match source {
+        "patreon" => "PATREON_RSS_URL",
+        "apple" => "APPLE_RSS_URL",
+        other => {
+            log::warn!("Unknown feed source: {}", other);
+            return None;
+        }
+    };
+
+    // Try .env first (preferred - keeps secrets out of config)
+    if let Some(url) = crate::load_env_value(project_dir, env_key) {
+        if url.starts_with("http") {
+            log::info!("Feed URL for {} loaded from .env ({})", source, env_key);
+            return Some(url);
+        }
+    }
+
+    // Fallback: try config.yaml (for backward compat during migration)
+    let config_path = project_dir.join("config.yaml");
+    if let Ok(config_content) = std::fs::read_to_string(&config_path) {
+        if let Some(url) = parse_feed_url_from_config(&config_content, source) {
+            log::warn!(
+                "Feed URL for {} loaded from config.yaml - move to .env as {} for security",
+                source, env_key
+            );
+            return Some(url);
+        }
+    }
+
+    log::warn!("No feed URL found for source: {}. Set {} in .env", source, env_key);
+    None
+}
+
+/// Parse feed URL from config.yaml (fallback for backward compat)
+fn parse_feed_url_from_config(config_content: &str, source: &str) -> Option<String> {
     let source_pattern = format!("{}:", source);
     let lines: Vec<&str> = config_content.lines().collect();
-
     let mut found_source = false;
 
     for line in &lines {
         let trimmed = line.trim();
-
-        // Look for "patreon:" or "apple:"
         if trimmed == source_pattern {
             found_source = true;
-            log::info!("Found source section: {}", source);
             continue;
         }
-
-        // Once in source section, look for url:
         if found_source {
             if trimmed.starts_with("url:") {
-                // Extract everything after "url:"
-                let url_part = &trimmed[4..]; // Skip "url:"
-                let url = url_part.trim().trim_matches('"').trim_matches('\'');
-                log::info!("Found URL for {}: {}", source, url);
-                return Some(url.to_string());
+                let url = trimmed[4..].trim().trim_matches('"').trim_matches('\'');
+                if url.starts_with("http") {
+                    return Some(url.to_string());
+                }
             }
-
-            // If we hit another source section (ends with : but isn't url/name/enabled), stop
             if trimmed.ends_with(':') && !trimmed.starts_with("url")
-                && !trimmed.starts_with("name") && !trimmed.starts_with("enabled") {
+                && !trimmed.starts_with("name") && !trimmed.starts_with("enabled")
+                && !trimmed.starts_with("env_var") {
                 found_source = false;
             }
         }
@@ -464,17 +862,14 @@ fn parse_feed_url(config_content: &str, source: &str) -> Option<String> {
         for line in &lines {
             let trimmed = line.trim();
             if trimmed.starts_with("rss_feed_url:") {
-                let url_part = &trimmed[13..]; // Skip "rss_feed_url:"
-                let url = url_part.trim().trim_matches('"').trim_matches('\'');
-                if !url.is_empty() {
-                    log::info!("Using fallback rss_feed_url for patreon: {}", url);
+                let url = trimmed[13..].trim().trim_matches('"').trim_matches('\'');
+                if !url.is_empty() && url.starts_with("http") {
                     return Some(url.to_string());
                 }
             }
         }
     }
 
-    log::warn!("No URL found for source: {}", source);
     None
 }
 

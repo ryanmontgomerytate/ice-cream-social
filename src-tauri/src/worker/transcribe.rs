@@ -22,6 +22,7 @@ pub struct TranscribeJob {
 pub struct TranscribeResult {
     pub episode_id: i64,
     pub result: Result<PathBuf, String>,
+    pub duration_seconds: Option<f64>,
 }
 
 /// Run the transcribe task loop
@@ -47,6 +48,7 @@ pub async fn transcribe_task(
                 match job {
                     Some(job) => {
                         let episode_id = job.episode_id;
+                        let start = std::time::Instant::now();
                         let result = transcribe_with_progress(
                             &db,
                             &whisper_cli_path,
@@ -56,9 +58,11 @@ pub async fn transcribe_task(
                             &progress_tx,
                             &cancel,
                         ).await;
+                        let duration_seconds = if result.is_ok() { Some(start.elapsed().as_secs_f64()) } else { None };
                         let _ = result_tx.send(TranscribeResult {
                             episode_id,
                             result,
+                            duration_seconds,
                         }).await;
                     }
                     None => {

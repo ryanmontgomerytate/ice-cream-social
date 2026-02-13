@@ -20,6 +20,7 @@ pub struct DiarizeJob {
 pub struct DiarizeResult {
     pub episode_id: i64,
     pub result: Result<i32, String>, // num_speakers or error
+    pub duration_seconds: Option<f64>,
 }
 
 /// Run the diarize task loop
@@ -44,6 +45,7 @@ pub async fn diarize_task(
                 match job {
                     Some(job) => {
                         let episode_id = job.episode_id;
+                        let start = std::time::Instant::now();
                         let result = diarize_with_progress(
                             &venv_python_path,
                             &diarization_script_path,
@@ -52,9 +54,11 @@ pub async fn diarize_task(
                             &progress_tx,
                             &cancel,
                         ).await;
+                        let duration_seconds = if result.is_ok() { Some(start.elapsed().as_secs_f64()) } else { None };
                         let _ = result_tx.send(DiarizeResult {
                             episode_id,
                             result,
+                            duration_seconds,
                         }).await;
                     }
                     None => {

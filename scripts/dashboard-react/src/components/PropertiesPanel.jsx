@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { wikiAPI } from '../services/api'
 
 // Flag types
 const FLAG_TYPES = [
@@ -9,25 +10,29 @@ const FLAG_TYPES = [
   { id: 'other', label: 'Other', icon: '📝', color: 'yellow' },
 ]
 
-// Tab Button component
-function TabButton({ active, onClick, children, count }) {
+// Accordion Section Header
+function SectionHeader({ open, onClick, icon, label, count, color = 'gray' }) {
   return (
     <button
       onClick={onClick}
-      className={`flex-1 px-2 py-2 text-xs font-medium transition-colors relative ${
-        active
-          ? 'text-purple-700 border-b-2 border-purple-500'
-          : 'text-gray-500 hover:text-gray-700 border-b-2 border-transparent'
+      className={`w-full px-3 py-2 flex items-center justify-between text-xs font-medium transition-colors border-b border-gray-100 ${
+        open ? `bg-${color}-50 text-${color}-700` : 'bg-white text-gray-600 hover:bg-gray-50'
       }`}
     >
-      {children}
-      {count > 0 && (
-        <span className={`ml-1 px-1.5 py-0.5 rounded-full text-[10px] ${
-          active ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600'
-        }`}>
-          {count}
-        </span>
-      )}
+      <div className="flex items-center gap-1.5">
+        <span className="text-sm">{icon}</span>
+        <span>{label}</span>
+        {count > 0 && (
+          <span className={`ml-1 px-1.5 py-0.5 rounded-full text-[10px] ${
+            open ? `bg-${color}-100 text-${color}-700` : 'bg-gray-100 text-gray-500'
+          }`}>
+            {count}
+          </span>
+        )}
+      </div>
+      <svg className={`w-3.5 h-3.5 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+      </svg>
     </button>
   )
 }
@@ -78,9 +83,54 @@ export default function PropertiesPanel({
   onSeekToSpeaker,
   onRemoveAudioDrop
 }) {
-  const [activeTab, setActiveTab] = useState('flags')
+  const [openSections, setOpenSections] = useState({ flags: true })
   const [collapsed, setCollapsed] = useState(false)
   const [editingSpeaker, setEditingSpeaker] = useState(null)
+  const [wikiMeta, setWikiMeta] = useState(null)
+  const [wikiLoading, setWikiLoading] = useState(false)
+  const [wikiSyncing, setWikiSyncing] = useState(false)
+
+  const toggleSection = (key) => {
+    setOpenSections(prev => ({ ...prev, [key]: !prev[key] }))
+  }
+
+  // Load wiki metadata when episode changes
+  useEffect(() => {
+    if (!episode?.id) {
+      setWikiMeta(null)
+      return
+    }
+    let cancelled = false
+    const load = async () => {
+      setWikiLoading(true)
+      try {
+        const meta = await wikiAPI.getWikiEpisodeMeta(episode.id)
+        if (!cancelled) setWikiMeta(meta)
+      } catch (e) {
+        console.error('Failed to load wiki meta:', e)
+      } finally {
+        if (!cancelled) setWikiLoading(false)
+      }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [episode?.id])
+
+  const handleSyncWiki = async () => {
+    if (!episode?.category_number && !episode?.episode_number) return
+    setWikiSyncing(true)
+    try {
+      const epNum = episode.category_number || episode.episode_number
+      const result = await wikiAPI.syncWikiEpisode(epNum)
+      // Reload the meta
+      const meta = await wikiAPI.getWikiEpisodeMeta(episode.id)
+      setWikiMeta(meta)
+    } catch (e) {
+      console.error('Wiki sync failed:', e)
+    } finally {
+      setWikiSyncing(false)
+    }
+  }
 
   const flagCount = Object.keys(flaggedSegments).length
   const characterCount = characterAppearances.length
@@ -226,32 +276,15 @@ export default function PropertiesPanel({
       )}
 
 
-      {/* Tabs */}
-      <div className="flex border-b border-gray-200 flex-shrink-0 overflow-x-auto">
-        <TabButton active={activeTab === 'flags'} onClick={() => setActiveTab('flags')} count={flagCount}>
-          Flags
-        </TabButton>
-        <TabButton active={activeTab === 'characters'} onClick={() => setActiveTab('characters')} count={characterCount}>
-          Chars
-        </TabButton>
-        <TabButton active={activeTab === 'chapters'} onClick={() => setActiveTab('chapters')} count={chapterCount}>
-          Chaps
-        </TabButton>
-        <TabButton active={activeTab === 'drops'} onClick={() => setActiveTab('drops')} count={dropCount}>
-          Drops
-        </TabButton>
-        <TabButton active={activeTab === 'samples'} onClick={() => setActiveTab('samples')} count={sampleCount}>
-          Samples
-        </TabButton>
-      </div>
+      {/* Accordion Sections */}
+      <div className="flex-1 overflow-y-auto">
 
-      {/* Tab Content */}
-      <div className="flex-1 overflow-y-auto p-3">
-        {/* Flags Tab */}
-        {activeTab === 'flags' && (
-          <div className="space-y-2">
+        {/* Flags Section */}
+        <SectionHeader open={openSections.flags} onClick={() => toggleSection('flags')} icon="🚩" label="Flags" count={flagCount} color="red" />
+        {openSections.flags && (
+          <div className="p-3 space-y-2 border-b border-gray-100">
             {flagCount === 0 ? (
-              <p className="text-xs text-gray-500 text-center py-4">
+              <p className="text-xs text-gray-500 text-center py-2">
                 No flagged segments.<br/>
                 Use the ... menu on segments to flag issues.
               </p>
@@ -301,11 +334,12 @@ export default function PropertiesPanel({
           </div>
         )}
 
-        {/* Characters Tab */}
-        {activeTab === 'characters' && (
-          <div className="space-y-2">
+        {/* Characters Section */}
+        <SectionHeader open={openSections.characters} onClick={() => toggleSection('characters')} icon="🎭" label="Characters" count={characterCount} color="pink" />
+        {openSections.characters && (
+          <div className="p-3 space-y-2 border-b border-gray-100">
             {characterCount === 0 ? (
-              <p className="text-xs text-gray-500 text-center py-4">
+              <p className="text-xs text-gray-500 text-center py-2">
                 No character appearances marked.<br/>
                 Use the ... menu on segments to mark characters.
               </p>
@@ -342,11 +376,12 @@ export default function PropertiesPanel({
           </div>
         )}
 
-        {/* Chapters Tab */}
-        {activeTab === 'chapters' && (
-          <div className="space-y-2">
+        {/* Chapters Section */}
+        <SectionHeader open={openSections.chapters} onClick={() => toggleSection('chapters')} icon="📑" label="Chapters" count={chapterCount} color="indigo" />
+        {openSections.chapters && (
+          <div className="p-3 space-y-2 border-b border-gray-100">
             {chapterCount === 0 ? (
-              <p className="text-xs text-gray-500 text-center py-4">
+              <p className="text-xs text-gray-500 text-center py-2">
                 No chapters marked.<br/>
                 Use the ... menu on segments to mark chapters.
               </p>
@@ -392,11 +427,12 @@ export default function PropertiesPanel({
           </div>
         )}
 
-        {/* Drops Tab */}
-        {activeTab === 'drops' && (
-          <div className="space-y-2">
+        {/* Drops Section */}
+        <SectionHeader open={openSections.drops} onClick={() => toggleSection('drops')} icon="🔊" label="Audio Drops" count={dropCount} color="teal" />
+        {openSections.drops && (
+          <div className="p-3 space-y-2 border-b border-gray-100">
             {dropCount === 0 ? (
-              <p className="text-xs text-gray-500 text-center py-4">
+              <p className="text-xs text-gray-500 text-center py-2">
                 No audio drops tagged.<br/>
                 Select a segment and use the Audio Drop action.
               </p>
@@ -442,16 +478,17 @@ export default function PropertiesPanel({
           </div>
         )}
 
-        {/* Voice Samples Tab */}
-        {activeTab === 'samples' && (
-          <div className="space-y-2">
+        {/* Voice Samples Section */}
+        <SectionHeader open={openSections.samples} onClick={() => toggleSection('samples')} icon="⭐" label="Voice Samples" count={sampleCount} color="yellow" />
+        {openSections.samples && (
+          <div className="p-3 space-y-2 border-b border-gray-100">
             {sampleCount === 0 ? (
-              <p className="text-xs text-gray-500 text-center py-4">
+              <p className="text-xs text-gray-500 text-center py-2">
                 No voice samples marked.<br/>
                 Use the ... menu on segments to mark good voice samples.
               </p>
             ) : (
-              <div>
+              <>
                 <div className="text-xs text-gray-600 mb-2">
                   {sampleCount} sample{sampleCount !== 1 ? 's' : ''} marked
                 </div>
@@ -480,10 +517,140 @@ export default function PropertiesPanel({
                     </div>
                   </div>
                 ))}
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Wiki Section */}
+        <SectionHeader open={openSections.wiki} onClick={() => toggleSection('wiki')} icon="📖" label="Wiki" count={wikiMeta ? 1 : 0} color="blue" />
+        {openSections.wiki && (
+          <div className="p-3 space-y-3 border-b border-gray-100">
+            {wikiLoading ? (
+              <div className="text-center py-4">
+                <div className="w-6 h-6 border-2 border-gray-200 border-t-blue-500 rounded-full animate-spin mx-auto mb-2"></div>
+                <div className="text-xs text-gray-500">Loading wiki data...</div>
+              </div>
+            ) : wikiMeta ? (
+              <>
+                {/* Wiki link */}
+                <div className="flex items-center justify-between">
+                  <a
+                    href={wikiMeta.wiki_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-blue-600 hover:underline truncate"
+                  >
+                    View on Fandom Wiki
+                  </a>
+                  <button
+                    onClick={handleSyncWiki}
+                    disabled={wikiSyncing}
+                    className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 hover:bg-gray-200 text-gray-500 disabled:opacity-50"
+                  >
+                    {wikiSyncing ? 'Syncing...' : 'Re-sync'}
+                  </button>
+                </div>
+
+                {/* Air date */}
+                {wikiMeta.air_date && (
+                  <div className="text-xs">
+                    <span className="text-gray-400">Air date:</span>{' '}
+                    <span className="text-gray-700">{wikiMeta.air_date}</span>
+                  </div>
+                )}
+
+                {/* Summary / Topics */}
+                {wikiMeta.summary && (
+                  <div>
+                    <div className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-1">Summary</div>
+                    <div className="text-xs text-gray-600 leading-relaxed whitespace-pre-line max-h-32 overflow-y-auto bg-white rounded border p-2">
+                      {wikiMeta.summary}
+                    </div>
+                  </div>
+                )}
+
+                {/* Bits & Characters */}
+                {wikiMeta.bits_json && (() => {
+                  try {
+                    const bits = JSON.parse(wikiMeta.bits_json)
+                    if (bits.length === 0) return null
+                    return (
+                      <div>
+                        <div className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-1">Bits & Characters</div>
+                        <div className="space-y-1">
+                          {bits.map((bit, i) => (
+                            <div key={i} className="text-xs text-gray-600 py-0.5 flex gap-1.5">
+                              <span className="text-amber-500 flex-shrink-0">-</span>
+                              <span>{bit.replace(/^- /, '')}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  } catch { return null }
+                })()}
+
+                {/* Scoopmail */}
+                {wikiMeta.scoopmail_json && (() => {
+                  try {
+                    const items = JSON.parse(wikiMeta.scoopmail_json)
+                    if (items.length === 0) return null
+                    return (
+                      <div>
+                        <div className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-1">Scoopmail</div>
+                        <div className="space-y-1">
+                          {items.map((item, i) => (
+                            <div key={i} className="text-xs text-gray-600 py-0.5 flex gap-1.5">
+                              <span className="text-blue-400 flex-shrink-0">-</span>
+                              <span>{item.replace(/^- /, '')}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  } catch { return null }
+                })()}
+
+                {/* Jock vs Nerd */}
+                {wikiMeta.jock_vs_nerd && (
+                  <div>
+                    <div className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-1">Jock vs Nerd</div>
+                    <div className="text-xs text-gray-600 bg-white rounded border p-2">
+                      {wikiMeta.jock_vs_nerd}
+                    </div>
+                  </div>
+                )}
+
+                {/* Attribution */}
+                <div className="text-[9px] text-gray-300 pt-2 border-t border-gray-100">
+                  Data from <a href="https://heyscoops.fandom.com" target="_blank" rel="noopener noreferrer" className="underline">HeyScoops Wiki</a> (CC BY-SA 3.0)
+                </div>
+              </>
+            ) : (
+              <div className="text-center py-2">
+                <p className="text-xs text-gray-500 mb-3">
+                  No wiki data for this episode.
+                </p>
+                {(episode?.category_number || episode?.episode_number) && (
+                  <button
+                    onClick={handleSyncWiki}
+                    disabled={wikiSyncing}
+                    className="px-3 py-1.5 text-xs rounded bg-blue-100 hover:bg-blue-200 text-blue-700 disabled:opacity-50"
+                  >
+                    {wikiSyncing ? 'Syncing from wiki...' : 'Fetch from Fandom Wiki'}
+                  </button>
+                )}
+                {!episode?.category_number && !episode?.episode_number && (
+                  <p className="text-[10px] text-gray-400 mt-2">
+                    Episode has no number — can't match to wiki.
+                  </p>
+                )}
               </div>
             )}
           </div>
         )}
+
       </div>
 
       {/* Footer with episode info */}

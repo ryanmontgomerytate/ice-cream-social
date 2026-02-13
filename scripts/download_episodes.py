@@ -32,17 +32,21 @@ except ImportError as e:
     sys.exit(1)
 
 # Load configuration
+# Feed URLs are loaded from .env file (see .env.example)
+from dotenv import load_dotenv
+load_dotenv(Path(__file__).parent.parent / ".env")
+
 try:
     from config import config
-    RSS_FEED_URL = config.podcast.rss_feed_url if config else "https://www.patreon.com/rss/heyscoops?auth=REDACTED_PATREON_AUTH_TOKEN&show=876202"
     DOWNLOAD_DIR = config.paths.episodes if config else Path("episodes")
-    # Get all configured feeds
-    FEEDS = getattr(config.podcast, 'feeds', {}) if config else {}
 except ImportError:
     print("Warning: Could not load config module. Using defaults.")
-    RSS_FEED_URL = "https://www.patreon.com/rss/heyscoops?auth=REDACTED_PATREON_AUTH_TOKEN&show=876202"
     DOWNLOAD_DIR = Path("episodes")
-    FEEDS = {}
+
+RSS_FEED_URL = os.getenv("PATREON_RSS_URL", "")
+if not RSS_FEED_URL:
+    print("Error: PATREON_RSS_URL not set in .env file. See .env.example for setup.")
+    sys.exit(1)
 
 METADATA_FILE = Path("episode_metadata.json")
 

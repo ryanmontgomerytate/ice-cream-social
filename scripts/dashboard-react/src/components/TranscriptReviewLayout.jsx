@@ -19,6 +19,8 @@ import PropertiesPanel from './PropertiesPanel'
 export default function TranscriptReviewLayout({ onNotification }) {
   const [selectedEpisode, setSelectedEpisode] = useState(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [hasTranscript, setHasTranscript] = useState(false)
+  const [transcriptLoading, setTranscriptLoading] = useState(false)
 
   // Shared state between TranscriptEditor and PropertiesPanel
   const [flaggedSegments, setFlaggedSegments] = useState({})
@@ -35,10 +37,30 @@ export default function TranscriptReviewLayout({ onNotification }) {
   const [segments, setSegments] = useState(null)
   const [selectedSegmentIdx, setSelectedSegmentIdx] = useState(null)
 
+  // Handle closing transcript — deselect episode, expand library
+  const handleCloseEpisode = useCallback(() => {
+    setSelectedEpisode(null)
+    setSidebarCollapsed(false)
+    setHasTranscript(false)
+    setTranscriptLoading(false)
+    setFlaggedSegments({})
+    setCharacterAppearances([])
+    setEpisodeChapters([])
+    setMarkedSamples({})
+    setSpeakers([])
+    setSpeakerNames({})
+    setAudioDropInstances([])
+    setAudioDrops([])
+    setSegments(null)
+    setSelectedSegmentIdx(null)
+  }, [])
+
   // Handle episode selection — collapse sidebar when viewing transcript
   const handleSelectEpisode = useCallback((episode) => {
     setSelectedEpisode(episode)
     setSidebarCollapsed(true)
+    setHasTranscript(false)
+    setTranscriptLoading(true)
     // Reset state for new episode
     setFlaggedSegments({})
     setCharacterAppearances([])
@@ -51,6 +73,14 @@ export default function TranscriptReviewLayout({ onNotification }) {
     setSegments(null)
     setSelectedSegmentIdx(null)
   }, [])
+
+  const handleTranscriptLoaded = useCallback((loaded) => {
+    setHasTranscript(loaded)
+    setTranscriptLoading(false)
+  }, [])
+
+  // Show editor layout when transcript is loaded OR while loading (so spinner is visible)
+  const showEditorPanels = selectedEpisode && (hasTranscript || transcriptLoading)
 
   // PropertiesPanel callbacks — route through TranscriptEditor's window globals
   const handleDeleteFlag = useCallback((idx) => {
@@ -94,8 +124,8 @@ export default function TranscriptReviewLayout({ onNotification }) {
 
   return (
     <div className="h-[calc(100vh-220px)] flex bg-gray-100 rounded-xl overflow-hidden shadow-lg border border-gray-200">
-      {/* Left Sidebar - Episodes (collapsible like PropertiesPanel) */}
-      {sidebarCollapsed ? (
+      {/* Left Sidebar - Episodes */}
+      {sidebarCollapsed && showEditorPanels ? (
         <div className="w-12 h-full bg-white border-r border-gray-200 flex flex-col items-center py-4 flex-shrink-0">
           <button
             onClick={() => setSidebarCollapsed(false)}
@@ -121,19 +151,21 @@ export default function TranscriptReviewLayout({ onNotification }) {
           )}
         </div>
       ) : (
-        <div className="w-80 flex-shrink-0 flex flex-col h-full">
-          {/* Collapse button row at top of sidebar */}
-          <div className="px-3 py-2 border-b border-gray-200 bg-white flex items-center justify-end flex-shrink-0">
-            <button
-              onClick={() => setSidebarCollapsed(true)}
-              className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
-              title="Collapse sidebar"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
-              </svg>
-            </button>
-          </div>
+        <div className={`${showEditorPanels ? 'w-80' : 'flex-1'} flex-shrink-0 flex flex-col h-full`}>
+          {/* Collapse button row at top of sidebar - only when transcript is showing */}
+          {showEditorPanels && (
+            <div className="px-3 py-2 border-b border-gray-200 bg-white flex items-center justify-end flex-shrink-0">
+              <button
+                onClick={() => setSidebarCollapsed(true)}
+                className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+                title="Collapse sidebar"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+                </svg>
+              </button>
+            </div>
+          )}
           <div className="flex-1 min-h-0">
             <EpisodeSidebar
               selectedEpisodeId={selectedEpisode?.id}
@@ -144,51 +176,57 @@ export default function TranscriptReviewLayout({ onNotification }) {
         </div>
       )}
 
-      {/* Center - Transcript Editor */}
-      <div className="flex-1 min-w-0">
-        <TranscriptEditor
-          episode={selectedEpisode}
-          onNotification={onNotification}
-          onFlaggedSegmentsChange={setFlaggedSegments}
-          onCharacterAppearancesChange={setCharacterAppearances}
-          onChaptersChange={setEpisodeChapters}
-          onMarkedSamplesChange={setMarkedSamples}
-          onSpeakersChange={setSpeakers}
-          onSpeakerNamesChange={setSpeakerNames}
-          onVoiceLibraryChange={setVoiceLibrary}
-          onAudioDropInstancesChange={setAudioDropInstances}
-          onAudioDropsChange={setAudioDrops}
-          onSegmentsChange={setSegments}
-          selectedSegmentIdx={selectedSegmentIdx}
-          onSelectedSegmentChange={setSelectedSegmentIdx}
-        />
-      </div>
+      {/* Center - Transcript Editor (hidden when library is expanded) */}
+      {(selectedEpisode) && (
+        <div className={`${showEditorPanels ? 'flex-1' : 'w-0 overflow-hidden'} min-w-0`}>
+          <TranscriptEditor
+            episode={selectedEpisode}
+            onClose={handleCloseEpisode}
+            onNotification={onNotification}
+            onFlaggedSegmentsChange={setFlaggedSegments}
+            onCharacterAppearancesChange={setCharacterAppearances}
+            onChaptersChange={setEpisodeChapters}
+            onMarkedSamplesChange={setMarkedSamples}
+            onSpeakersChange={setSpeakers}
+            onSpeakerNamesChange={setSpeakerNames}
+            onVoiceLibraryChange={setVoiceLibrary}
+            onAudioDropInstancesChange={setAudioDropInstances}
+            onAudioDropsChange={setAudioDrops}
+            onSegmentsChange={setSegments}
+            selectedSegmentIdx={selectedSegmentIdx}
+            onSelectedSegmentChange={setSelectedSegmentIdx}
+            onTranscriptLoaded={handleTranscriptLoaded}
+          />
+        </div>
+      )}
 
-      {/* Right Sidebar - Properties Panel */}
-      <PropertiesPanel
-        episode={selectedEpisode}
-        flaggedSegments={flaggedSegments}
-        characterAppearances={characterAppearances}
-        episodeChapters={episodeChapters}
-        characters={characters}
-        chapterTypes={chapterTypes}
-        voiceLibrary={voiceLibrary}
-        markedSamples={markedSamples}
-        speakers={speakers}
-        speakerNames={speakerNames}
-        audioDropInstances={audioDropInstances}
-        audioDrops={audioDrops}
-        segments={segments}
-        selectedSegmentIdx={selectedSegmentIdx}
-        onDeleteFlag={handleDeleteFlag}
-        onRemoveCharacter={handleRemoveCharacter}
-        onDeleteChapter={handleDeleteChapter}
-        onToggleVoiceSample={handleToggleVoiceSample}
-        onSeekToSegment={handleSeekToSegment}
-        onAssignSpeakerName={handleAssignSpeakerName}
-        onSeekToSpeaker={handleSeekToSpeaker}
-        onRemoveAudioDrop={handleRemoveAudioDrop}
-      />
+      {/* Right Sidebar - Properties Panel (only when transcript is loaded) */}
+      {showEditorPanels && (
+        <PropertiesPanel
+          episode={selectedEpisode}
+          flaggedSegments={flaggedSegments}
+          characterAppearances={characterAppearances}
+          episodeChapters={episodeChapters}
+          characters={characters}
+          chapterTypes={chapterTypes}
+          voiceLibrary={voiceLibrary}
+          markedSamples={markedSamples}
+          speakers={speakers}
+          speakerNames={speakerNames}
+          audioDropInstances={audioDropInstances}
+          audioDrops={audioDrops}
+          segments={segments}
+          selectedSegmentIdx={selectedSegmentIdx}
+          onDeleteFlag={handleDeleteFlag}
+          onRemoveCharacter={handleRemoveCharacter}
+          onDeleteChapter={handleDeleteChapter}
+          onToggleVoiceSample={handleToggleVoiceSample}
+          onSeekToSegment={handleSeekToSegment}
+          onAssignSpeakerName={handleAssignSpeakerName}
+          onSeekToSpeaker={handleSeekToSpeaker}
+          onRemoveAudioDrop={handleRemoveAudioDrop}
+        />
+      )}
     </div>
   )
 }

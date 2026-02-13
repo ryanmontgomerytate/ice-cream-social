@@ -6,6 +6,7 @@ pub mod queue;
 pub mod settings;
 pub mod speakers;
 pub mod stats;
+pub mod wiki;
 pub mod worker;
 
 pub use content::*;
@@ -16,4 +17,5 @@ pub use queue::*;
 pub use settings::*;
 pub use speakers::*;
 pub use stats::*;
+pub use wiki::*;
 pub use worker::*;

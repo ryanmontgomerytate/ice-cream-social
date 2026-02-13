@@ -69,6 +69,14 @@ pub struct Episode {
     pub metadata_json: Option<String>,
     pub has_diarization: bool,
     pub num_speakers: Option<i32>,
+    pub category: Option<String>,
+    pub category_number: Option<String>,
+    pub sub_series: Option<String>,
+    pub canonical_id: Option<i64>,
+    pub download_duration: Option<f64>,
+    pub transcribe_duration: Option<f64>,
+    pub diarize_duration: Option<f64>,
+    pub diarized_date: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -103,6 +111,7 @@ pub struct TranscriptionQueueItem {
     pub started_date: Option<String>,
     pub completed_date: Option<String>,
     pub error_message: Option<String>,
+    pub queue_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -117,6 +126,23 @@ pub struct FeedSource {
     pub name: String,
     pub icon: String,
     pub enabled: bool,
+}
+
+// ============================================================================
+// Category Rules (data-driven episode categorization)
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CategoryRule {
+    pub id: i64,
+    pub category: String,
+    pub display_name: String,
+    pub title_pattern: String,
+    pub number_pattern: Option<String>,
+    pub priority: i32,
+    pub icon: Option<String>,
+    pub color: Option<String>,
+    pub keywords: Option<String>,
 }
 
 // ============================================================================
@@ -235,6 +261,41 @@ pub struct AudioDropInstance {
     pub end_time: Option<f64>,
     pub notes: Option<String>,
     pub created_at: Option<String>,
+}
+
+// ============================================================================
+// Wiki Lore (Fandom wiki integration)
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WikiLore {
+    pub id: i64,
+    pub name: String,
+    pub category: String,
+    pub description: Option<String>,
+    pub wiki_url: Option<String>,
+    pub wiki_page_id: Option<i64>,
+    pub first_episode_id: Option<i64>,
+    pub aliases: Option<String>,
+    pub last_synced: Option<String>,
+    pub is_wiki_sourced: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WikiEpisodeMeta {
+    pub id: i64,
+    pub episode_id: i64,
+    pub wiki_page_id: Option<i64>,
+    pub wiki_url: Option<String>,
+    pub summary: Option<String>,
+    pub recording_location: Option<String>,
+    pub air_date: Option<String>,
+    pub topics_json: Option<String>,
+    pub guests_json: Option<String>,
+    pub bits_json: Option<String>,
+    pub scoopmail_json: Option<String>,
+    pub jock_vs_nerd: Option<String>,
+    pub last_synced: Option<String>,
 }
 
 // ============================================================================

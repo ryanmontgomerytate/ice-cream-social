@@ -5,9 +5,17 @@
 # Podcast Feed Settings
 podcast:
   name: "Matt and Mattingly's Ice Cream Social"
-  rss_feed_url: "YOUR_RSS_FEED_URL_HERE"
-  # Example: "https://www.patreon.com/rss/heyscoops?auth=YOUR_AUTH_TOKEN&show=876202"
-  # Or public feed: "https://feeds.simplecast.com/yfNKQOaz"
+  # Feed URLs are loaded from .env (PATREON_RSS_URL, APPLE_RSS_URL)
+  # See .env.example for setup instructions
+  feeds:
+    patreon:
+      name: "Patreon (Full Archive)"
+      env_var: "PATREON_RSS_URL"
+      enabled: true
+    apple:
+      name: "Apple Podcasts"
+      env_var: "APPLE_RSS_URL"
+      enabled: true
 
 # Directory Paths (relative to project root)
 paths:

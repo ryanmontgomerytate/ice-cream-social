@@ -142,6 +142,38 @@ export const episodesAPI = {
     console.log('Tauri reprocessDiarization result:', result);
     return result;
   },
+
+  async getCategoryRules() {
+    return tauriInvoke('get_category_rules');
+  },
+
+  async recategorizeAllEpisodes() {
+    return tauriInvoke('recategorize_all_episodes');
+  },
+
+  async linkCrossFeedEpisodes() {
+    return tauriInvoke('link_cross_feed_episodes');
+  },
+
+  async getEpisodeVariants(episodeId) {
+    return tauriInvoke('get_episode_variants', { episodeId });
+  },
+
+  async addCategoryRule(rule) {
+    return tauriInvoke('add_category_rule', { rule });
+  },
+
+  async updateCategoryRule(rule) {
+    return tauriInvoke('update_category_rule', { rule });
+  },
+
+  async deleteCategoryRule(id) {
+    return tauriInvoke('delete_category_rule', { id });
+  },
+
+  async testCategoryRule(pattern, keywords = null) {
+    return tauriInvoke('test_category_rule', { pattern, keywords });
+  },
 };
 
 // ============================================================================
@@ -185,6 +217,10 @@ export const statsAPI = {
     const result = await tauriInvoke('get_stats');
     console.log('Tauri getStats result:', result);
     return result;
+  },
+
+  async getPipelineStats(limit = 20) {
+    return tauriInvoke('get_pipeline_stats', { limit });
   },
 };
 
@@ -543,6 +579,20 @@ export const extractionAPI = {
   },
 };
 
+// ============================================================================
+// WIKI API - Fandom wiki integration
+// ============================================================================
+
+export const wikiAPI = {
+  async syncWikiEpisode(episodeNumber) {
+    return tauriInvoke('sync_wiki_episode', { episodeNumber: String(episodeNumber) });
+  },
+
+  async getWikiEpisodeMeta(episodeId) {
+    return tauriInvoke('get_wiki_episode_meta', { episodeId });
+  },
+};
+
 export default {
   isTauri,
   episodes: episodesAPI,
@@ -555,5 +605,6 @@ export default {
   content: contentAPI,
   search: searchAPI,
   extraction: extractionAPI,
+  wiki: wikiAPI,
   setupEventListeners,
 };

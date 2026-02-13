@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { episodesAPI, queueAPI } from '../services/api'
 
 const formatDuration = (seconds) => {
@@ -22,48 +22,63 @@ const formatDate = (dateString) => {
 }
 
 function getStatusBadges(episode, queueStatus) {
+  const badges = []
+  const isFailed = queueStatus?.status === 'failed' || episode.transcription_status === 'failed'
+
+  // Failed badge - always show if failed, regardless of queue state
+  if (isFailed) {
+    const errorMsg = episode.transcription_error || ''
+    const isDownloadFail = errorMsg.toLowerCase().includes('download')
+    const isDiarizeFail = queueStatus?.queue_type === 'diarize_only'
+    const label = isDownloadFail ? 'Download Failed' : isDiarizeFail ? 'Diarization Failed' : 'Failed'
+    badges.push(
+      <span key="failed" className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-100 text-red-700 border border-red-200" title={errorMsg}>
+        {label}
+      </span>
+    )
+  }
+
+  // Queue/processing badge
   if (queueStatus?.status === 'processing') {
-    return (
-      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-700 border border-blue-200">
+    badges.push(
+      <span key="processing" className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-700 border border-blue-200">
         <span className="w-2 h-2 border border-blue-300 border-t-blue-700 rounded-full animate-spin"></span>
         Processing
       </span>
     )
-  }
-  if (queueStatus?.status === 'pending') {
-    return (
-      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-yellow-100 text-yellow-700 border border-yellow-200">
+  } else if (queueStatus?.status === 'pending') {
+    badges.push(
+      <span key="queued" className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-yellow-100 text-yellow-700 border border-yellow-200">
         <span className="w-1.5 h-1.5 bg-yellow-500 rounded-full animate-pulse"></span>
         Queue #{queueStatus.priority}
       </span>
     )
   }
-  if (queueStatus?.status === 'failed' || episode.transcription_status === 'failed') {
-    return (
-      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-100 text-red-700 border border-red-200">
-        Failed
-      </span>
-    )
+
+  // Status badge (only if not already showing a badge above)
+  if (badges.length === 0) {
+    if (episode.is_transcribed) {
+      badges.push(
+        <span key="transcribed" className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-100 text-green-700 border border-green-200">
+          ✓ Transcribed
+        </span>
+      )
+    } else if (episode.is_downloaded) {
+      badges.push(
+        <span key="downloaded" className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-700 border border-blue-200">
+          Downloaded
+        </span>
+      )
+    } else {
+      badges.push(
+        <span key="pending" className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-600 border border-gray-200">
+          Pending
+        </span>
+      )
+    }
   }
-  if (episode.is_transcribed) {
-    return (
-      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-100 text-green-700 border border-green-200">
-        ✓ Transcribed
-      </span>
-    )
-  }
-  if (episode.is_downloaded) {
-    return (
-      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-700 border border-blue-200">
-        Downloaded
-      </span>
-    )
-  }
-  return (
-    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-600 border border-gray-200">
-      Pending
-    </span>
-  )
+
+  return <>{badges}</>
 }
 
 export default function EpisodeSidebar({
@@ -76,21 +91,37 @@ export default function EpisodeSidebar({
   const [total, setTotal] = useState(0)
   const [search, setSearch] = useState('')
   const [queueMap, setQueueMap] = useState({}) // episodeId -> queue status
-  const [feedSource, setFeedSource] = useState('patreon')
+  const [failedEpisodeCount, setFailedEpisodeCount] = useState(0)
+  const [feedSource, setFeedSource] = useState(null) // null = all feeds
+  const [category, setCategory] = useState(null) // null = all categories (no filter)
+  const [categoryRules, setCategoryRules] = useState([])
   const [sortBy, setSortBy] = useState('published_date')
   const [sortDesc, setSortDesc] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [filters, setFilters] = useState({
     transcribed_only: false,
     in_queue_only: false,
+    failed_only: false,
+    downloaded_only: false,
+    not_downloaded_only: false,
+    diarized_only: false,
     limit: 50,
     offset: 0
   })
 
+  // Load category rules on mount
+  useEffect(() => {
+    episodesAPI.getCategoryRules().then(rules => {
+      if (rules && rules.length > 0) {
+        setCategoryRules(rules)
+      }
+    }).catch(e => console.error('Failed to load category rules:', e))
+  }, [])
+
   // Load episodes
   useEffect(() => {
     loadEpisodes()
-  }, [filters, search, feedSource, sortBy, sortDesc])
+  }, [filters, search, feedSource, category, sortBy, sortDesc])
 
   // Load queue status
   useEffect(() => {
@@ -105,7 +136,8 @@ export default function EpisodeSidebar({
       const data = await episodesAPI.getEpisodes({
         ...filters,
         search,
-        ...(feedSource !== 'all' ? { feed_source: feedSource } : {}),
+        ...(feedSource ? { feed_source: feedSource } : {}),
+        ...(category ? { category } : {}),
         sort_by: sortBy,
         sort_desc: sortDesc
       })
@@ -126,18 +158,22 @@ export default function EpisodeSidebar({
 
       // Map processing episodes
       queue.processing?.forEach(item => {
-        map[item.episode?.id || item.episode_id] = { status: 'processing' }
+        map[item.episode?.id || item.episode_id] = { status: 'processing', queue_type: item.queue_item?.queue_type || 'full' }
       })
       // Map pending episodes with priority
       queue.pending?.forEach((item, idx) => {
-        map[item.episode?.id || item.episode_id] = { status: 'pending', priority: idx + 1 }
+        map[item.episode?.id || item.episode_id] = { status: 'pending', priority: idx + 1, queue_type: item.queue_item?.queue_type || 'full' }
       })
       // Map failed episodes
       queue.failed?.forEach(item => {
-        map[item.episode?.id || item.episode_id] = { status: 'failed' }
+        map[item.episode?.id || item.episode_id] = { status: 'failed', queue_type: item.queue_item?.queue_type || 'full' }
       })
 
       setQueueMap(map)
+
+      // Also count episodes with failed transcription_status (may not be in queue anymore)
+      const failedData = await episodesAPI.getEpisodes({ failed_only: true, limit: 1, offset: 0 })
+      setFailedEpisodeCount(failedData.total || 0)
     } catch (error) {
       console.error('Error loading queue:', error)
     }
@@ -163,14 +199,17 @@ export default function EpisodeSidebar({
     }
   }
 
-  const handleLoadMore = () => {
-    setFilters(prev => ({ ...prev, offset: prev.offset + prev.limit }))
+  const currentPage = Math.floor(filters.offset / filters.limit) + 1
+  const totalPages = Math.ceil(total / filters.limit)
+
+  const goToPage = (page) => {
+    setFilters(prev => ({ ...prev, offset: (page - 1) * prev.limit }))
   }
 
   const handleSyncFeed = async () => {
     try {
       setRefreshing(true)
-      await episodesAPI.refreshFeed(feedSource !== 'all' ? feedSource : 'patreon', false)
+      await episodesAPI.refreshFeed(feedSource || 'patreon', false)
       onNotification?.('Feed synced', 'success')
       await loadEpisodes()
     } catch (error) {
@@ -184,22 +223,25 @@ export default function EpisodeSidebar({
     { key: 'published_date', label: 'Date' },
     { key: 'title', label: 'Title' },
     { key: 'episode_number', label: 'Ep#' },
-    { key: 'has_diarization', label: 'Diarized' },
   ]
 
-  // Count queue items
+  // Count queue items split by type
+  const queueValues = Object.values(queueMap)
   const queueCounts = {
-    processing: Object.values(queueMap).filter(q => q.status === 'processing').length,
-    pending: Object.values(queueMap).filter(q => q.status === 'pending').length,
-    failed: Object.values(queueMap).filter(q => q.status === 'failed').length
+    processing: queueValues.filter(q => q.status === 'processing').length,
+    queueFailed: queueValues.filter(q => q.status === 'failed').length,
+    transcriptionPending: queueValues.filter(q => q.status === 'pending' && q.queue_type !== 'diarize_only').length,
+    diarizationPending: queueValues.filter(q => q.status === 'pending' && q.queue_type === 'diarize_only').length,
   }
+  // Total failed = episodes with failed status (includes those no longer in queue)
+  const totalFailed = Math.max(failedEpisodeCount, queueCounts.queueFailed)
 
   return (
     <div className="h-full flex flex-col bg-white border-r border-gray-200">
       {/* Header */}
       <div className="p-4 border-b border-gray-200 flex-shrink-0">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-lg font-bold text-gray-800">Episodes</h2>
+          <h2 className="text-lg font-bold text-gray-800">Library</h2>
           <div className="flex items-center gap-1">
             <button
               onClick={loadEpisodes}
@@ -233,27 +275,9 @@ export default function EpisodeSidebar({
           className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
         />
 
-        {/* Queue Summary */}
-        <div className="flex gap-2 mt-3 text-xs">
-          {queueCounts.processing > 0 && (
-            <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded-full">
-              {queueCounts.processing} processing
-            </span>
-          )}
-          {queueCounts.pending > 0 && (
-            <span className="px-2 py-1 bg-yellow-100 text-yellow-700 rounded-full">
-              {queueCounts.pending} pending
-            </span>
-          )}
-          {queueCounts.failed > 0 && (
-            <span className="px-2 py-1 bg-red-100 text-red-700 rounded-full">
-              {queueCounts.failed} failed
-            </span>
-          )}
-        </div>
-
-        {/* Filters */}
-        <div className="flex gap-2 mt-3 flex-wrap">
+        {/* Status Filters */}
+        <div className="flex items-center gap-1.5 mt-3 flex-wrap">
+          <span className="text-[11px] text-gray-500 font-medium">Status:</span>
           <button
             onClick={() => setFilters(prev => ({ ...prev, transcribed_only: !prev.transcribed_only, offset: 0 }))}
             className={`px-2 py-1 text-xs rounded-full transition-colors ${
@@ -265,6 +289,16 @@ export default function EpisodeSidebar({
             Transcribed
           </button>
           <button
+            onClick={() => setFilters(prev => ({ ...prev, diarized_only: !prev.diarized_only, offset: 0 }))}
+            className={`px-2 py-1 text-xs rounded-full transition-colors ${
+              filters.diarized_only
+                ? 'bg-purple-500 text-white'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            Diarized
+          </button>
+          <button
             onClick={() => setFilters(prev => ({ ...prev, in_queue_only: !prev.in_queue_only, offset: 0 }))}
             className={`px-2 py-1 text-xs rounded-full transition-colors ${
               filters.in_queue_only
@@ -274,10 +308,46 @@ export default function EpisodeSidebar({
           >
             In Queue
           </button>
-          <span className="w-px bg-gray-200 mx-0.5"></span>
-          {['patreon', 'apple', 'all'].map(src => (
+          <button
+            onClick={() => setFilters(prev => ({ ...prev, downloaded_only: !prev.downloaded_only, not_downloaded_only: false, offset: 0 }))}
+            className={`px-2 py-1 text-xs rounded-full transition-colors ${
+              filters.downloaded_only
+                ? 'bg-blue-500 text-white'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            Downloaded
+          </button>
+          <button
+            onClick={() => setFilters(prev => ({ ...prev, not_downloaded_only: !prev.not_downloaded_only, downloaded_only: false, offset: 0 }))}
+            className={`px-2 py-1 text-xs rounded-full transition-colors ${
+              filters.not_downloaded_only
+                ? 'bg-gray-500 text-white'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            Not Downloaded
+          </button>
+          {totalFailed > 0 && (
             <button
-              key={src}
+              onClick={() => setFilters(prev => ({ ...prev, failed_only: !prev.failed_only, offset: 0 }))}
+              className={`px-2 py-1 text-xs rounded-full transition-colors ${
+                filters.failed_only
+                  ? 'bg-red-500 text-white'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              Failed
+            </button>
+          )}
+        </div>
+
+        {/* Source */}
+        <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+          <span className="text-[11px] text-gray-500 font-medium">Source:</span>
+          {[null, 'patreon', 'apple'].map(src => (
+            <button
+              key={src || 'all'}
               onClick={() => { setFeedSource(src); setFilters(prev => ({ ...prev, offset: 0 })) }}
               className={`px-2 py-1 text-xs rounded-full transition-colors ${
                 feedSource === src
@@ -290,8 +360,49 @@ export default function EpisodeSidebar({
           ))}
         </div>
 
+        {/* Category */}
+        {categoryRules.length > 0 && (
+          <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+            <span className="text-[11px] text-gray-500 font-medium">Category:</span>
+            <button
+              onClick={() => { setCategory(null); setFilters(prev => ({ ...prev, offset: 0 })) }}
+              className={`px-2 py-1 text-xs rounded-full transition-colors ${
+                category === null
+                  ? 'bg-indigo-500 text-white'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              All
+            </button>
+            {categoryRules.filter(r => r.priority < 99).map(rule => (
+              <button
+                key={rule.category}
+                onClick={() => { setCategory(rule.category); setFilters(prev => ({ ...prev, offset: 0 })) }}
+                className={`px-2 py-1 text-xs rounded-full transition-colors ${
+                  category === rule.category
+                    ? 'text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+                style={category === rule.category ? { backgroundColor: rule.color || '#6366f1' } : {}}
+              >
+                {rule.icon} {rule.display_name}
+              </button>
+            ))}
+            <button
+              onClick={() => { setCategory('bonus'); setFilters(prev => ({ ...prev, offset: 0 })) }}
+              className={`px-2 py-1 text-xs rounded-full transition-colors ${
+                category === 'bonus'
+                  ? 'bg-gray-500 text-white'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              🎁 Bonus
+            </button>
+          </div>
+        )}
+
         {/* Sort */}
-        <div className="flex items-center gap-1.5 mt-3">
+        <div className="flex items-center gap-1.5 mt-2">
           <span className="text-[11px] text-gray-500 font-medium">Sort:</span>
           {sortOptions.map(opt => {
             const isActive = sortBy === opt.key
@@ -319,11 +430,31 @@ export default function EpisodeSidebar({
           })}
         </div>
 
-        {/* Results count */}
+        {/* Pagination */}
         {total > 0 && (
-          <div className="mt-2 text-[11px] text-gray-400">
-            Showing {filters.offset + 1}–{Math.min(filters.offset + episodes.length, total)} of {total}
-            {search && <span> matching "<span className="text-gray-600">{search}</span>"</span>}
+          <div className="flex items-center justify-between mt-3">
+            <div className="text-[11px] text-gray-400">
+              {filters.offset + 1}–{Math.min(filters.offset + episodes.length, total)} of {total}
+            </div>
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => goToPage(currentPage - 1)}
+                  disabled={currentPage <= 1 || loading}
+                  className="px-1.5 py-0.5 text-[11px] rounded bg-gray-100 text-gray-600 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  ‹
+                </button>
+                <span className="text-[11px] text-gray-500 px-1">{currentPage} / {totalPages}</span>
+                <button
+                  onClick={() => goToPage(currentPage + 1)}
+                  disabled={currentPage >= totalPages || loading}
+                  className="px-1.5 py-0.5 text-[11px] rounded bg-gray-100 text-gray-600 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  ›
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -341,7 +472,9 @@ export default function EpisodeSidebar({
               const queueStatus = queueMap[episode.id]
               const isSelected = selectedEpisodeId === episode.id
               const formattedDate = formatDate(episode.published_date)
-              const feedLabel = episode.feed_source === 'patreon' ? '💎 Patreon' : '🎙️ Apple'
+              const categoryRule = categoryRules.find(r => r.category === episode.category)
+              const categoryBadge = categoryRule ? `${categoryRule.icon || ''} ${categoryRule.display_name}` : null
+              const feedIcon = episode.feed_source === 'patreon' ? '💎' : '🎙️'
 
               return (
                 <div
@@ -358,19 +491,35 @@ export default function EpisodeSidebar({
                     {episode.title}
                   </div>
 
-                  {/* Meta line: ep number + feed source + date */}
+                  {/* Meta line: category badge + ep number + feed + date */}
                   <div className="flex items-center gap-1 text-[11px] text-gray-500 mb-1 flex-wrap">
-                    {episode.episode_number && (
+                    {categoryBadge && episode.category !== 'episode' && (
                       <>
-                        <span className="font-medium text-gray-600">Ep. {episode.episode_number}</span>
+                        <span className="font-medium px-1 py-0 rounded text-[10px]" style={{ backgroundColor: (categoryRule?.color || '#6366f1') + '20', color: categoryRule?.color || '#6366f1' }}>
+                          {categoryBadge}
+                        </span>
                         <span>·</span>
                       </>
                     )}
-                    <span>{feedLabel}</span>
+                    {(episode.category_number || episode.episode_number) && (
+                      <>
+                        <span className="font-medium text-gray-600">
+                          {episode.category === 'episode' ? 'Ep.' : '#'} {episode.category_number || episode.episode_number}
+                        </span>
+                        <span>·</span>
+                      </>
+                    )}
+                    <span>{feedIcon}</span>
                     {formattedDate && (
                       <>
                         <span>·</span>
                         <span>{formattedDate}</span>
+                      </>
+                    )}
+                    {episode.sub_series && (
+                      <>
+                        <span>·</span>
+                        <span className="italic text-gray-400">{episode.sub_series}</span>
                       </>
                     )}
                   </div>
@@ -449,15 +598,37 @@ export default function EpisodeSidebar({
           </div>
         )}
 
-        {/* Load More */}
-        {episodes.length < total && (
-          <div className="p-4">
+        {/* Bottom Pagination */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-center gap-1 p-2 border-t border-gray-100 flex-shrink-0">
             <button
-              onClick={handleLoadMore}
-              disabled={loading}
-              className="w-full py-2 text-sm text-purple-600 hover:text-purple-800 disabled:opacity-50"
+              onClick={() => goToPage(1)}
+              disabled={currentPage <= 1 || loading}
+              className="px-1.5 py-1 text-[11px] rounded bg-gray-100 text-gray-600 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed"
             >
-              Load More ({episodes.length} of {total})
+              «
+            </button>
+            <button
+              onClick={() => goToPage(currentPage - 1)}
+              disabled={currentPage <= 1 || loading}
+              className="px-1.5 py-1 text-[11px] rounded bg-gray-100 text-gray-600 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              ‹ Prev
+            </button>
+            <span className="text-[11px] text-gray-500 px-2">{currentPage} / {totalPages}</span>
+            <button
+              onClick={() => goToPage(currentPage + 1)}
+              disabled={currentPage >= totalPages || loading}
+              className="px-1.5 py-1 text-[11px] rounded bg-gray-100 text-gray-600 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              Next ›
+            </button>
+            <button
+              onClick={() => goToPage(totalPages)}
+              disabled={currentPage >= totalPages || loading}
+              className="px-1.5 py-1 text-[11px] rounded bg-gray-100 text-gray-600 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              »
             </button>
           </div>
         )}

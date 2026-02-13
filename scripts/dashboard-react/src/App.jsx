@@ -2,8 +2,7 @@ import { useState, useEffect } from 'react'
 import Header from './components/Header'
 import Stats from './components/Stats'
 import CurrentActivity from './components/CurrentActivity'
-import EpisodesBrowser from './components/EpisodesBrowser'
-import TranscriptionQueue from './components/TranscriptionQueue'
+import PipelineStats from './components/PipelineStats'
 import TranscriptModal from './components/TranscriptModal'
 import TranscriptReviewLayout from './components/TranscriptReviewLayout'
 import Notification from './components/Notification'
@@ -13,11 +12,11 @@ import SponsorsPanel from './components/SponsorsPanel'
 import SettingsPanel from './components/SettingsPanel'
 import SearchPanel from './components/SearchPanel'
 import ExtractionPanel from './components/ExtractionPanel'
-import { isTauri, statsAPI, workerAPI, queueAPI, episodesAPI, setupEventListeners } from './services/api'
+import { isTauri, statsAPI, workerAPI, episodesAPI, setupEventListeners } from './services/api'
 
 function App() {
   const [connected, setConnected] = useState(false)
-  const [activeMainTab, setActiveMainTab] = useState('episodes') // 'episodes', 'speakers', 'settings'
+  const [activeMainTab, setActiveMainTab] = useState('episodes')
   const [stats, setStats] = useState({
     total_episodes: 0,
     transcribed_episodes: 0,
@@ -27,10 +26,8 @@ function App() {
     completion_rate: { downloaded: 0, total: 0 }
   })
   const [currentActivity, setCurrentActivity] = useState(null)
-  const [queue, setQueue] = useState({ pending: [], processing: [], completed: [], failed: [] })
   const [notification, setNotification] = useState(null)
   const [transcriptEpisode, setTranscriptEpisode] = useState(null)
-  const [episodesRefreshKey, setEpisodesRefreshKey] = useState(0)
 
   // Initialize connection (Tauri events or Socket.IO)
   useEffect(() => {
@@ -47,9 +44,6 @@ function App() {
           },
           onQueueUpdate: (data) => {
             console.log('Queue update:', data)
-            loadQueue()
-            // Also trigger episodes refresh so buttons update
-            setEpisodesRefreshKey(prev => prev + 1)
           },
           onStatsUpdate: (data) => {
             console.log('Stats update:', data)
@@ -58,11 +52,9 @@ function App() {
           onTranscriptionComplete: (episodeId) => {
             showNotification(`Transcription completed for episode ${episodeId}`, 'success')
             loadStats()
-            loadQueue()
           },
           onTranscriptionFailed: ([episodeId, error]) => {
             showNotification(`Transcription failed: ${error}`, 'error')
-            loadQueue()
           },
         })
 
@@ -91,10 +83,6 @@ function App() {
           setCurrentActivity(data)
         })
 
-        newSocket.on('queue_update', (data) => {
-          setQueue(data)
-        })
-
         newSocket.on('stats_update', (data) => {
           setStats(data)
         })
@@ -115,7 +103,6 @@ function App() {
   // Load initial data
   useEffect(() => {
     loadStats()
-    loadQueue()
     loadCurrentActivity()
   }, [])
 
@@ -124,7 +111,6 @@ function App() {
     const interval = setInterval(() => {
       loadCurrentActivity()
       loadStats()
-      loadQueue()
     }, 5000)
     return () => clearInterval(interval)
   }, [])
@@ -137,19 +123,6 @@ function App() {
       }
     } catch (error) {
       console.error('Error loading stats:', error)
-    }
-  }
-
-  const loadQueue = async () => {
-    try {
-      const data = await queueAPI.getQueue()
-      if (data && data.queue) {
-        setQueue(data.queue)
-      } else if (data) {
-        setQueue(data)
-      }
-    } catch (error) {
-      console.error('Error loading queue:', error)
     }
   }
 
@@ -186,37 +159,22 @@ function App() {
     setTimeout(() => setNotification(null), 5000)
   }
 
-  // Handle viewing transcript from queue
-  const handleViewTranscript = async (episodeId) => {
-    try {
-      const episode = await episodesAPI.getEpisode(episodeId)
-      if (episode) {
-        setTranscriptEpisode(episode)
-      }
-    } catch (error) {
-      showNotification(`Error loading episode: ${error.message}`, 'error')
-    }
-  }
-
   return (
     <div className="min-h-screen bg-cream-100">
       <Header connected={connected} isTauri={isTauri} />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-        <Stats stats={stats} />
-        <CurrentActivity activity={currentActivity} />
-
         {/* Main Navigation Tabs */}
         <div className="border-b border-cream-200">
           <nav className="flex gap-1">
             {[
               { id: 'episodes', label: 'Episodes', icon: '📻' },
-              { id: 'review', label: 'Review', icon: '✏️' },
               { id: 'search', label: 'Search', icon: '🔍' },
               { id: 'extraction', label: 'Extraction', icon: '🤖' },
               { id: 'speakers', label: 'Speakers', icon: '👥' },
               { id: 'characters', label: 'Characters', icon: '🎭' },
               { id: 'sponsors', label: 'Sponsors', icon: '📺' },
+              { id: 'stats', label: 'Stats', icon: '📊' },
               { id: 'settings', label: 'Settings', icon: '⚙️' },
             ].map((tab) => (
               <button
@@ -236,28 +194,11 @@ function App() {
         </div>
 
         {/* Tab Content */}
-        {activeMainTab === 'episodes' && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Episodes Browser - Takes 2 columns */}
-            <div className="lg:col-span-2">
-              <EpisodesBrowser onNotification={showNotification} refreshKey={episodesRefreshKey} queue={queue} />
-            </div>
-
-            {/* Transcription Queue - Takes 1 column */}
-            <div className="lg:col-span-1">
-              <div className="lg:sticky lg:top-6">
-                <TranscriptionQueue
-                  queue={queue}
-                  onNotification={showNotification}
-                  onRefresh={loadQueue}
-                  onViewTranscript={handleViewTranscript}
-                />
-              </div>
-            </div>
-          </div>
+        {activeMainTab === 'stats' && (
+          <PipelineStats stats={stats} currentActivity={currentActivity} />
         )}
 
-        {activeMainTab === 'review' && (
+        {activeMainTab === 'episodes' && (
           <TranscriptReviewLayout onNotification={showNotification} />
         )}
 
