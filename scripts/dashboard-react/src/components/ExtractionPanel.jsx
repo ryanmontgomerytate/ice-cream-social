@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { extractionAPI, episodesAPI } from '../services/api'
+import { useConfirm } from '../hooks/useConfirm'
 
 export default function ExtractionPanel({ onNotification }) {
+  const confirm = useConfirm()
   const [ollamaStatus, setOllamaStatus] = useState(null)
   const [prompts, setPrompts] = useState([])
   const [selectedPrompt, setSelectedPrompt] = useState(null)
@@ -131,7 +133,7 @@ export default function ExtractionPanel({ onNotification }) {
 
   const handleDeletePrompt = async () => {
     if (!selectedPrompt) return
-    if (!confirm(`Delete prompt "${selectedPrompt.name}"?`)) return
+    if (!await confirm(`Delete prompt "${selectedPrompt.name}"?`)) return
 
     setLoading(true)
     try {

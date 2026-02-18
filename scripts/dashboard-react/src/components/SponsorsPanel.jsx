@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
 import { contentAPI } from '../services/api'
+import { useConfirm } from '../hooks/useConfirm'
 
 export default function SponsorsPanel({ onNotification }) {
+  const confirm = useConfirm()
   const [sponsors, setSponsors] = useState([])
   const [loading, setLoading] = useState(true)
   const [showAddForm, setShowAddForm] = useState(false)
@@ -67,7 +69,7 @@ export default function SponsorsPanel({ onNotification }) {
   }
 
   const handleDeleteSponsor = async (sponsor) => {
-    if (!confirm(`Delete sponsor "${sponsor.name}"?`)) return
+    if (!await confirm(`Delete sponsor "${sponsor.name}"?`)) return
     try {
       await contentAPI.deleteSponsor(sponsor.id)
       onNotification?.(`Sponsor "${sponsor.name}" deleted`, 'success')

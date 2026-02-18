@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { ConfirmProvider } from './hooks/useConfirm'
 import Header from './components/Header'
 import Stats from './components/Stats'
 import CurrentActivity from './components/CurrentActivity'
@@ -271,4 +272,6 @@ function App() {
   )
 }
 
-export default App
+export default function AppWithConfirm() {
+  return <ConfirmProvider><App /></ConfirmProvider>
+}

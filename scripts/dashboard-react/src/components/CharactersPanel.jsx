@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
 import { contentAPI, episodesAPI } from '../services/api'
+import { useConfirm } from '../hooks/useConfirm'
 
 export default function CharactersPanel({ onNotification }) {
+  const confirm = useConfirm()
   const [characters, setCharacters] = useState([])
   const [episodes, setEpisodes] = useState([])
   const [loading, setLoading] = useState(true)
@@ -150,7 +152,7 @@ export default function CharactersPanel({ onNotification }) {
   }
 
   const handleDeleteCharacter = async (character) => {
-    if (!confirm(`Delete character "${character.name}"?`)) return
+    if (!await confirm(`Delete character "${character.name}"?`)) return
     try {
       await contentAPI.deleteCharacter(character.id)
       onNotification?.(`Character "${character.name}" deleted`, 'success')

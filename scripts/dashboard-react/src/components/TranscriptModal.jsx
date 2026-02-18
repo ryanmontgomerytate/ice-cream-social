@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { episodesAPI, speakersAPI, contentAPI, searchAPI } from '../services/api'
 import { convertFileSrc } from '@tauri-apps/api/core'
+import { useConfirm } from '../hooks/useConfirm'
 
 // Flag types for segment issues
 const FLAG_TYPES = [
@@ -46,6 +47,7 @@ const formatTime = (seconds) => {
 }
 
 export default function TranscriptModal({ episode, onClose }) {
+  const confirm = useConfirm()
   const [transcript, setTranscript] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -565,14 +567,16 @@ export default function TranscriptModal({ episode, onClose }) {
       // Save voice samples if any marked
       if (Object.keys(markedSamples).length > 0 && segments) {
         const samplesToSave = Object.keys(markedSamples).map(idx => {
-          const segment = segments[parseInt(idx)]
+          const segIdx = parseInt(idx)
+          const segment = segments[segIdx]
           const speakerName = speakerNames[segment.speaker] || segment.speaker
           return {
             speaker: segment.speaker,
             speakerName,
             startTime: parseTimestampToSeconds(segment),
             endTime: getSegmentEndTime(segment),
-            text: segment.text
+            text: segment.text,
+            segmentIdx: segIdx,
           }
         })
         try {
@@ -1175,9 +1179,9 @@ export default function TranscriptModal({ episode, onClose }) {
                                   'bg-yellow-100 text-yellow-700'
                                 }`}
                                 title={`${FLAG_TYPES.find(f => f.id === flaggedSegments[idx].flag_type)?.label || 'Flagged'}${flaggedSegments[idx].corrected_speaker ? ` → ${flaggedSegments[idx].corrected_speaker}` : ''}${flaggedSegments[idx].notes ? `: ${flaggedSegments[idx].notes}` : ''}`}
-                                onClick={(e) => {
+                                onClick={async (e) => {
                                   e.stopPropagation()
-                                  if (confirm('Remove this flag?')) deleteFlag(idx)
+                                  if (await confirm('Remove this flag?')) deleteFlag(idx)
                                 }}
                               >
                                 {FLAG_TYPES.find(f => f.id === flaggedSegments[idx].flag_type)?.icon || '🚩'}
@@ -1190,9 +1194,9 @@ export default function TranscriptModal({ episode, onClose }) {
                                 <span
                                   className="px-1.5 py-0.5 rounded text-xs font-medium bg-pink-100 text-pink-700 flex items-center gap-1 cursor-pointer"
                                   title={`Character: ${charAppearance.character_name}`}
-                                  onClick={(e) => {
+                                  onClick={async (e) => {
                                     e.stopPropagation()
-                                    if (confirm(`Remove ${charAppearance.character_name} from this segment?`)) removeCharacterFromSegment(charAppearance.id)
+                                    if (await confirm(`Remove ${charAppearance.character_name} from this segment?`)) removeCharacterFromSegment(charAppearance.id)
                                   }}
                                 >
                                   🎭 {charAppearance.character_name}
@@ -1206,9 +1210,9 @@ export default function TranscriptModal({ episode, onClose }) {
                                   className="px-1.5 py-0.5 rounded text-xs font-medium cursor-pointer"
                                   style={{ backgroundColor: chapter.chapter_type_color + '33', color: chapter.chapter_type_color }}
                                   title={`${chapter.chapter_type_name}${chapter.title ? ': ' + chapter.title : ''} (click to remove)`}
-                                  onClick={(e) => {
+                                  onClick={async (e) => {
                                     e.stopPropagation()
-                                    if (confirm(`Remove chapter "${chapter.chapter_type_name}"?`)) deleteChapter(chapter.id)
+                                    if (await confirm(`Remove chapter "${chapter.chapter_type_name}"?`)) deleteChapter(chapter.id)
                                   }}
                                 >
                                   {chapter.chapter_type_icon} {chapter.chapter_type_name}
@@ -1291,7 +1295,7 @@ export default function TranscriptModal({ episode, onClose }) {
                                     <span>Mark Character</span>
                                     <span className="ml-auto text-gray-400">▶</span>
                                   </button>
-                                  {/* Mark Voice Sample */}
+                                  {/* Mark Audio Sample */}
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation()
@@ -1301,7 +1305,7 @@ export default function TranscriptModal({ episode, onClose }) {
                                     className="w-full px-3 py-2 text-xs text-left rounded flex items-center gap-2 hover:bg-gray-100 transition-colors"
                                   >
                                     <span>{markedSamples[idx] ? '⭐' : '☆'}</span>
-                                    <span>{markedSamples[idx] ? 'Unmark Voice Sample' : 'Mark Voice Sample'}</span>
+                                    <span>{markedSamples[idx] ? 'Unmark Audio Sample' : 'Mark Audio Sample'}</span>
                                   </button>
                                   {/* Mark Chapter */}
                                   <button
@@ -1508,11 +1512,11 @@ export default function TranscriptModal({ episode, onClose }) {
                               <div className="text-xs text-gray-500 mb-2">
                                 Assign name to <span className="font-mono font-medium">{segment.speaker}</span>:
                               </div>
-                              {/* Voice library speakers (preferred) */}
+                              {/* Audio samples speakers (preferred) */}
                               {voiceLibrary.length > 0 && (
                                 <div className="mb-2">
                                   <div className="text-xs text-yellow-600 mb-1 flex items-center gap-1">
-                                    <span>🎤</span> Voice Library:
+                                    <span>🎤</span> Audio Samples:
                                   </div>
                                   <div className="flex flex-wrap gap-1">
                                     {voiceLibrary.map(speaker => (
@@ -1586,7 +1590,7 @@ export default function TranscriptModal({ episode, onClose }) {
                     <span>Unsaved changes</span>
                     {Object.keys(markedSamples).length > 0 && (
                       <span className="px-2 py-0.5 bg-yellow-200 rounded text-xs">
-                        ⭐ {Object.keys(markedSamples).length} voice sample{Object.keys(markedSamples).length !== 1 ? 's' : ''}
+                        ⭐ {Object.keys(markedSamples).length} audio sample{Object.keys(markedSamples).length !== 1 ? 's' : ''}
                       </span>
                     )}
                     {flaggedCount > 0 && (

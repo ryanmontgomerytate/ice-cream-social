@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
-import { episodesAPI, speakersAPI, contentAPI } from '../services/api'
+import { episodesAPI, speakersAPI, contentAPI, isTauri } from '../services/api'
 import { convertFileSrc } from '@tauri-apps/api/core'
 
 // Flag types for segment issues
@@ -65,6 +65,7 @@ export default function TranscriptEditor({
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [saving, setSaving] = useState(false)
   const [reprocessing, setReprocessing] = useState(false)
+  const [diarizationLocked, setDiarizationLocked] = useState(false)
 
   // Local state for segment data
   const [flaggedSegments, setFlaggedSegments] = useState({})
@@ -98,14 +99,30 @@ export default function TranscriptEditor({
   const transcriptContainerRef = useRef(null)
   const segmentRefs = useRef({})
 
-  // Load transcript when episode changes
+  // Load transcript when episode changes; clear lock on episode switch
   useEffect(() => {
     if (episode?.id) {
       loadTranscript()
       loadAudioPath()
       setReprocessing(false)
+      setDiarizationLocked(false)
     }
   }, [episode?.id])
+
+  // Unlock when this episode's diarization completes
+  useEffect(() => {
+    if (!diarizationLocked || !isTauri) return
+    let unlisten
+    import('@tauri-apps/api/event').then(({ listen }) => {
+      listen('transcription_complete', (event) => {
+        if (event.payload === episode?.id) {
+          setDiarizationLocked(false)
+          setReprocessing(false)
+        }
+      }).then(fn => { unlisten = fn })
+    })
+    return () => { if (unlisten) unlisten() }
+  }, [diarizationLocked, episode?.id])
 
   const loadTranscript = async () => {
     try {
@@ -1107,13 +1124,13 @@ export default function TranscriptEditor({
           )}
           {episode.is_transcribed && (
             <button
-              disabled={reprocessing}
+              disabled={reprocessing || diarizationLocked}
               onClick={async () => {
                 setReprocessing(true)
                 try {
                   await episodesAPI.reprocessDiarization(episode.id)
-                  onNotification?.('Episode queued for re-diarization with hints', 'success')
-                  setTimeout(() => setReprocessing(false), 4000)
+                  setDiarizationLocked(true)
+                  onNotification?.('Episode locked for re-diarization — editing disabled until complete', 'success')
                 } catch (err) {
                   onNotification?.(`Failed to queue re-diarization: ${err.message}`, 'error')
                   setReprocessing(false)
@@ -1134,6 +1151,17 @@ export default function TranscriptEditor({
           )}
         </div>
       </div>
+
+      {/* Diarization Lock Banner */}
+      {diarizationLocked && (
+        <div className="px-4 py-3 bg-orange-50 border-b border-orange-200 flex items-center gap-3 flex-shrink-0">
+          <div className="w-4 h-4 border-2 border-orange-500 border-t-transparent rounded-full animate-spin flex-shrink-0" />
+          <div>
+            <span className="text-sm font-semibold text-orange-800">Re-diarization in progress</span>
+            <span className="text-xs text-orange-600 ml-2">Editing locked until the worker finishes this episode</span>
+          </div>
+        </div>
+      )}
 
       {/* Audio Player */}
       {audioPath && (
@@ -1195,7 +1223,7 @@ export default function TranscriptEditor({
           </div>
         )}
         {hasUnsavedChanges && (
-          <button onClick={saveEdits} disabled={saving} className="px-4 py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg text-sm font-medium disabled:opacity-50">
+          <button onClick={saveEdits} disabled={saving || diarizationLocked} className="px-4 py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg text-sm font-medium disabled:opacity-50">
             {saving ? 'Saving...' : 'Save'}
           </button>
         )}
