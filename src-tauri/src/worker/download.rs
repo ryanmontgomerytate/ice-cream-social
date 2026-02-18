@@ -96,6 +96,17 @@ async fn download_episode(
                 db.update_episode_file_size(episode.id, file_size)
                     .map_err(|e| e.to_string())?;
 
+                // Probe audio duration if not already set
+                if episode.duration.is_none() || episode.duration == Some(0.0) {
+                    if let Some(dur) = probe_audio_duration(&file_path).await {
+                        if let Err(e) = db.update_episode_duration(episode.id, dur) {
+                            log::warn!("Failed to update audio duration: {}", e);
+                        } else {
+                            log::info!("Probed audio duration for episode {}: {:.1}s", episode.id, dur);
+                        }
+                    }
+                }
+
                 return Ok(file_path_str);
             }
             Err(e) => {
@@ -119,6 +130,27 @@ async fn download_episode(
     }
 
     unreachable!()
+}
+
+/// Probe audio file duration using ffprobe
+async fn probe_audio_duration(file_path: &PathBuf) -> Option<f64> {
+    let output = tokio::process::Command::new("ffprobe")
+        .args([
+            "-v", "quiet",
+            "-show_entries", "format=duration",
+            "-of", "csv=p=0",
+        ])
+        .arg(file_path)
+        .output()
+        .await
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    stdout.trim().parse::<f64>().ok()
 }
 
 /// Single download attempt with streaming and validation

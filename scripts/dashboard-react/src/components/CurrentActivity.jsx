@@ -1,9 +1,58 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef, memo } from 'react'
 
-export default function CurrentActivity({ activity }) {
+function CurrentActivity({ activity }) {
   const [collapsed, setCollapsed] = useState(false)
+  // Track elapsed time locally between polls for smooth counting
+  const [localElapsed, setLocalElapsed] = useState({}) // keyed by episode id
+  const lastPollRef = useRef({}) // last polled elapsed per episode
+
+  // Update local elapsed from polled data, then tick every second
+  useEffect(() => {
+    if (!activity || activity.status === 'idle') {
+      setLocalElapsed({})
+      lastPollRef.current = {}
+      return
+    }
+
+    const slots = activity.slots || []
+    if (slots.length === 0 && activity.current_episode) {
+      // backward compat single slot
+      const id = activity.current_episode.id
+      if (activity.elapsed_seconds != null) {
+        lastPollRef.current[id] = { polled: activity.elapsed_seconds, at: Date.now() }
+      }
+    } else {
+      for (const slot of slots) {
+        const id = slot.episode.id
+        if (slot.elapsed_seconds != null) {
+          lastPollRef.current[id] = { polled: slot.elapsed_seconds, at: Date.now() }
+        }
+      }
+    }
+  }, [activity])
+
+  // Tick local elapsed every second
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = Date.now()
+      const next = {}
+      for (const [id, ref] of Object.entries(lastPollRef.current)) {
+        const drift = (now - ref.at) / 1000
+        next[id] = Math.floor(ref.polled + drift)
+      }
+      setLocalElapsed(next)
+    }, 1000)
+    return () => clearInterval(interval)
+  }, [])
+
+  const getElapsed = (episodeId, fallback) => {
+    if (localElapsed[episodeId] != null) return localElapsed[episodeId]
+    return fallback
+  }
+
   const formatDuration = (seconds) => {
-    if (!seconds || seconds === null) return 'Unknown'
+    if (seconds == null) return 'Unknown'
+    if (seconds === 0) return '0m 0s'
     const mins = Math.floor(seconds / 60)
     const secs = Math.floor(seconds % 60)
     return `${mins}m ${secs}s`
@@ -28,6 +77,8 @@ export default function CurrentActivity({ activity }) {
 
   const renderSlotCard = (slot) => {
     const config = stageConfig[slot.stage] || stageConfig.transcribing
+    const elapsed = getElapsed(slot.episode.id, slot.elapsed_seconds)
+    const progress = slot.progress || 0
     return (
       <div key={`${slot.episode.id}-${slot.stage}`} className={`p-4 rounded-lg border ${config.bgClass} ${config.borderClass}`}>
         <div className="flex items-center gap-2 mb-2">
@@ -38,30 +89,26 @@ export default function CurrentActivity({ activity }) {
           {slot.episode.episode_number ? `Ep ${slot.episode.episode_number}: ` : ''}{slot.episode.title}
         </div>
 
-        {/* Progress bar */}
-        {slot.progress !== null && slot.progress !== undefined && slot.progress > 0 && (
-          <div className="mt-3">
-            <div className="flex justify-between items-center mb-1">
-              <span className={`text-xs ${config.textClass}`}>{config.label} Progress</span>
-              <span className={`text-xs font-bold ${config.textClass}`}>~{slot.progress}%</span>
-            </div>
-            <div className={`h-2 rounded-full overflow-hidden bg-${config.color}-100`}>
-              <div
-                className={`h-full transition-all duration-500 ${config.barClass}`}
-                style={{ width: `${slot.progress}%` }}
-              ></div>
-            </div>
+        {/* Progress bar - always rendered, hidden when no progress */}
+        <div className={`mt-3 transition-opacity duration-300 ${progress > 0 ? 'opacity-100' : 'opacity-0 h-0 overflow-hidden'}`}>
+          <div className="flex justify-between items-center mb-1">
+            <span className={`text-xs ${config.textClass}`}>{config.label} Progress</span>
+            <span className={`text-xs font-bold ${config.textClass}`}>~{progress}%</span>
           </div>
-        )}
+          <div className={`h-2 rounded-full overflow-hidden bg-${config.color}-100`}>
+            <div
+              className={`h-full transition-all duration-1000 ease-linear ${config.barClass}`}
+              style={{ width: `${progress}%` }}
+            ></div>
+          </div>
+        </div>
 
         {/* Time info */}
         <div className="flex gap-4 mt-3 text-xs">
-          {slot.elapsed_seconds != null && (
-            <div>
-              <span className="text-gray-500">Elapsed: </span>
-              <span className="font-medium text-gray-900">{formatDuration(slot.elapsed_seconds)}</span>
-            </div>
-          )}
+          <div>
+            <span className="text-gray-500">Elapsed: </span>
+            <span className="font-medium text-gray-900">{formatDuration(elapsed)}</span>
+          </div>
           {slot.estimated_remaining_seconds != null && slot.estimated_remaining_seconds > 0 && (
             <div>
               <span className="text-gray-500">Remaining: </span>
@@ -381,3 +428,5 @@ export default function CurrentActivity({ activity }) {
     </div>
   )
 }
+
+export default memo(CurrentActivity)

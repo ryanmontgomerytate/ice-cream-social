@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { settingsAPI, episodesAPI } from '../services/api'
+import { settingsAPI, episodesAPI, workerAPI } from '../services/api'
 
 // ============================================================================
 // Category Rule Card - Editable card for a single rule
@@ -478,10 +478,37 @@ export default function SettingsPanel({ onNotification }) {
   const [settings, setSettings] = useState({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [preventSleep, setPreventSleep] = useState(false)
+  const [preventSleepLoading, setPreventSleepLoading] = useState(false)
 
   useEffect(() => {
     loadSettings()
+    loadPreventSleep()
   }, [])
+
+  const loadPreventSleep = async () => {
+    try {
+      const active = await workerAPI.getPreventSleep()
+      setPreventSleep(active)
+    } catch (e) {
+      console.error('Error checking prevent sleep:', e)
+    }
+  }
+
+  const togglePreventSleep = async () => {
+    setPreventSleepLoading(true)
+    try {
+      const newValue = !preventSleep
+      const result = await workerAPI.setPreventSleep(newValue)
+      setPreventSleep(result)
+      onNotification?.(result ? 'Prevent sleep enabled' : 'Prevent sleep disabled', 'success')
+    } catch (e) {
+      console.error('Error toggling prevent sleep:', e)
+      onNotification?.(`Error: ${e.message || e}`, 'error')
+    } finally {
+      setPreventSleepLoading(false)
+    }
+  }
 
   const loadSettings = async () => {
     setLoading(true)
@@ -611,6 +638,50 @@ export default function SettingsPanel({ onNotification }) {
                   {isDiarizationEnabled ? 'ON' : 'OFF'}
                 </span>
               </div>
+            </div>
+
+            {/* Prevent Sleep Toggle */}
+            <div className="p-4 bg-amber-50 rounded-lg border border-amber-200">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-medium text-amber-800">Prevent Sleep</h3>
+                  <p className="text-sm text-amber-600 mt-1">
+                    Keep your Mac awake while processing the queue. Uses macOS <code className="text-xs bg-amber-100 px-1 py-0.5 rounded">caffeinate</code> to
+                    prevent sleep on AC power. Enable this for overnight batch runs.
+                  </p>
+                </div>
+                <button
+                  onClick={togglePreventSleep}
+                  disabled={preventSleepLoading}
+                  className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors ${
+                    preventSleep ? 'bg-amber-500' : 'bg-gray-300'
+                  } ${preventSleepLoading ? 'opacity-50' : ''}`}
+                >
+                  <span
+                    className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-transform ${
+                      preventSleep ? 'translate-x-8' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+              <div className="mt-3 flex items-center gap-2">
+                <span className={`px-2 py-1 rounded text-xs font-medium ${
+                  preventSleep
+                    ? 'bg-amber-200 text-amber-800'
+                    : 'bg-gray-200 text-gray-600'
+                }`}>
+                  {preventSleep ? 'AWAKE' : 'OFF'}
+                </span>
+                {preventSleep && (
+                  <span className="text-xs text-amber-600">
+                    Mac will stay awake until this is turned off or the app closes
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-amber-500 mt-2">
+                Without this, macOS will sleep after a period of inactivity, pausing all pipeline processing.
+                Only works while plugged into AC power.
+              </p>
             </div>
 
             {/* Model Selection */}

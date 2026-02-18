@@ -80,6 +80,7 @@ export default function PropertiesPanel({
   onToggleVoiceSample,
   onSeekToSegment,
   onAssignSpeakerName,
+  onAssignAudioDrop,
   onSeekToSpeaker,
   onRemoveAudioDrop
 }) {
@@ -227,7 +228,7 @@ export default function PropertiesPanel({
                     className={`px-2 py-1 rounded text-xs font-medium flex items-center gap-1 ${colors.bg} ${colors.text} ${colors.border} border hover:shadow-sm transition-all`}
                     title={`Click to hear ${speakerId}`}
                   >
-                    {displayName || speakerId}
+                    {displayName && audioDrops.some(d => d.name === displayName) && <span title="Sound bite">🔊 </span>}{displayName || speakerId}
                     <span className="opacity-50 text-[10px]">▶</span>
                   </button>
                   {/* Quick assign button for unnamed speakers */}
@@ -243,10 +244,10 @@ export default function PropertiesPanel({
                       !
                     </button>
                   )}
-                  {/* Dropdown for voice library selection */}
+                  {/* Dropdown for voice library / audio drop selection */}
                   {isEditing && (
-                    <div className="absolute left-0 top-full z-20 mt-1 p-2 bg-white rounded-lg shadow-xl border border-gray-200 min-w-32">
-                      <div className="text-[10px] text-gray-500 mb-1">Assign:</div>
+                    <div className="absolute left-0 top-full z-20 mt-1 p-2 bg-white rounded-lg shadow-xl border border-gray-200 min-w-32 max-h-48 overflow-y-auto">
+                      <div className="text-[10px] text-gray-500 mb-1">Speaker:</div>
                       {voiceLibrary.map(v => (
                         <button
                           key={v.name}
@@ -257,9 +258,31 @@ export default function PropertiesPanel({
                           }}
                           className="block w-full px-2 py-1 text-xs text-left hover:bg-yellow-50 text-yellow-800 rounded"
                         >
-                          {v.short_name || v.name}
+                          🎤 {v.short_name || v.name}
                         </button>
                       ))}
+                      {audioDrops.length > 0 && (
+                        <>
+                          <div className="text-[10px] text-gray-500 mb-1 mt-2 border-t border-gray-100 pt-1">Sound Bite:</div>
+                          {audioDrops.map(drop => (
+                            <button
+                              key={drop.id}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                if (onAssignAudioDrop) {
+                                  onAssignAudioDrop(speakerId, drop)
+                                } else {
+                                  onAssignSpeakerName?.(speakerId, drop.name)
+                                }
+                                setEditingSpeaker(null)
+                              }}
+                              className="block w-full px-2 py-1 text-xs text-left hover:bg-teal-50 text-teal-800 rounded"
+                            >
+                              🔊 {drop.name}
+                            </button>
+                          ))}
+                        </>
+                      )}
                       <button
                         onClick={() => setEditingSpeaker(null)}
                         className="block w-full px-2 py-1 text-xs text-gray-400 hover:text-gray-600 mt-1 border-t"
@@ -428,13 +451,13 @@ export default function PropertiesPanel({
         )}
 
         {/* Drops Section */}
-        <SectionHeader open={openSections.drops} onClick={() => toggleSection('drops')} icon="🔊" label="Audio Drops" count={dropCount} color="teal" />
+        <SectionHeader open={openSections.drops} onClick={() => toggleSection('drops')} icon="🔊" label="Sound Bites" count={dropCount} color="teal" />
         {openSections.drops && (
           <div className="p-3 space-y-2 border-b border-gray-100">
             {dropCount === 0 ? (
               <p className="text-xs text-gray-500 text-center py-2">
-                No audio drops tagged.<br/>
-                Select a segment and use the Audio Drop action.
+                No sound bites tagged.<br/>
+                Select a segment and use the Sound Bite action.
               </p>
             ) : (
               audioDropInstances.map(instance => {
@@ -478,14 +501,14 @@ export default function PropertiesPanel({
           </div>
         )}
 
-        {/* Voice Samples Section */}
-        <SectionHeader open={openSections.samples} onClick={() => toggleSection('samples')} icon="⭐" label="Voice Samples" count={sampleCount} color="yellow" />
+        {/* Audio Samples Section */}
+        <SectionHeader open={openSections.samples} onClick={() => toggleSection('samples')} icon="⭐" label="Audio Samples" count={sampleCount} color="yellow" />
         {openSections.samples && (
           <div className="p-3 space-y-2 border-b border-gray-100">
             {sampleCount === 0 ? (
               <p className="text-xs text-gray-500 text-center py-2">
-                No voice samples marked.<br/>
-                Use the ... menu on segments to mark good voice samples.
+                No audio samples marked.<br/>
+                Use the ... menu on segments to mark good audio samples.
               </p>
             ) : (
               <>

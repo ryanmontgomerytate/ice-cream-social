@@ -122,6 +122,13 @@ export default function TranscriptReviewLayout({ onNotification }) {
     }
   }, [])
 
+  const handleAssignAudioDrop = useCallback((speakerId, drop) => {
+    setSpeakerNames(prev => ({ ...prev, [speakerId]: drop.name }))
+    if (typeof window !== 'undefined' && window.__transcriptEditorAssignAudioDrop) {
+      window.__transcriptEditorAssignAudioDrop(speakerId, drop)
+    }
+  }, [])
+
   return (
     <div className="h-[calc(100vh-220px)] flex bg-gray-100 rounded-xl overflow-hidden shadow-lg border border-gray-200">
       {/* Left Sidebar - Episodes */}
@@ -223,6 +230,7 @@ export default function TranscriptReviewLayout({ onNotification }) {
           onToggleVoiceSample={handleToggleVoiceSample}
           onSeekToSegment={handleSeekToSegment}
           onAssignSpeakerName={handleAssignSpeakerName}
+          onAssignAudioDrop={handleAssignAudioDrop}
           onSeekToSpeaker={handleSeekToSpeaker}
           onRemoveAudioDrop={handleRemoveAudioDrop}
         />
