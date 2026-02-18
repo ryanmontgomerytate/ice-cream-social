@@ -3,6 +3,7 @@
 //! Commands for managing extraction prompts and running LLM-based content extraction.
 
 use crate::database::{Database, ExtractionPrompt, ExtractionRun};
+use crate::error::AppError;
 use crate::ollama::OllamaClient;
 use std::sync::Arc;
 use std::time::Instant;
@@ -23,7 +24,7 @@ pub struct OllamaStatusResponse {
 }
 
 #[tauri::command]
-pub async fn get_ollama_status() -> Result<OllamaStatusResponse, String> {
+pub async fn get_ollama_status() -> Result<OllamaStatusResponse, AppError> {
     log::info!("Checking Ollama status");
     let client = OllamaClient::new();
 
@@ -52,18 +53,18 @@ pub async fn get_ollama_status() -> Result<OllamaStatusResponse, String> {
 #[tauri::command]
 pub async fn get_extraction_prompts(
     db: State<'_, Arc<Database>>,
-) -> Result<Vec<ExtractionPrompt>, String> {
+) -> Result<Vec<ExtractionPrompt>, AppError> {
     log::info!("Getting extraction prompts");
-    db.get_extraction_prompts().map_err(|e| e.to_string())
+    db.get_extraction_prompts().map_err(AppError::from)
 }
 
 #[tauri::command]
 pub async fn get_extraction_prompt(
     db: State<'_, Arc<Database>>,
     prompt_id: i64,
-) -> Result<Option<ExtractionPrompt>, String> {
+) -> Result<Option<ExtractionPrompt>, AppError> {
     log::info!("Getting extraction prompt: {}", prompt_id);
-    db.get_extraction_prompt(prompt_id).map_err(|e| e.to_string())
+    db.get_extraction_prompt(prompt_id).map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -75,7 +76,7 @@ pub async fn create_extraction_prompt(
     prompt_text: String,
     system_prompt: Option<String>,
     output_schema: Option<String>,
-) -> Result<i64, String> {
+) -> Result<i64, AppError> {
     log::info!("Creating extraction prompt: {}", name);
     db.create_extraction_prompt(
         &name,
@@ -85,7 +86,7 @@ pub async fn create_extraction_prompt(
         system_prompt.as_deref(),
         output_schema.as_deref(),
     )
-    .map_err(|e| e.to_string())
+    .map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -99,7 +100,7 @@ pub async fn update_extraction_prompt(
     system_prompt: Option<String>,
     output_schema: Option<String>,
     is_active: bool,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     log::info!("Updating extraction prompt: {}", prompt_id);
     db.update_extraction_prompt(
         prompt_id,
@@ -111,16 +112,16 @@ pub async fn update_extraction_prompt(
         output_schema.as_deref(),
         is_active,
     )
-    .map_err(|e| e.to_string())
+    .map_err(AppError::from)
 }
 
 #[tauri::command]
 pub async fn delete_extraction_prompt(
     db: State<'_, Arc<Database>>,
     prompt_id: i64,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     log::info!("Deleting extraction prompt: {}", prompt_id);
-    db.delete_extraction_prompt(prompt_id).map_err(|e| e.to_string())
+    db.delete_extraction_prompt(prompt_id).map_err(AppError::from)
 }
 
 // ============================================================================
@@ -144,7 +145,7 @@ pub async fn run_extraction(
     app_handle: tauri::AppHandle,
     prompt_id: i64,
     episode_id: i64,
-) -> Result<ExtractionRunResult, String> {
+) -> Result<ExtractionRunResult, AppError> {
     use tauri::Emitter;
 
     log::info!("Running extraction: prompt={}, episode={}", prompt_id, episode_id);
@@ -152,13 +153,13 @@ pub async fn run_extraction(
     // Get the prompt
     let prompt = db
         .get_extraction_prompt(prompt_id)
-        .map_err(|e| e.to_string())?
+        ?
         .ok_or("Prompt not found")?;
 
     // Get the transcript
     let transcript = db
         .get_transcript(episode_id)
-        .map_err(|e| e.to_string())?
+        ?
         .ok_or("Transcript not found")?;
 
     // Limit transcript length to avoid token limits (roughly 4000 words)
@@ -171,7 +172,7 @@ pub async fn run_extraction(
     // Create extraction run record
     let run_id = db
         .create_extraction_run(prompt_id, episode_id, &transcript_text)
-        .map_err(|e| e.to_string())?;
+        ?;
 
     // Emit event that extraction started
     let _ = app_handle.emit("extraction_started", serde_json::json!({
@@ -213,7 +214,7 @@ pub async fn run_extraction(
                 items_extracted,
                 duration_ms,
             )
-            .map_err(|e| e.to_string())?;
+            ?;
 
             // Emit completion event
             let _ = app_handle.emit("extraction_completed", serde_json::json!({
@@ -262,7 +263,7 @@ pub async fn test_extraction_prompt(
     prompt_text: String,
     system_prompt: Option<String>,
     sample_text: String,
-) -> Result<ExtractionRunResult, String> {
+) -> Result<ExtractionRunResult, AppError> {
     log::info!("Testing extraction prompt");
 
     let start = Instant::now();
@@ -319,12 +320,12 @@ pub async fn get_extraction_runs(
     db: State<'_, Arc<Database>>,
     episode_id: Option<i64>,
     limit: Option<i64>,
-) -> Result<Vec<ExtractionRun>, String> {
+) -> Result<Vec<ExtractionRun>, AppError> {
     if let Some(ep_id) = episode_id {
         log::info!("Getting extraction runs for episode: {}", ep_id);
-        db.get_extraction_runs_for_episode(ep_id).map_err(|e| e.to_string())
+        db.get_extraction_runs_for_episode(ep_id).map_err(AppError::from)
     } else {
         log::info!("Getting recent extraction runs");
-        db.get_recent_extraction_runs(limit.unwrap_or(50)).map_err(|e| e.to_string())
+        db.get_recent_extraction_runs(limit.unwrap_or(50)).map_err(AppError::from)
     }
 }

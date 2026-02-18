@@ -1,4 +1,5 @@
 use crate::database::{Database, Episode, FeedSource, TranscriptData};
+use crate::error::AppError;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -44,7 +45,7 @@ pub struct RefreshResult {
 pub async fn get_episodes(
     db: State<'_, Arc<Database>>,
     filters: Option<EpisodeFilters>,
-) -> Result<EpisodesResponse, String> {
+) -> Result<EpisodesResponse, AppError> {
     log::info!("get_episodes called with filters: {:?}", filters);
 
     let filters = filters.unwrap_or(EpisodeFilters {
@@ -85,7 +86,7 @@ pub async fn get_episodes(
             filters.category.as_deref(),
             filters.include_variants.unwrap_or(false),
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(AppError::from)?;
 
     log::info!("get_episodes returning {} episodes, total: {}", episodes.len(), total);
 
@@ -99,7 +100,7 @@ pub async fn get_episodes(
 }
 
 /// Core feed sync logic — callable from command or scheduler
-pub async fn sync_feed(db: &Arc<Database>, source: &str) -> Result<RefreshResult, String> {
+pub async fn sync_feed(db: &Arc<Database>, source: &str) -> Result<RefreshResult, AppError> {
     log::info!("sync_feed called for source: {}", source);
 
     let home_dir = dirs::home_dir().ok_or("Failed to get home directory")?;
@@ -132,7 +133,7 @@ pub async fn sync_feed(db: &Arc<Database>, source: &str) -> Result<RefreshResult
             "RSS feed returned HTTP {}: {}",
             status.as_u16(),
             status.canonical_reason().unwrap_or("Unknown")
-        ));
+        ).into());
     }
 
     let content_type = response
@@ -148,7 +149,7 @@ pub async fn sync_feed(db: &Arc<Database>, source: &str) -> Result<RefreshResult
         .map_err(|e| format!("Failed to read RSS body: {}", e))?;
 
     if body.trim().is_empty() {
-        return Err("RSS feed returned empty response body".to_string());
+        return Err("RSS feed returned empty response body".into());
     }
 
     // Log first 200 chars for debugging if parse fails
@@ -164,14 +165,14 @@ pub async fn sync_feed(db: &Arc<Database>, source: &str) -> Result<RefreshResult
             return Err(format!(
                 "Failed to parse RSS (Content-Type: {}): {}. The feed URL may be expired or returning an error page.",
                 content_type, e
-            ));
+            ).into());
         }
     };
 
     log::info!("Parsed {} entries from RSS feed", feed.entries.len());
 
     // Load category rules for episode categorization
-    let rules = db.get_category_rules().map_err(|e| e.to_string())?;
+    let rules = db.get_category_rules().map_err(AppError::from)?;
 
     let mut added = 0i64;
     let mut updated = 0i64;
@@ -222,7 +223,7 @@ pub async fn sync_feed(db: &Arc<Database>, source: &str) -> Result<RefreshResult
                 published_date.as_deref(),
                 source,
             )
-            .map_err(|e| e.to_string())?;
+            .map_err(AppError::from)?;
 
         // Update category fields
         let _ = db.update_episode_category(
@@ -255,7 +256,7 @@ pub async fn refresh_feed(
     db: State<'_, Arc<Database>>,
     source: String,
     _force: bool,
-) -> Result<RefreshResult, String> {
+) -> Result<RefreshResult, AppError> {
     sync_feed(&db, &source).await
 }
 
@@ -264,7 +265,7 @@ pub async fn refresh_feed(
 pub async fn get_transcript(
     db: State<'_, Arc<Database>>,
     episode_id: i64,
-) -> Result<TranscriptData, String> {
+) -> Result<TranscriptData, AppError> {
     log::info!("get_transcript called for episode: {}", episode_id);
 
     // First try to get from database
@@ -275,7 +276,7 @@ pub async fn get_transcript(
     // If not in database, try to read from file
     let episode = db
         .get_episode_by_id(episode_id)
-        .map_err(|e| e.to_string())?
+        .map_err(AppError::from)?
         .ok_or("Episode not found")?;
 
     if let Some(transcript_path) = &episode.transcript_path {
@@ -317,10 +318,11 @@ pub async fn get_transcript(
             num_speakers: parsed.num_speakers,
             diarization_method: parsed.diarization_method,
             speaker_names: parsed.speaker_names,
+            marked_samples: parsed.marked_samples,
         });
     }
 
-    Err("Transcript not found".to_string())
+    Err("Transcript not found".into())
 }
 
 /// Parsed transcript information
@@ -332,6 +334,7 @@ struct ParsedTranscript {
     num_speakers: Option<i32>,
     diarization_method: Option<String>,
     speaker_names: Option<std::collections::HashMap<String, String>>,
+    marked_samples: Option<Vec<i32>>,
 }
 
 /// Parse transcript JSON file and extract full text, segments, and diarization info
@@ -379,6 +382,11 @@ fn parse_transcript_json(content: &str) -> ParsedTranscript {
                     })
             });
 
+        // Extract marked_samples (voice sample segment indices)
+        let marked_samples: Option<Vec<i32>> = json.get("marked_samples")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_i64().map(|n| n as i32)).collect());
+
         // Extract text from segments (faster-whisper format)
         if let Some(segments) = json.get("segments").and_then(|v| v.as_array()) {
             let full_text: String = segments
@@ -399,6 +407,7 @@ fn parse_transcript_json(content: &str) -> ParsedTranscript {
                 num_speakers,
                 diarization_method,
                 speaker_names,
+                marked_samples: marked_samples.clone(),
             };
         }
 
@@ -422,6 +431,7 @@ fn parse_transcript_json(content: &str) -> ParsedTranscript {
                 num_speakers,
                 diarization_method,
                 speaker_names,
+                marked_samples: marked_samples.clone(),
             };
         }
 
@@ -435,6 +445,7 @@ fn parse_transcript_json(content: &str) -> ParsedTranscript {
                 num_speakers,
                 diarization_method,
                 speaker_names,
+                marked_samples,
             };
         }
     }
@@ -448,6 +459,7 @@ fn parse_transcript_json(content: &str) -> ParsedTranscript {
         num_speakers: None,
         diarization_method: None,
         speaker_names: None,
+        marked_samples: None,
     }
 }
 
@@ -578,11 +590,11 @@ fn extract_scoopflix_sub_series(title: &str) -> Option<String> {
 #[tauri::command]
 pub async fn recategorize_all_episodes(
     db: State<'_, Arc<Database>>,
-) -> Result<serde_json::Value, String> {
+) -> Result<serde_json::Value, AppError> {
     log::info!("recategorize_all_episodes called");
 
-    let rules = db.get_category_rules().map_err(|e| e.to_string())?;
-    let episodes = db.get_all_episodes_for_categorization().map_err(|e| e.to_string())?;
+    let rules = db.get_category_rules().map_err(AppError::from)?;
+    let episodes = db.get_all_episodes_for_categorization().map_err(AppError::from)?;
 
     let mut counts: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
 
@@ -596,13 +608,13 @@ pub async fn recategorize_all_episodes(
             result.category_number.as_deref(),
             result.sub_series.as_deref(),
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(AppError::from)?;
 
         *counts.entry(result.category.clone()).or_insert(0) += 1;
     }
 
     // Also delete stale local test record
-    let deleted = db.delete_local_test_record().map_err(|e| e.to_string())?;
+    let deleted = db.delete_local_test_record().map_err(AppError::from)?;
     if deleted > 0 {
         log::info!("Deleted {} stale local test record(s)", deleted);
     }
@@ -620,7 +632,7 @@ pub async fn recategorize_all_episodes(
 #[tauri::command]
 pub async fn link_cross_feed_episodes(
     db: State<'_, Arc<Database>>,
-) -> Result<serde_json::Value, String> {
+) -> Result<serde_json::Value, AppError> {
     log::info!("link_cross_feed_episodes called");
 
     // Get all episode-category rows with a category_number, grouped by feed
@@ -628,7 +640,7 @@ pub async fn link_cross_feed_episodes(
     let (all_episodes, _) = db.get_episodes(
         None, false, false, false, false, false, false,
         None, true, None, 10000, 0, None, true, // include_variants = true
-    ).map_err(|e| e.to_string())?;
+    ).map_err(AppError::from)?;
 
     // Group episode-category episodes by category_number
     let mut by_number: std::collections::HashMap<String, Vec<&crate::database::Episode>> = std::collections::HashMap::new();
@@ -654,7 +666,7 @@ pub async fn link_cross_feed_episodes(
             // Only link if not already linked
             if variant.canonical_id.is_none() {
                 db.set_canonical_id(variant.id, canonical.id)
-                    .map_err(|e| e.to_string())?;
+                    .map_err(AppError::from)?;
                 linked += 1;
             }
         }
@@ -672,8 +684,8 @@ pub async fn link_cross_feed_episodes(
 #[tauri::command]
 pub async fn get_category_rules(
     db: State<'_, Arc<Database>>,
-) -> Result<Vec<crate::database::CategoryRule>, String> {
-    db.get_category_rules().map_err(|e| e.to_string())
+) -> Result<Vec<crate::database::CategoryRule>, AppError> {
+    db.get_category_rules().map_err(AppError::from)
 }
 
 /// Get variant episodes for a given episode
@@ -681,8 +693,8 @@ pub async fn get_category_rules(
 pub async fn get_episode_variants(
     db: State<'_, Arc<Database>>,
     episode_id: i64,
-) -> Result<Vec<crate::database::Episode>, String> {
-    db.get_episode_variants(episode_id).map_err(|e| e.to_string())
+) -> Result<Vec<crate::database::Episode>, AppError> {
+    db.get_episode_variants(episode_id).map_err(AppError::from)
 }
 
 /// Add a new category rule
@@ -690,9 +702,9 @@ pub async fn get_episode_variants(
 pub async fn add_category_rule(
     db: State<'_, Arc<Database>>,
     rule: crate::database::CategoryRule,
-) -> Result<i64, String> {
+) -> Result<i64, AppError> {
     log::info!("add_category_rule called: {:?}", rule);
-    db.add_category_rule(&rule).map_err(|e| e.to_string())
+    db.add_category_rule(&rule).map_err(AppError::from)
 }
 
 /// Update an existing category rule
@@ -700,9 +712,9 @@ pub async fn add_category_rule(
 pub async fn update_category_rule(
     db: State<'_, Arc<Database>>,
     rule: crate::database::CategoryRule,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     log::info!("update_category_rule called: {:?}", rule);
-    db.update_category_rule(&rule).map_err(|e| e.to_string())
+    db.update_category_rule(&rule).map_err(AppError::from)
 }
 
 /// Delete a category rule (protects the bonus catch-all)
@@ -710,18 +722,18 @@ pub async fn update_category_rule(
 pub async fn delete_category_rule(
     db: State<'_, Arc<Database>>,
     id: i64,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     log::info!("delete_category_rule called for id: {}", id);
 
     // Check if this is the bonus catch-all rule
-    let rules = db.get_category_rules().map_err(|e| e.to_string())?;
+    let rules = db.get_category_rules().map_err(AppError::from)?;
     if let Some(rule) = rules.iter().find(|r| r.id == id) {
         if rule.category == "bonus" && rule.priority == 99 {
-            return Err("Cannot delete the bonus catch-all rule".to_string());
+            return Err("Cannot delete the bonus catch-all rule".into());
         }
     }
 
-    db.delete_category_rule(id).map_err(|e| e.to_string())
+    db.delete_category_rule(id).map_err(AppError::from)
 }
 
 /// Test a category rule pattern against episode titles
@@ -730,13 +742,13 @@ pub async fn test_category_rule(
     db: State<'_, Arc<Database>>,
     pattern: String,
     keywords: Option<String>,
-) -> Result<serde_json::Value, String> {
+) -> Result<serde_json::Value, AppError> {
     log::info!("test_category_rule called with pattern: {}", pattern);
 
     // Validate regex
     let re = regex::Regex::new(&pattern).map_err(|e| format!("Invalid regex: {}", e))?;
 
-    let episodes = db.get_all_episodes_for_categorization().map_err(|e| e.to_string())?;
+    let episodes = db.get_all_episodes_for_categorization().map_err(AppError::from)?;
 
     let keyword_list: Vec<String> = keywords
         .as_ref()
@@ -875,10 +887,10 @@ fn parse_feed_url_from_config(config_content: &str, source: &str) -> Option<Stri
 
 /// GET /api/v2/episodes/:id -> get_episode command
 #[tauri::command]
-pub async fn get_episode(db: State<'_, Arc<Database>>, id: i64) -> Result<Episode, String> {
+pub async fn get_episode(db: State<'_, Arc<Database>>, id: i64) -> Result<Episode, AppError> {
     db.get_episode_by_id(id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "Episode not found".to_string())
+        .map_err(AppError::from)?
+        .ok_or_else(|| AppError::from("Episode not found"))
 }
 
 /// Download episode audio file with streaming and timeouts
@@ -886,13 +898,13 @@ pub async fn get_episode(db: State<'_, Arc<Database>>, id: i64) -> Result<Episod
 pub async fn download_episode(
     db: State<'_, Arc<Database>>,
     episode_id: i64,
-) -> Result<String, String> {
+) -> Result<String, AppError> {
     log::info!("download_episode called for episode: {}", episode_id);
 
     // Get episode from database
     let episode = db
         .get_episode_by_id(episode_id)
-        .map_err(|e| e.to_string())?
+        .map_err(AppError::from)?
         .ok_or("Episode not found")?;
 
     // Check if already downloaded
@@ -944,7 +956,7 @@ pub async fn download_episode(
         .map_err(|e| format!("Failed to start download: {}", e))?;
 
     if !response.status().is_success() {
-        return Err(format!("Download failed with status: {}", response.status()));
+        return Err(format!("Download failed with status: {}", response.status()).into());
     }
 
     let content_length = response.content_length();
@@ -974,7 +986,7 @@ pub async fn download_episode(
             return Err(format!(
                 "Download incomplete: got {} bytes, expected {}",
                 downloaded, expected
-            ));
+            ).into());
         }
     }
 
@@ -984,10 +996,10 @@ pub async fn download_episode(
 
     // Update database
     db.mark_downloaded(episode_id, &file_path_str)
-        .map_err(|e| e.to_string())?;
+        .map_err(AppError::from)?;
 
     db.update_episode_file_size(episode_id, downloaded as i64)
-        .map_err(|e| e.to_string())?;
+        .map_err(AppError::from)?;
 
     Ok(file_path_str)
 }
@@ -1017,13 +1029,14 @@ pub async fn update_speaker_names(
     db: State<'_, Arc<Database>>,
     episode_id: i64,
     speaker_names: std::collections::HashMap<String, String>,
-) -> Result<(), String> {
+    marked_samples: Option<Vec<i32>>,
+) -> Result<(), AppError> {
     log::info!("update_speaker_names called for episode: {}, names: {:?}", episode_id, speaker_names);
 
     // Get episode to find transcript path
     let episode = db
         .get_episode_by_id(episode_id)
-        .map_err(|e| e.to_string())?
+        .map_err(AppError::from)?
         .ok_or("Episode not found")?;
 
     let transcript_path = episode.transcript_path.ok_or("No transcript path")?;
@@ -1055,6 +1068,16 @@ pub async fn update_speaker_names(
         .map_err(|e| format!("Failed to serialize speaker names: {}", e))?;
     json["speaker_names"] = names_json;
 
+    // Update marked_samples (voice sample segment indices)
+    if let Some(samples) = marked_samples {
+        if samples.is_empty() {
+            json.as_object_mut().map(|obj| obj.remove("marked_samples"));
+        } else {
+            json["marked_samples"] = serde_json::to_value(&samples)
+                .map_err(|e| format!("Failed to serialize marked samples: {}", e))?;
+        }
+    }
+
     // Write back
     let updated_content = serde_json::to_string_pretty(&json)
         .map_err(|e| format!("Failed to serialize JSON: {}", e))?;
@@ -1063,6 +1086,14 @@ pub async fn update_speaker_names(
         .map_err(|e| format!("Failed to write transcript: {}", e))?;
 
     log::info!("Speaker names updated for episode {}", episode_id);
+
+    // Re-index FTS5 so search reflects the new speaker names (non-fatal)
+    match db.index_episode_from_file(episode_id) {
+        Ok(n) if n > 0 => log::info!("Re-indexed {} segments for episode {} after speaker name update", n, episode_id),
+        Ok(_) => {},
+        Err(e) => log::warn!("FTS re-index failed after speaker name update for episode {}: {}", episode_id, e),
+    }
+
     Ok(())
 }
 
@@ -1072,12 +1103,12 @@ pub async fn save_transcript_edits(
     db: State<'_, Arc<Database>>,
     episode_id: i64,
     edits: std::collections::HashMap<usize, serde_json::Value>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     log::info!("save_transcript_edits called for episode: {}", episode_id);
 
     let episode = db
         .get_episode_by_id(episode_id)
-        .map_err(|e| e.to_string())?
+        .map_err(AppError::from)?
         .ok_or("Episode not found")?;
 
     let transcript_path = episode.transcript_path.ok_or("No transcript path")?;
@@ -1127,6 +1158,14 @@ pub async fn save_transcript_edits(
         .map_err(|e| format!("Failed to write transcript: {}", e))?;
 
     log::info!("Transcript edits saved for episode {}", episode_id);
+
+    // Re-index FTS5 so search reflects the updated text/speakers (non-fatal)
+    match db.index_episode_from_file(episode_id) {
+        Ok(n) if n > 0 => log::info!("Re-indexed {} segments for episode {} after transcript edit", n, episode_id),
+        Ok(_) => {},
+        Err(e) => log::warn!("FTS re-index failed after transcript edit for episode {}: {}", episode_id, e),
+    }
+
     Ok(())
 }
 
@@ -1135,12 +1174,12 @@ pub async fn save_transcript_edits(
 pub async fn get_audio_path(
     db: State<'_, Arc<Database>>,
     episode_id: i64,
-) -> Result<Option<String>, String> {
+) -> Result<Option<String>, AppError> {
     log::info!("get_audio_path called for episode: {}", episode_id);
 
     let episode = db
         .get_episode_by_id(episode_id)
-        .map_err(|e| e.to_string())?
+        .map_err(AppError::from)?
         .ok_or("Episode not found")?;
 
     Ok(episode.audio_file_path)
@@ -1151,7 +1190,7 @@ pub async fn get_audio_path(
 pub async fn retry_diarization(
     db: State<'_, Arc<Database>>,
     episode_id: i64,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     log::info!("retry_diarization called for episode: {}", episode_id);
 
     // Reset diarization status so worker will re-process
@@ -1171,19 +1210,19 @@ pub async fn retry_diarization(
 pub async fn reprocess_diarization(
     db: State<'_, Arc<Database>>,
     episode_id: i64,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     log::info!("reprocess_diarization called for episode: {}", episode_id);
 
     let episode = db
         .get_episode_by_id(episode_id)
-        .map_err(|e| e.to_string())?
+        .map_err(AppError::from)?
         .ok_or("Episode not found")?;
 
     let transcript_path = episode.transcript_path.ok_or("No transcript for this episode")?;
 
     // Get all unresolved speaker-related flags
     let flags = db.get_unresolved_speaker_flags(episode_id)
-        .map_err(|e| e.to_string())?;
+        .map_err(AppError::from)?;
 
     // Build hints JSON
     let mut corrections = Vec::new();
@@ -1265,6 +1304,8 @@ pub struct VoiceSample {
     #[serde(rename = "endTime")]
     pub end_time: f64,
     pub text: String,
+    #[serde(rename = "segmentIdx")]
+    pub segment_idx: Option<i64>,
 }
 
 /// Save voice samples to the voice library
@@ -1273,13 +1314,13 @@ pub async fn save_voice_samples(
     db: State<'_, Arc<Database>>,
     episode_id: i64,
     samples: Vec<VoiceSample>,
-) -> Result<i32, String> {
+) -> Result<i32, AppError> {
     log::info!("save_voice_samples called for episode: {}, {} samples", episode_id, samples.len());
 
     // Get episode to find audio path
     let episode = db
         .get_episode_by_id(episode_id)
-        .map_err(|e| e.to_string())?
+        .map_err(AppError::from)?
         .ok_or("Episode not found")?;
 
     let audio_path = episode.audio_file_path.ok_or("No audio file for this episode")?;
@@ -1294,6 +1335,9 @@ pub async fn save_voice_samples(
     let voice_library_script = project_dir.join("scripts").join("voice_library.py");
     let venv_python = project_dir.join("venv").join("bin").join("python");
 
+    // Sound bite samples directory
+    let sound_bites_dir = project_dir.join("scripts").join("voice_library").join("sound_bites");
+
     let mut saved_count = 0;
 
     for sample in samples {
@@ -1303,32 +1347,138 @@ pub async fn save_voice_samples(
             continue;
         }
 
-        log::info!(
-            "Extracting voice sample for '{}': {:.2}s - {:.2}s",
-            sample.speaker_name,
-            sample.start_time,
-            sample.end_time
+        // Check if this diarization label is assigned to a sound bite
+        let audio_drop_id = db.get_audio_drop_for_label(episode_id, &sample.speaker)
+            .map_err(AppError::from)?;
+
+        // Common: build sample filename and extract audio via ffmpeg
+        let sample_filename = format!(
+            "ep{}_{:.0}s-{:.0}s.wav",
+            episode_id, sample.start_time, sample.end_time
         );
 
-        // Use Python script to extract and add to voice library
-        let output = std::process::Command::new(&venv_python)
-            .args([
-                voice_library_script.to_str().unwrap(),
-                "add",
-                &sample.speaker_name,
-                audio_path.as_str(),
-                &format!("{:.3}", sample.start_time),
-                &format!("{:.3}", sample.end_time),
-            ])
-            .output()
-            .map_err(|e| format!("Failed to run voice library script: {}", e))?;
+        if let Some(drop_id) = audio_drop_id {
+            // This is a sound bite — save to sound_bites dir
+            log::info!(
+                "Extracting sound bite sample for '{}' (drop_id={}): {:.2}s - {:.2}s",
+                sample.speaker_name, drop_id, sample.start_time, sample.end_time
+            );
 
-        if output.status.success() {
-            saved_count += 1;
-            log::info!("Added voice sample for '{}'", sample.speaker_name);
+            let drop_dir = sound_bites_dir.join(&sample.speaker_name);
+            std::fs::create_dir_all(&drop_dir)
+                .map_err(|e| format!("Failed to create sound bite dir: {}", e))?;
+
+            let sample_path = drop_dir.join(&sample_filename);
+
+            // Extract audio segment using ffmpeg
+            let output = std::process::Command::new("ffmpeg")
+                .args([
+                    "-y",
+                    "-i", audio_path.as_str(),
+                    "-ss", &format!("{:.3}", sample.start_time),
+                    "-to", &format!("{:.3}", sample.end_time),
+                    "-ar", "16000",
+                    "-ac", "1",
+                    sample_path.to_str().unwrap(),
+                ])
+                .output()
+                .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
+
+            if output.status.success() {
+                saved_count += 1;
+                let path_str = sample_path.to_string_lossy().to_string();
+                log::info!("Saved sound bite sample to '{}'", path_str);
+
+                // Update the audio_drops table with the reference path
+                let _ = db.update_audio_drop_reference(drop_id, &path_str);
+
+                // Insert DB record for this voice sample
+                let _ = db.insert_voice_sample(
+                    &sample.speaker_name,
+                    Some(episode_id),
+                    sample.segment_idx,
+                    sample.start_time,
+                    sample.end_time,
+                    Some(&sample.text),
+                    &path_str,
+                );
+            } else {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                log::error!("Failed to extract sound bite for '{}': {}", sample.speaker_name, stderr);
+            }
         } else {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            log::error!("Failed to add voice sample for '{}': {}", sample.speaker_name, stderr);
+            // This is a real speaker — extract audio AND add to voice library
+            log::info!(
+                "Extracting voice sample for '{}': {:.2}s - {:.2}s",
+                sample.speaker_name,
+                sample.start_time,
+                sample.end_time
+            );
+
+            // 1. Extract audio file via ffmpeg (NEW — speakers now also get audio files)
+            let speaker_dir_name = sample.speaker_name.replace(' ', "_");
+            let speaker_samples_dir = project_dir
+                .join("scripts")
+                .join("voice_library")
+                .join("samples")
+                .join(&speaker_dir_name);
+            std::fs::create_dir_all(&speaker_samples_dir)
+                .map_err(|e| format!("Failed to create speaker samples dir: {}", e))?;
+
+            let sample_path = speaker_samples_dir.join(&sample_filename);
+
+            let ffmpeg_output = std::process::Command::new("ffmpeg")
+                .args([
+                    "-y",
+                    "-i", audio_path.as_str(),
+                    "-ss", &format!("{:.3}", sample.start_time),
+                    "-to", &format!("{:.3}", sample.end_time),
+                    "-ar", "16000",
+                    "-ac", "1",
+                    sample_path.to_str().unwrap(),
+                ])
+                .output()
+                .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
+
+            if ffmpeg_output.status.success() {
+                let path_str = sample_path.to_string_lossy().to_string();
+                log::info!("Extracted speaker audio to '{}'", path_str);
+
+                // Insert DB record for this voice sample
+                let _ = db.insert_voice_sample(
+                    &sample.speaker_name,
+                    Some(episode_id),
+                    sample.segment_idx,
+                    sample.start_time,
+                    sample.end_time,
+                    Some(&sample.text),
+                    &path_str,
+                );
+            } else {
+                let stderr = String::from_utf8_lossy(&ffmpeg_output.stderr);
+                log::error!("Failed to extract audio for '{}': {}", sample.speaker_name, stderr);
+            }
+
+            // 2. Also add to voice library for embedding (existing flow)
+            let output = std::process::Command::new(&venv_python)
+                .args([
+                    voice_library_script.to_str().unwrap(),
+                    "add",
+                    &sample.speaker_name,
+                    audio_path.as_str(),
+                    &format!("{:.3}", sample.start_time),
+                    &format!("{:.3}", sample.end_time),
+                ])
+                .output()
+                .map_err(|e| format!("Failed to run voice library script: {}", e))?;
+
+            if output.status.success() {
+                saved_count += 1;
+                log::info!("Added voice sample for '{}'", sample.speaker_name);
+            } else {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                log::error!("Failed to add voice sample for '{}': {}", sample.speaker_name, stderr);
+            }
         }
     }
 
@@ -1363,13 +1513,13 @@ pub async fn analyze_episode_content(
     db: State<'_, Arc<Database>>,
     episode_id: i64,
     use_llm: Option<bool>,
-) -> Result<ContentAnalysisResult, String> {
+) -> Result<ContentAnalysisResult, AppError> {
     log::info!("analyze_episode_content called for episode: {}", episode_id);
 
     // Get episode
     let episode = db
         .get_episode_by_id(episode_id)
-        .map_err(|e| e.to_string())?
+        .map_err(AppError::from)?
         .ok_or("Episode not found")?;
 
     let transcript_path = episode.transcript_path.ok_or("No transcript for this episode")?;
@@ -1410,7 +1560,7 @@ pub async fn analyze_episode_content(
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         log::error!("Content analyzer failed: {}", stderr);
-        return Err(format!("Content analyzer failed: {}", stderr));
+        return Err(format!("Content analyzer failed: {}", stderr).into());
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);

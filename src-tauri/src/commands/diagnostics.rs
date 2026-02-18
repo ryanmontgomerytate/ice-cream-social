@@ -1,3 +1,4 @@
+use crate::error::AppError;
 use serde::Serialize;
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
@@ -70,7 +71,7 @@ pub struct DiagnosticsReport {
 #[tauri::command]
 pub async fn get_diagnostics(
     error_log: State<'_, Arc<ErrorLog>>,
-) -> Result<DiagnosticsReport, String> {
+) -> Result<DiagnosticsReport, AppError> {
     let home_dir = dirs::home_dir().ok_or("Failed to get home directory")?;
     let project_dir = home_dir
         .join("Desktop")
@@ -150,7 +151,7 @@ pub async fn get_diagnostics(
 
 /// Clear error log
 #[tauri::command]
-pub async fn clear_errors(error_log: State<'_, Arc<ErrorLog>>) -> Result<(), String> {
+pub async fn clear_errors(error_log: State<'_, Arc<ErrorLog>>) -> Result<(), AppError> {
     error_log.clear();
     Ok(())
 }

@@ -124,10 +124,10 @@ export const episodesAPI = {
     return fetchJSON(`${API_BASE}/episodes/${episodeId}/transcript`);
   },
 
-  async updateSpeakerNames(episodeId, speakerNames) {
+  async updateSpeakerNames(episodeId, speakerNames, markedSamples = null) {
     if (isTauri) {
       try {
-        return await tauriAPI.episodesAPI.updateSpeakerNames(episodeId, speakerNames);
+        return await tauriAPI.episodesAPI.updateSpeakerNames(episodeId, speakerNames, markedSamples);
       } catch (e) {
         console.error('Tauri updateSpeakerNames failed:', e);
         throw e;
@@ -412,6 +412,30 @@ export const statsAPI = {
     }
     return { timing: null, recent: [] };
   },
+
+  async getPipelineHealth() {
+    if (isTauri) {
+      try {
+        return await tauriAPI.statsAPI.getPipelineHealth();
+      } catch (e) {
+        console.error('Tauri getPipelineHealth failed:', e);
+        return null;
+      }
+    }
+    return null;
+  },
+
+  async getRecentErrors(limit = 20) {
+    if (isTauri) {
+      try {
+        return await tauriAPI.statsAPI.getRecentErrors(limit);
+      } catch (e) {
+        console.error('Tauri getRecentErrors failed:', e);
+        return [];
+      }
+    }
+    return [];
+  },
 };
 
 // ============================================================================
@@ -429,6 +453,18 @@ export const workerAPI = {
       }
     }
     return fetchJSON(`${API_BASE}/worker/status`);
+  },
+  async setPreventSleep(enabled) {
+    if (isTauri) {
+      return await tauriAPI.workerAPI.setPreventSleep(enabled);
+    }
+    throw new Error('Prevent sleep is only available in the Tauri app');
+  },
+  async getPreventSleep() {
+    if (isTauri) {
+      return await tauriAPI.workerAPI.getPreventSleep();
+    }
+    return false;
   },
 };
 
@@ -568,6 +604,32 @@ export const speakersAPI = {
     throw new Error('Speakers only available in Tauri mode');
   },
 
+  async linkEpisodeAudioDrop(episodeId, diarizationLabel, audioDropId) {
+    if (isTauri) {
+      return await tauriAPI.speakersAPI.linkEpisodeAudioDrop(episodeId, diarizationLabel, audioDropId);
+    }
+    throw new Error('Speakers only available in Tauri mode');
+  },
+
+  async unlinkEpisodeSpeaker(episodeId, diarizationLabel) {
+    if (isTauri) {
+      return await tauriAPI.speakersAPI.unlinkEpisodeSpeaker(episodeId, diarizationLabel);
+    }
+    throw new Error('Speakers only available in Tauri mode');
+  },
+
+  async getEpisodeSpeakerAssignments(episodeId) {
+    if (isTauri) {
+      try {
+        return await tauriAPI.speakersAPI.getEpisodeSpeakerAssignments(episodeId);
+      } catch (e) {
+        console.error('Tauri getEpisodeSpeakerAssignments failed:', e);
+        return [];
+      }
+    }
+    return [];
+  },
+
   async getVoiceLibrary() {
     if (isTauri) {
       try {
@@ -590,6 +652,32 @@ export const speakersAPI = {
       }
     }
     return null;
+  },
+
+  async getVoiceSamples(speakerName) {
+    if (isTauri) {
+      try {
+        return await tauriAPI.speakersAPI.getVoiceSamples(speakerName);
+      } catch (e) {
+        console.error('Tauri getVoiceSamples failed:', e);
+        return [];
+      }
+    }
+    return [];
+  },
+
+  async deleteVoiceSample(speakerName, filePath, sampleId) {
+    if (isTauri) {
+      return await tauriAPI.speakersAPI.deleteVoiceSample(speakerName, filePath, sampleId);
+    }
+    throw new Error('Voice samples only available in Tauri mode');
+  },
+
+  async updateVoiceSampleRating(id, rating) {
+    if (isTauri) {
+      return await tauriAPI.speakersAPI.updateVoiceSampleRating(id, rating);
+    }
+    throw new Error('Voice sample ratings only available in Tauri mode');
   },
 };
 
@@ -899,6 +987,18 @@ export const searchAPI = {
       }
     }
     throw new Error('Search indexing only available in Tauri mode');
+  },
+
+  async reindexAllWithSpeakers() {
+    if (isTauri) {
+      try {
+        return await tauriAPI.searchAPI.reindexAllWithSpeakers();
+      } catch (e) {
+        console.error('Tauri reindexAllWithSpeakers failed:', e);
+        throw e;
+      }
+    }
+    throw new Error('Reindex only available in Tauri mode');
   },
 
   async getDetectedContent(episodeId) {

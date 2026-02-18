@@ -1,4 +1,5 @@
 use crate::database::Database;
+use crate::error::AppError;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::State;
@@ -184,12 +185,11 @@ pub struct WikiSyncResult {
 pub async fn sync_wiki_episode(
     db: State<'_, Arc<Database>>,
     episode_number: String,
-) -> Result<WikiSyncResult, String> {
+) -> Result<WikiSyncResult, AppError> {
     log::info!("sync_wiki_episode called for episode number: {}", episode_number);
 
     // Find the episode in our DB (prefer apple feed)
-    let episode_id = db.find_episode_by_number(&episode_number, Some("apple"))
-        .map_err(|e| e.to_string())?
+    let episode_id = db.find_episode_by_number(&episode_number, Some("apple"))?
         .or_else(|| {
             db.find_episode_by_number(&episode_number, Some("patreon"))
                 .ok()
@@ -332,7 +332,7 @@ pub async fn sync_wiki_episode(
         scoopmail_json.as_deref(),
         info.jock_vs_nerd.as_deref(),
         Some(&raw_wikitext),
-    ).map_err(|e| e.to_string())?;
+    )?;
 
     log::info!("Wiki data synced for episode {} (db id: {})", episode_number, episode_id);
 
@@ -352,6 +352,6 @@ pub async fn sync_wiki_episode(
 pub async fn get_wiki_episode_meta(
     db: State<'_, Arc<Database>>,
     episode_id: i64,
-) -> Result<Option<crate::database::WikiEpisodeMeta>, String> {
-    db.get_wiki_episode_meta(episode_id).map_err(|e| e.to_string())
+) -> Result<Option<crate::database::WikiEpisodeMeta>, AppError> {
+    db.get_wiki_episode_meta(episode_id).map_err(AppError::from)
 }

@@ -80,6 +80,7 @@ struct PipelineEntry {
     stage: String,
     queue_type: String, // "full" or "diarize_only"
     entered_pipeline_at: std::time::Instant,
+    stage_started_at: DateTime<Utc>, // When the current stage started
     download_duration: Option<f64>,
     transcribe_duration: Option<f64>,
 }
@@ -369,6 +370,7 @@ impl TranscriptionWorker {
             if let Some(episode_id) = ready_id {
                 if let Some(entry) = active.get_mut(&episode_id) {
                     entry.stage = "transcribing".to_string();
+                    entry.stage_started_at = Utc::now();
                     *transcribe_busy = true;
                     let _ = transcribe_tx
                         .send(TranscribeJob {
@@ -438,6 +440,7 @@ impl TranscriptionWorker {
                                     stage: "diarizing".to_string(),
                                     queue_type,
                                     entered_pipeline_at: std::time::Instant::now(),
+                                    stage_started_at: Utc::now(),
                                     download_duration: None,
                                     transcribe_duration: None,
                                 },
@@ -486,6 +489,7 @@ impl TranscriptionWorker {
                                     stage: "downloading".to_string(),
                                     queue_type,
                                     entered_pipeline_at: std::time::Instant::now(),
+                                    stage_started_at: Utc::now(),
                                     download_duration: None,
                                     transcribe_duration: None,
                                 },
@@ -515,6 +519,7 @@ impl TranscriptionWorker {
                                 stage: "transcribing".to_string(),
                                 queue_type,
                                 entered_pipeline_at: std::time::Instant::now(),
+                                stage_started_at: Utc::now(),
                                 download_duration: None,
                                 transcribe_duration: None,
                             },
@@ -550,6 +555,7 @@ impl TranscriptionWorker {
             if let Some(episode_id) = diarize_ready_id {
                 if let Some(entry) = active.get_mut(&episode_id) {
                     entry.stage = "diarizing".to_string();
+                    entry.stage_started_at = Utc::now();
                     *diarize_busy = true;
                     let hints_path = self
                         .transcripts_path
@@ -614,6 +620,7 @@ impl TranscriptionWorker {
                                         stage: "diarizing".to_string(),
                                         queue_type: "diarize_only".to_string(),
                                         entered_pipeline_at: std::time::Instant::now(),
+                                        stage_started_at: Utc::now(),
                                         download_duration: None,
                                         transcribe_duration: None,
                                     },
@@ -642,6 +649,7 @@ impl TranscriptionWorker {
                                         stage: "downloading".to_string(),
                                         queue_type: "diarize_only".to_string(),
                                         entered_pipeline_at: std::time::Instant::now(),
+                                        stage_started_at: Utc::now(),
                                         download_duration: None,
                                         transcribe_duration: None,
                                     },
@@ -693,6 +701,7 @@ impl TranscriptionWorker {
                                 stage: "downloading".to_string(),
                                 queue_type: "full".to_string(),
                                 entered_pipeline_at: std::time::Instant::now(),
+                                stage_started_at: Utc::now(),
                                 download_duration: None,
                                 transcribe_duration: None,
                             },
@@ -740,6 +749,7 @@ impl TranscriptionWorker {
                     // If transcribe slot is free, send immediately
                     if !*transcribe_busy && entry.queue_type == "full" {
                         entry.stage = "transcribing".to_string();
+                        entry.stage_started_at = Utc::now();
                         *transcribe_busy = true;
                         let _ = transcribe_tx
                             .send(TranscribeJob {
@@ -754,6 +764,7 @@ impl TranscriptionWorker {
                         // Diarize-only with download done
                         if let Some(tp) = &entry.transcript_path {
                             entry.stage = "diarizing".to_string();
+                            entry.stage_started_at = Utc::now();
                             *diarize_busy = true;
                             let hints_path = self
                                 .transcripts_path
@@ -779,6 +790,9 @@ impl TranscriptionWorker {
                 log::error!("Download failed for episode {}: {}", episode_id, e);
                 if let Err(db_err) = self.db.mark_failed(episode_id, &format!("Download failed: {}", e)) {
                     log::error!("Failed to mark episode as failed: {}", db_err);
+                }
+                if let Err(log_err) = self.db.log_pipeline_error("download", Some(episode_id), "DownloadFailed", &e, 0) {
+                    log::warn!("Failed to log pipeline error: {}", log_err);
                 }
                 active.remove(&episode_id);
                 let _ = app_handle.emit("queue_update", ());
@@ -815,6 +829,7 @@ impl TranscriptionWorker {
                     if let Some(entry) = active.get_mut(&episode_id) {
                         entry.transcript_path = Some(transcript_path.clone());
                         entry.stage = "diarizing".to_string();
+                        entry.stage_started_at = Utc::now();
 
                         let hints_path = self
                             .transcripts_path
@@ -850,6 +865,9 @@ impl TranscriptionWorker {
                 log::error!("Transcription failed for episode {}: {}", episode_id, e);
                 if let Err(db_err) = self.db.mark_failed(episode_id, &e) {
                     log::error!("Failed to mark episode as failed: {}", db_err);
+                }
+                if let Err(log_err) = self.db.log_pipeline_error("transcribe", Some(episode_id), "TranscribeFailed", &e, 0) {
+                    log::warn!("Failed to log pipeline error: {}", log_err);
                 }
                 active.remove(&episode_id);
                 let _ = app_handle.emit("transcription_failed", (episode_id, e));
@@ -900,6 +918,9 @@ impl TranscriptionWorker {
             }
             Err(e) => {
                 log::warn!("Diarization failed for episode {} (completing anyway): {}", episode_id, e);
+                if let Err(log_err) = self.db.log_pipeline_error("diarize", Some(episode_id), "DiarizeFailed", &e, 0) {
+                    log::warn!("Failed to log pipeline error: {}", log_err);
+                }
 
                 // Still complete the episode — diarization failure is non-fatal
                 let transcript_path = active
@@ -945,6 +966,18 @@ impl TranscriptionWorker {
             log::error!("Failed to mark episode as completed: {}", e);
         }
 
+        // Mark any prior errors for this episode as resolved
+        if let Err(e) = self.db.mark_pipeline_errors_resolved(episode_id) {
+            log::warn!("Failed to mark pipeline errors resolved for episode {}: {}", episode_id, e);
+        }
+
+        // Auto-index FTS5 with speaker names resolved (non-fatal)
+        match self.db.index_episode_from_file(episode_id) {
+            Ok(0) => log::debug!("FTS index skipped for episode {} (no segments found)", episode_id),
+            Ok(n) => log::info!("FTS auto-indexed {} segments for episode {}", n, episode_id),
+            Err(e) => log::warn!("FTS auto-index failed for episode {}: {}", episode_id, e),
+        }
+
         {
             let mut ws = self.state.write().await;
             ws.processed_today += 1;
@@ -954,20 +987,35 @@ impl TranscriptionWorker {
         active.remove(&episode_id);
         let _ = app_handle.emit("transcription_complete", episode_id);
         let _ = app_handle.emit("queue_update", ());
+        let _ = app_handle.emit("stats_update", ());
     }
 
     /// Sync the active pipeline entries to the shared WorkerState
+    /// Preserves progress and estimated_remaining from existing slots
     async fn sync_state(&self, active: &HashMap<i64, PipelineEntry>) {
         let mut ws = self.state.write().await;
+        // Build a lookup of existing slot progress to preserve it
+        let existing: HashMap<i64, (Option<i32>, Option<i64>)> = ws
+            .slots
+            .iter()
+            .map(|s| (s.episode.id, (s.progress, s.estimated_remaining)))
+            .collect();
+
         ws.slots = active
             .values()
             .filter(|e| e.stage != "downloaded" && e.stage != "waiting_diarize")
-            .map(|e| PipelineSlot {
-                episode: e.episode.clone(),
-                stage: e.stage.clone(),
-                progress: None,
-                estimated_remaining: None,
-                started_at: Utc::now(), // Approximate; real start time would need tracking
+            .map(|e| {
+                let (progress, estimated_remaining) = existing
+                    .get(&e.episode.id)
+                    .copied()
+                    .unwrap_or((None, None));
+                PipelineSlot {
+                    episode: e.episode.clone(),
+                    stage: e.stage.clone(),
+                    progress,
+                    estimated_remaining,
+                    started_at: e.stage_started_at,
+                }
             })
             .collect();
     }

@@ -1,11 +1,12 @@
 mod commands;
 mod database;
+pub mod error;
 mod ollama;
 mod worker;
 
-use commands::ErrorLog;
+use commands::{CaffeinateProcess, ErrorLog};
 use database::Database;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tauri::Manager;
 use tokio::sync::RwLock;
 use worker::{TranscriptionWorker, WorkerState};
@@ -40,6 +41,14 @@ pub fn run() {
             std::fs::create_dir_all(db_path.parent().unwrap()).ok();
 
             let db = Database::new(&db_path).expect("Failed to initialize database");
+
+            // Clean up any variant episodes that were queued before cross-feed linking
+            match db.purge_variant_queue_items() {
+                Ok(count) if count > 0 => log::info!("Startup cleanup: removed {} variant episodes from queue", count),
+                Ok(_) => {},
+                Err(e) => log::warn!("Failed to purge variant queue items: {}", e),
+            }
+
             let db = Arc::new(db);
 
             // Initialize worker state
@@ -48,10 +57,14 @@ pub fn run() {
             // Initialize error log for diagnostics
             let error_log = Arc::new(ErrorLog::new(100)); // Keep last 100 errors
 
+            // Initialize caffeinate holder
+            let caffeinate = CaffeinateProcess(Mutex::new(None));
+
             // Store state
             app.manage(db.clone());
             app.manage(worker_state.clone());
             app.manage(error_log);
+            app.manage(caffeinate);
 
             // Start background worker
             let whisper_cli_path = home_dir
@@ -143,9 +156,13 @@ pub fn run() {
             // Stats commands
             commands::get_stats,
             commands::get_pipeline_stats,
+            commands::get_pipeline_health,
+            commands::get_recent_errors,
             // Worker commands
             commands::get_worker_status,
             commands::stop_current_transcription,
+            commands::set_prevent_sleep,
+            commands::get_prevent_sleep,
             // Diagnostics commands
             commands::get_diagnostics,
             commands::clear_errors,
@@ -160,8 +177,14 @@ pub fn run() {
             commands::delete_speaker,
             commands::get_speaker_stats,
             commands::link_episode_speaker,
+            commands::link_episode_audio_drop,
+            commands::unlink_episode_speaker,
+            commands::get_episode_speaker_assignments,
             commands::get_voice_library,
             commands::get_voice_sample_path,
+            commands::get_voice_samples,
+            commands::delete_voice_sample,
+            commands::update_voice_sample_rating,
             // Content commands (chapters, characters, sponsors)
             commands::get_chapter_types,
             commands::create_chapter_type,
@@ -183,6 +206,7 @@ pub fn run() {
             commands::get_search_stats,
             commands::index_episode_transcript,
             commands::index_all_transcripts,
+            commands::reindex_all_with_speakers,
             // Detected content commands
             commands::get_detected_content,
             commands::get_detected_content_by_type,

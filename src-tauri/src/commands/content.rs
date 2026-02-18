@@ -1,4 +1,5 @@
 use crate::database::{Database, models::{ChapterType, EpisodeChapter, Character, Sponsor, FlaggedSegment, CharacterAppearance, AudioDrop, AudioDropInstance}, SearchResult, TranscriptSegment, DetectedContent, DetectedContentWithEpisode};
+use crate::error::AppError;
 use std::sync::Arc;
 use tauri::State;
 use serde::{Deserialize, Serialize};
@@ -10,8 +11,8 @@ use serde::{Deserialize, Serialize};
 #[tauri::command]
 pub async fn get_chapter_types(
     db: State<'_, Arc<Database>>,
-) -> Result<Vec<ChapterType>, String> {
-    db.get_chapter_types().map_err(|e| e.to_string())
+) -> Result<Vec<ChapterType>, AppError> {
+    db.get_chapter_types().map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -21,10 +22,10 @@ pub async fn create_chapter_type(
     description: Option<String>,
     color: String,
     icon: Option<String>,
-) -> Result<i64, String> {
+) -> Result<i64, AppError> {
     log::info!("Creating chapter type: {}", name);
     db.create_chapter_type(&name, description.as_deref(), &color, icon.as_deref())
-        .map_err(|e| e.to_string())
+        .map_err(AppError::from)
 }
 
 // ============================================================================
@@ -35,8 +36,8 @@ pub async fn create_chapter_type(
 pub async fn get_episode_chapters(
     db: State<'_, Arc<Database>>,
     episode_id: i64,
-) -> Result<Vec<EpisodeChapter>, String> {
-    db.get_episode_chapters(episode_id).map_err(|e| e.to_string())
+) -> Result<Vec<EpisodeChapter>, AppError> {
+    db.get_episode_chapters(episode_id).map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -49,21 +50,21 @@ pub async fn create_episode_chapter(
     end_time: Option<f64>,
     start_segment_idx: Option<i32>,
     end_segment_idx: Option<i32>,
-) -> Result<i64, String> {
+) -> Result<i64, AppError> {
     log::info!("Creating chapter for episode {}: type={}, start={}", episode_id, chapter_type_id, start_time);
     db.create_episode_chapter(
         episode_id, chapter_type_id, title.as_deref(),
         start_time, end_time, start_segment_idx, end_segment_idx
-    ).map_err(|e| e.to_string())
+    ).map_err(AppError::from)
 }
 
 #[tauri::command]
 pub async fn delete_episode_chapter(
     db: State<'_, Arc<Database>>,
     chapter_id: i64,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     log::info!("Deleting chapter: {}", chapter_id);
-    db.delete_episode_chapter(chapter_id).map_err(|e| e.to_string())
+    db.delete_episode_chapter(chapter_id).map_err(AppError::from)
 }
 
 // ============================================================================
@@ -73,8 +74,8 @@ pub async fn delete_episode_chapter(
 #[tauri::command]
 pub async fn get_characters(
     db: State<'_, Arc<Database>>,
-) -> Result<Vec<Character>, String> {
-    db.get_characters().map_err(|e| e.to_string())
+) -> Result<Vec<Character>, AppError> {
+    db.get_characters().map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -84,10 +85,10 @@ pub async fn create_character(
     short_name: Option<String>,
     description: Option<String>,
     catchphrase: Option<String>,
-) -> Result<i64, String> {
+) -> Result<i64, AppError> {
     log::info!("Creating character: {}", name);
     db.create_character(&name, short_name.as_deref(), description.as_deref(), catchphrase.as_deref())
-        .map_err(|e| e.to_string())
+        .map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -98,19 +99,19 @@ pub async fn update_character(
     short_name: Option<String>,
     description: Option<String>,
     catchphrase: Option<String>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     log::info!("Updating character {}: {}", id, name);
     db.update_character(id, &name, short_name.as_deref(), description.as_deref(), catchphrase.as_deref())
-        .map_err(|e| e.to_string())
+        .map_err(AppError::from)
 }
 
 #[tauri::command]
 pub async fn delete_character(
     db: State<'_, Arc<Database>>,
     id: i64,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     log::info!("Deleting character: {}", id);
-    db.delete_character(id).map_err(|e| e.to_string())
+    db.delete_character(id).map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -121,10 +122,10 @@ pub async fn add_character_appearance(
     start_time: Option<f64>,
     end_time: Option<f64>,
     segment_idx: Option<i32>,
-) -> Result<i64, String> {
+) -> Result<i64, AppError> {
     log::info!("Adding character {} appearance in episode {}", character_id, episode_id);
     db.add_character_appearance(character_id, episode_id, start_time, end_time, segment_idx)
-        .map_err(|e| e.to_string())
+        .map_err(AppError::from)
 }
 
 // ============================================================================
@@ -134,8 +135,8 @@ pub async fn add_character_appearance(
 #[tauri::command]
 pub async fn get_sponsors(
     db: State<'_, Arc<Database>>,
-) -> Result<Vec<Sponsor>, String> {
-    db.get_sponsors().map_err(|e| e.to_string())
+) -> Result<Vec<Sponsor>, AppError> {
+    db.get_sponsors().map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -145,10 +146,10 @@ pub async fn create_sponsor(
     tagline: Option<String>,
     description: Option<String>,
     is_real: bool,
-) -> Result<i64, String> {
+) -> Result<i64, AppError> {
     log::info!("Creating sponsor: {} (real: {})", name, is_real);
     db.create_sponsor(&name, tagline.as_deref(), description.as_deref(), is_real)
-        .map_err(|e| e.to_string())
+        .map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -159,19 +160,19 @@ pub async fn update_sponsor(
     tagline: Option<String>,
     description: Option<String>,
     is_real: bool,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     log::info!("Updating sponsor {}: {}", id, name);
     db.update_sponsor(id, &name, tagline.as_deref(), description.as_deref(), is_real)
-        .map_err(|e| e.to_string())
+        .map_err(AppError::from)
 }
 
 #[tauri::command]
 pub async fn delete_sponsor(
     db: State<'_, Arc<Database>>,
     id: i64,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     log::info!("Deleting sponsor: {}", id);
-    db.delete_sponsor(id).map_err(|e| e.to_string())
+    db.delete_sponsor(id).map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -182,10 +183,10 @@ pub async fn add_sponsor_mention(
     start_time: Option<f64>,
     end_time: Option<f64>,
     segment_idx: Option<i32>,
-) -> Result<i64, String> {
+) -> Result<i64, AppError> {
     log::info!("Adding sponsor {} mention in episode {}", sponsor_id, episode_id);
     db.add_sponsor_mention(sponsor_id, episode_id, start_time, end_time, segment_idx)
-        .map_err(|e| e.to_string())
+        .map_err(AppError::from)
 }
 
 // ============================================================================
@@ -205,7 +206,7 @@ pub async fn search_transcripts(
     query: String,
     limit: Option<i64>,
     offset: Option<i64>,
-) -> Result<SearchResponse, String> {
+) -> Result<SearchResponse, AppError> {
     let limit = limit.unwrap_or(50);
     let offset = offset.unwrap_or(0);
 
@@ -222,9 +223,9 @@ pub async fn search_transcripts(
     }
 
     let results = db.search_transcripts(clean_query, limit, offset)
-        .map_err(|e| e.to_string())?;
+        .map_err(AppError::from)?;
     let total = db.count_search_results(clean_query)
-        .map_err(|e| e.to_string())?;
+        .map_err(AppError::from)?;
 
     Ok(SearchResponse {
         results,
@@ -236,11 +237,11 @@ pub async fn search_transcripts(
 #[tauri::command]
 pub async fn get_search_stats(
     db: State<'_, Arc<Database>>,
-) -> Result<SearchStats, String> {
+) -> Result<SearchStats, AppError> {
     let indexed_segments = db.get_indexed_segment_count()
-        .map_err(|e| e.to_string())?;
+        .map_err(AppError::from)?;
     let unindexed_episodes = db.get_unindexed_episodes()
-        .map_err(|e| e.to_string())?;
+        .map_err(AppError::from)?;
 
     Ok(SearchStats {
         indexed_segments,
@@ -259,7 +260,7 @@ pub async fn index_episode_transcript(
     db: State<'_, Arc<Database>>,
     episode_id: i64,
     segments: Vec<TranscriptSegmentInput>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     log::info!("Indexing {} segments for episode {}", segments.len(), episode_id);
 
     let segments: Vec<TranscriptSegment> = segments.into_iter().map(|s| TranscriptSegment {
@@ -270,7 +271,7 @@ pub async fn index_episode_transcript(
     }).collect();
 
     db.index_transcript_segments(episode_id, &segments)
-        .map_err(|e| e.to_string())
+        .map_err(AppError::from)
 }
 
 #[derive(Debug, Deserialize)]
@@ -286,14 +287,14 @@ pub struct TranscriptSegmentInput {
 pub async fn index_all_transcripts(
     db: State<'_, Arc<Database>>,
     app_handle: tauri::AppHandle,
-) -> Result<IndexingResult, String> {
+) -> Result<IndexingResult, AppError> {
     use tauri::Emitter;
 
     log::info!("Starting bulk transcript indexing");
 
     // Get all unindexed episodes
     let episodes = db.get_unindexed_episodes()
-        .map_err(|e| e.to_string())?;
+        .map_err(AppError::from)?;
 
     let total = episodes.len();
     log::info!("Found {} episodes to index", total);
@@ -381,6 +382,69 @@ pub struct IndexingResult {
     pub indexed: i64,
     pub failed: i64,
     pub total: i64,
+}
+
+/// Re-index ALL transcribed episodes, resolving SPEAKER_XX labels to real
+/// speaker names from the episode_speakers table.  This is the backfill path
+/// for episodes that were indexed before speaker names were assigned.
+#[tauri::command]
+pub async fn reindex_all_with_speakers(
+    db: State<'_, Arc<Database>>,
+    app_handle: tauri::AppHandle,
+) -> Result<IndexingResult, AppError> {
+    use tauri::Emitter;
+
+    log::info!("Starting reindex-with-speakers backfill");
+
+    let episodes = db.get_all_transcribed_episode_ids()
+        .map_err(AppError::from)?;
+
+    let total = episodes.len();
+    log::info!("Found {} transcribed episodes to reindex", total);
+
+    if total == 0 {
+        return Ok(IndexingResult { indexed: 0, failed: 0, total: 0 });
+    }
+
+    let mut indexed = 0i64;
+    let mut failed = 0i64;
+
+    for (i, (episode_id, title)) in episodes.iter().enumerate() {
+        let _ = app_handle.emit("indexing_progress", serde_json::json!({
+            "current": i + 1,
+            "total": total,
+            "episode_title": title,
+        }));
+
+        match db.index_episode_from_file(*episode_id) {
+            Ok(0) => {
+                log::warn!("No segments indexed for episode {} ({})", episode_id, title);
+                failed += 1;
+            }
+            Ok(n) => {
+                log::info!("Reindexed {} segments for episode {} ({})", n, episode_id, title);
+                indexed += 1;
+            }
+            Err(e) => {
+                log::error!("Failed to reindex episode {} ({}): {}", episode_id, title, e);
+                failed += 1;
+            }
+        }
+    }
+
+    let _ = app_handle.emit("indexing_complete", serde_json::json!({
+        "indexed": indexed,
+        "failed": failed,
+        "total": total,
+    }));
+
+    log::info!("Reindex-with-speakers complete: {} indexed, {} failed, {} total", indexed, failed, total);
+
+    Ok(IndexingResult {
+        indexed,
+        failed,
+        total: total as i64,
+    })
 }
 
 /// Parse segments from transcript JSON content
@@ -480,16 +544,16 @@ pub fn parse_timestamp_str(s: &str) -> Option<f64> {
 pub async fn get_detected_content(
     db: State<'_, Arc<Database>>,
     episode_id: i64,
-) -> Result<Vec<DetectedContent>, String> {
-    db.get_detected_content(episode_id).map_err(|e| e.to_string())
+) -> Result<Vec<DetectedContent>, AppError> {
+    db.get_detected_content(episode_id).map_err(AppError::from)
 }
 
 #[tauri::command]
 pub async fn get_detected_content_by_type(
     db: State<'_, Arc<Database>>,
     content_type: String,
-) -> Result<Vec<DetectedContentWithEpisode>, String> {
-    db.get_detected_content_by_type(&content_type).map_err(|e| e.to_string())
+) -> Result<Vec<DetectedContentWithEpisode>, AppError> {
+    db.get_detected_content_by_type(&content_type).map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -504,7 +568,7 @@ pub async fn add_detected_content(
     segment_idx: Option<i32>,
     confidence: Option<f64>,
     raw_text: Option<String>,
-) -> Result<i64, String> {
+) -> Result<i64, AppError> {
     log::info!("Adding detected {} '{}' in episode {}", content_type, name, episode_id);
     db.add_detected_content(
         episode_id,
@@ -516,7 +580,7 @@ pub async fn add_detected_content(
         segment_idx,
         confidence.unwrap_or(1.0),
         raw_text.as_deref(),
-    ).map_err(|e| e.to_string())
+    ).map_err(AppError::from)
 }
 
 // ============================================================================
@@ -533,7 +597,7 @@ pub async fn create_flagged_segment(
     character_id: Option<i64>,
     notes: Option<String>,
     speaker_ids: Option<String>,
-) -> Result<i64, String> {
+) -> Result<i64, AppError> {
     log::info!("Creating flagged segment for episode {} segment {}: type={}", episode_id, segment_idx, flag_type);
     db.create_flagged_segment(
         episode_id,
@@ -543,15 +607,15 @@ pub async fn create_flagged_segment(
         character_id,
         notes.as_deref(),
         speaker_ids.as_deref(),
-    ).map_err(|e| e.to_string())
+    ).map_err(AppError::from)
 }
 
 #[tauri::command]
 pub async fn get_flagged_segments(
     db: State<'_, Arc<Database>>,
     episode_id: i64,
-) -> Result<Vec<FlaggedSegment>, String> {
-    db.get_flagged_segments_for_episode(episode_id).map_err(|e| e.to_string())
+) -> Result<Vec<FlaggedSegment>, AppError> {
+    db.get_flagged_segments_for_episode(episode_id).map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -564,7 +628,7 @@ pub async fn update_flagged_segment(
     notes: Option<String>,
     speaker_ids: Option<String>,
     resolved: Option<bool>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     log::info!("Updating flagged segment {}", id);
     db.update_flagged_segment(
         id,
@@ -574,24 +638,24 @@ pub async fn update_flagged_segment(
         notes.as_deref(),
         speaker_ids.as_deref(),
         resolved,
-    ).map_err(|e| e.to_string())
+    ).map_err(AppError::from)
 }
 
 #[tauri::command]
 pub async fn delete_flagged_segment(
     db: State<'_, Arc<Database>>,
     id: i64,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     log::info!("Deleting flagged segment {}", id);
-    db.delete_flagged_segment(id).map_err(|e| e.to_string())
+    db.delete_flagged_segment(id).map_err(AppError::from)
 }
 
 #[tauri::command]
 pub async fn get_unresolved_flag_count(
     db: State<'_, Arc<Database>>,
     episode_id: i64,
-) -> Result<i64, String> {
-    db.get_unresolved_flag_count(episode_id).map_err(|e| e.to_string())
+) -> Result<i64, AppError> {
+    db.get_unresolved_flag_count(episode_id).map_err(AppError::from)
 }
 
 // ============================================================================
@@ -602,17 +666,17 @@ pub async fn get_unresolved_flag_count(
 pub async fn get_character_appearances_for_episode(
     db: State<'_, Arc<Database>>,
     episode_id: i64,
-) -> Result<Vec<CharacterAppearance>, String> {
-    db.get_character_appearances_for_episode(episode_id).map_err(|e| e.to_string())
+) -> Result<Vec<CharacterAppearance>, AppError> {
+    db.get_character_appearances_for_episode(episode_id).map_err(AppError::from)
 }
 
 #[tauri::command]
 pub async fn delete_character_appearance(
     db: State<'_, Arc<Database>>,
     id: i64,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     log::info!("Deleting character appearance {}", id);
-    db.delete_character_appearance(id).map_err(|e| e.to_string())
+    db.delete_character_appearance(id).map_err(AppError::from)
 }
 
 // ============================================================================
@@ -622,8 +686,8 @@ pub async fn delete_character_appearance(
 #[tauri::command]
 pub async fn get_audio_drops(
     db: State<'_, Arc<Database>>,
-) -> Result<Vec<AudioDrop>, String> {
-    db.get_audio_drops().map_err(|e| e.to_string())
+) -> Result<Vec<AudioDrop>, AppError> {
+    db.get_audio_drops().map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -633,19 +697,19 @@ pub async fn create_audio_drop(
     transcript_text: Option<String>,
     description: Option<String>,
     category: Option<String>,
-) -> Result<i64, String> {
+) -> Result<i64, AppError> {
     log::info!("Creating audio drop: {}", name);
     db.create_audio_drop(&name, transcript_text.as_deref(), description.as_deref(), category.as_deref())
-        .map_err(|e| e.to_string())
+        .map_err(AppError::from)
 }
 
 #[tauri::command]
 pub async fn delete_audio_drop(
     db: State<'_, Arc<Database>>,
     id: i64,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     log::info!("Deleting audio drop: {}", id);
-    db.delete_audio_drop(id).map_err(|e| e.to_string())
+    db.delete_audio_drop(id).map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -657,25 +721,25 @@ pub async fn add_audio_drop_instance(
     start_time: Option<f64>,
     end_time: Option<f64>,
     notes: Option<String>,
-) -> Result<i64, String> {
+) -> Result<i64, AppError> {
     log::info!("Adding audio drop {} instance in episode {}", audio_drop_id, episode_id);
     db.add_audio_drop_instance(audio_drop_id, episode_id, segment_idx, start_time, end_time, notes.as_deref())
-        .map_err(|e| e.to_string())
+        .map_err(AppError::from)
 }
 
 #[tauri::command]
 pub async fn get_audio_drop_instances(
     db: State<'_, Arc<Database>>,
     episode_id: i64,
-) -> Result<Vec<AudioDropInstance>, String> {
-    db.get_audio_drop_instances_for_episode(episode_id).map_err(|e| e.to_string())
+) -> Result<Vec<AudioDropInstance>, AppError> {
+    db.get_audio_drop_instances_for_episode(episode_id).map_err(AppError::from)
 }
 
 #[tauri::command]
 pub async fn delete_audio_drop_instance(
     db: State<'_, Arc<Database>>,
     id: i64,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     log::info!("Deleting audio drop instance {}", id);
-    db.delete_audio_drop_instance(id).map_err(|e| e.to_string())
+    db.delete_audio_drop_instance(id).map_err(AppError::from)
 }

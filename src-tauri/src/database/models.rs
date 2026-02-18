@@ -248,6 +248,7 @@ pub struct AudioDrop {
     pub description: Option<String>,
     pub category: String,
     pub created_at: Option<String>,
+    pub reference_audio_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -299,6 +300,43 @@ pub struct WikiEpisodeMeta {
 }
 
 // ============================================================================
+// Episode Speaker Assignments (unified speaker/drop assignments)
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EpisodeSpeakerAssignment {
+    pub id: i64,
+    pub episode_id: i64,
+    pub diarization_label: String,
+    pub speaker_id: Option<i64>,
+    pub speaker_name: Option<String>,
+    pub audio_drop_id: Option<i64>,
+    pub audio_drop_name: Option<String>,
+    pub speaking_time_seconds: Option<f64>,
+    pub segment_count: Option<i32>,
+}
+
+// ============================================================================
+// Voice Samples (saved audio clips for speaker identification)
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VoiceSampleRecord {
+    pub id: i64,
+    pub speaker_name: String,
+    pub episode_id: Option<i64>,
+    pub segment_idx: Option<i64>,
+    pub start_time: f64,
+    pub end_time: f64,
+    pub transcript_text: Option<String>,
+    pub file_path: String,
+    pub rating: i32,
+    pub created_at: Option<String>,
+    // Joined fields:
+    pub episode_title: Option<String>,
+}
+
+// ============================================================================
 // Flagged Segments (for review workflow)
 // ============================================================================
 
@@ -315,4 +353,27 @@ pub struct FlaggedSegment {
     pub speaker_ids: Option<String>,  // JSON array: ["SPEAKER_00","SPEAKER_01"]
     pub resolved: bool,
     pub created_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PipelineError {
+    pub id: i64,
+    pub occurred_at: String,
+    pub context: String,       // "download" | "transcribe" | "diarize"
+    pub episode_id: Option<i64>,
+    pub error_kind: String,
+    pub error_detail: String,
+    pub retry_count: i32,
+    pub resolved: bool,
+    pub episode_title: Option<String>,  // joined from episodes
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PipelineHealth {
+    pub success_rate_last_50: f32,
+    pub avg_transcribe_seconds: f32,
+    pub episodes_remaining: i64,
+    pub estimated_completion_days: f32,
+    pub failed_last_24h: i64,
+    pub unresolved_errors: i64,
 }

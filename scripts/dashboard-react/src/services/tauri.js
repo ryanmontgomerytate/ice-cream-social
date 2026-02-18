@@ -95,9 +95,9 @@ export const episodesAPI = {
     return result;
   },
 
-  async updateSpeakerNames(episodeId, speakerNames) {
+  async updateSpeakerNames(episodeId, speakerNames, markedSamples = null) {
     console.log('Tauri updateSpeakerNames called for:', episodeId, speakerNames);
-    const result = await tauriInvoke('update_speaker_names', { episodeId, speakerNames });
+    const result = await tauriInvoke('update_speaker_names', { episodeId, speakerNames, markedSamples });
     console.log('Tauri updateSpeakerNames result:', result);
     return result;
   },
@@ -212,6 +212,15 @@ export const queueAPI = {
 // ============================================================================
 
 export const statsAPI = {
+  async getPipelineHealth() {
+    return tauriInvoke('get_pipeline_health');
+  },
+
+  async getRecentErrors(limit = 20) {
+    return tauriInvoke('get_recent_errors', { limit });
+  },
+
+
   async getStats() {
     console.log('Tauri getStats called');
     const result = await tauriInvoke('get_stats');
@@ -231,6 +240,12 @@ export const statsAPI = {
 export const workerAPI = {
   async getStatus() {
     return tauriInvoke('get_worker_status');
+  },
+  async setPreventSleep(enabled) {
+    return tauriInvoke('set_prevent_sleep', { enabled });
+  },
+  async getPreventSleep() {
+    return tauriInvoke('get_prevent_sleep');
   },
 };
 
@@ -352,12 +367,36 @@ export const speakersAPI = {
     return tauriInvoke('link_episode_speaker', { episodeId, diarizationLabel, speakerId });
   },
 
+  async linkEpisodeAudioDrop(episodeId, diarizationLabel, audioDropId) {
+    return tauriInvoke('link_episode_audio_drop', { episodeId, diarizationLabel, audioDropId });
+  },
+
+  async unlinkEpisodeSpeaker(episodeId, diarizationLabel) {
+    return tauriInvoke('unlink_episode_speaker', { episodeId, diarizationLabel });
+  },
+
+  async getEpisodeSpeakerAssignments(episodeId) {
+    return tauriInvoke('get_episode_speaker_assignments', { episodeId });
+  },
+
   async getVoiceLibrary() {
     return tauriInvoke('get_voice_library');
   },
 
   async getVoiceSamplePath(speakerName) {
     return tauriInvoke('get_voice_sample_path', { speakerName });
+  },
+
+  async getVoiceSamples(speakerName) {
+    return tauriInvoke('get_voice_samples', { speakerName });
+  },
+
+  async deleteVoiceSample(speakerName, filePath, sampleId) {
+    return tauriInvoke('delete_voice_sample', { speakerName, filePath: filePath || null, sampleId: sampleId || null });
+  },
+
+  async updateVoiceSampleRating(id, rating) {
+    return tauriInvoke('update_voice_sample_rating', { id, rating });
   },
 };
 
@@ -516,6 +555,11 @@ export const searchAPI = {
   async indexAllTranscripts() {
     console.log('Tauri indexAllTranscripts called');
     return tauriInvoke('index_all_transcripts');
+  },
+
+  async reindexAllWithSpeakers() {
+    console.log('Tauri reindexAllWithSpeakers called');
+    return tauriInvoke('reindex_all_with_speakers');
   },
 
   async getDetectedContent(episodeId) {

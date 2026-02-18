@@ -1,4 +1,5 @@
 use crate::database::{Database, QueueItemWithEpisode};
+use crate::error::AppError;
 use serde::Serialize;
 use std::sync::Arc;
 use tauri::State;
@@ -27,8 +28,8 @@ pub struct QueueStatus {
 
 /// GET /api/v2/queue -> get_queue command
 #[tauri::command]
-pub async fn get_queue(db: State<'_, Arc<Database>>) -> Result<QueueResponse, String> {
-    let (pending, processing, completed, failed) = db.get_queue().map_err(|e| e.to_string())?;
+pub async fn get_queue(db: State<'_, Arc<Database>>) -> Result<QueueResponse, AppError> {
+    let (pending, processing, completed, failed) = db.get_queue()?;
 
     Ok(QueueResponse {
         queue: QueueData {
@@ -42,8 +43,8 @@ pub async fn get_queue(db: State<'_, Arc<Database>>) -> Result<QueueResponse, St
 
 /// GET /api/v2/queue/status -> get_queue_status command
 #[tauri::command]
-pub async fn get_queue_status(db: State<'_, Arc<Database>>) -> Result<QueueStatus, String> {
-    let (pending, processing, completed, failed) = db.get_queue().map_err(|e| e.to_string())?;
+pub async fn get_queue_status(db: State<'_, Arc<Database>>) -> Result<QueueStatus, AppError> {
+    let (pending, processing, completed, failed) = db.get_queue()?;
 
     Ok(QueueStatus {
         pending: pending.len() as i64,
@@ -60,15 +61,16 @@ pub async fn add_to_queue(
     db: State<'_, Arc<Database>>,
     episode_id: i64,
     priority: Option<i32>,
-) -> Result<(), String> {
-    db.add_to_queue(episode_id, priority.unwrap_or(0))
-        .map_err(|e| e.to_string())
+) -> Result<(), AppError> {
+    db.add_to_queue(episode_id, priority.unwrap_or(0))?;
+    Ok(())
 }
 
 /// DELETE /api/v2/queue/remove/:id -> remove_from_queue command
 #[tauri::command]
-pub async fn remove_from_queue(db: State<'_, Arc<Database>>, episode_id: i64) -> Result<(), String> {
-    db.remove_from_queue(episode_id).map_err(|e| e.to_string())
+pub async fn remove_from_queue(db: State<'_, Arc<Database>>, episode_id: i64) -> Result<(), AppError> {
+    db.remove_from_queue(episode_id)?;
+    Ok(())
 }
 
 /// POST /api/v2/queue/retry/:id -> retry_transcription command
@@ -76,7 +78,8 @@ pub async fn remove_from_queue(db: State<'_, Arc<Database>>, episode_id: i64) ->
 pub async fn retry_transcription(
     db: State<'_, Arc<Database>>,
     episode_id: i64,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     // Reset the queue item status to pending
-    db.add_to_queue(episode_id, 0).map_err(|e| e.to_string())
+    db.add_to_queue(episode_id, 0)?;
+    Ok(())
 }

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { searchAPI, episodesAPI } from '../services/api'
+import { useSearch } from '../hooks/useSearch'
 
 // Helper to get Tauri listen function dynamically
 const getTauriListen = async () => {
@@ -33,6 +34,10 @@ export default function SearchPanel({ onNotification, onViewEpisode }) {
   const [indexProgress, setIndexProgress] = useState({ current: 0, total: 0 })
   const limit = 25
 
+  // Stale-request protection: if a newer search fires before this one
+  // resolves, the older response is silently discarded.
+  const searchTranscripts = useSearch(searchAPI.searchTranscripts)
+
   useEffect(() => {
     loadSearchStats()
   }, [])
@@ -58,7 +63,8 @@ export default function SearchPanel({ onNotification, onViewEpisode }) {
 
     try {
       const currentPage = resetPage ? 0 : page
-      const response = await searchAPI.searchTranscripts(query.trim(), limit, currentPage * limit)
+      const response = await searchTranscripts(query.trim(), limit, currentPage * limit)
+      if (!response) return  // superseded by a newer query — discard silently
       setResults(response.results || [])
       setTotal(response.total || 0)
     } catch (error) {
@@ -68,7 +74,7 @@ export default function SearchPanel({ onNotification, onViewEpisode }) {
     } finally {
       setLoading(false)
     }
-  }, [query, page, limit, onNotification])
+  }, [query, page, limit, onNotification, searchTranscripts])
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter') {
@@ -120,6 +126,46 @@ export default function SearchPanel({ onNotification, onViewEpisode }) {
       onNotification?.(`Indexing failed: ${error.message}`, 'error')
     } finally {
       // Clean up listeners
+      if (unlisten1) unlisten1()
+      if (unlisten2) unlisten2()
+      setIndexing(false)
+      setIndexProgress({ current: 0, total: 0, episode_title: '' })
+    }
+  }
+
+  const handleReindexWithSpeakers = async () => {
+    setIndexing(true)
+    setIndexProgress({ current: 0, total: 0, episode_title: '' })
+
+    let unlisten1 = null
+    let unlisten2 = null
+
+    try {
+      const listen = await getTauriListen()
+      if (listen) {
+        unlisten1 = await listen('indexing_progress', (event) => {
+          setIndexProgress({
+            current: event.payload.current,
+            total: event.payload.total,
+            episode_title: event.payload.episode_title
+          })
+        })
+        unlisten2 = await listen('indexing_complete', (event) => {
+          const { indexed, failed } = event.payload
+          onNotification?.(`Reindex complete: ${indexed} episodes updated, ${failed} failed`, indexed > 0 ? 'success' : 'warning')
+        })
+      }
+
+      onNotification?.('Reindexing all transcripts with speaker names...', 'info')
+      const result = await searchAPI.reindexAllWithSpeakers()
+      if (result) {
+        onNotification?.(`Reindexed ${result.indexed} episodes (${result.failed} failed)`, result.indexed > 0 ? 'success' : 'warning')
+      }
+      await loadSearchStats()
+    } catch (error) {
+      console.error('Reindex failed:', error)
+      onNotification?.(`Reindex failed: ${error.message}`, 'error')
+    } finally {
       if (unlisten1) unlisten1()
       if (unlisten2) unlisten2()
       setIndexing(false)
@@ -312,6 +358,39 @@ export default function SearchPanel({ onNotification, onViewEpisode }) {
             </button>
           </div>
         )}
+
+        {/* Reindex with Speakers — always visible backfill action */}
+        <div className="mt-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-medium text-gray-700 text-sm">Re-index with Speaker Names</h3>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Resolves raw SPEAKER_00 labels to real names across all transcribed episodes
+              </p>
+            </div>
+            <button
+              onClick={handleReindexWithSpeakers}
+              disabled={indexing}
+              className="ml-4 flex-shrink-0 px-4 py-2 bg-indigo-500 hover:bg-indigo-600 disabled:bg-gray-300 text-white rounded-lg font-medium text-sm transition-colors"
+            >
+              {indexing ? 'Working...' : 'Reindex with Speakers'}
+            </button>
+          </div>
+          {indexing && indexProgress.total > 0 && (
+            <div className="mt-3">
+              <div className="flex justify-between text-xs text-gray-500 mb-1">
+                <span className="truncate flex-1">{indexProgress.episode_title || 'Indexing...'}</span>
+                <span className="ml-2">{indexProgress.current} / {indexProgress.total}</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div
+                  className="bg-indigo-500 h-2 rounded-full transition-all"
+                  style={{ width: `${(indexProgress.current / indexProgress.total) * 100}%` }}
+                ></div>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Indexing Status */}
         {searchStats.unindexed_episode_count > 0 && (
