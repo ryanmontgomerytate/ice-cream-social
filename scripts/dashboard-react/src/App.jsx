@@ -44,6 +44,7 @@ function App() {
           },
           onQueueUpdate: (data) => {
             console.log('Queue update:', data)
+            loadStats()
           },
           onStatsUpdate: (data) => {
             console.log('Stats update:', data)
@@ -171,7 +172,7 @@ function App() {
               { id: 'episodes', label: 'Episodes', icon: '📻' },
               { id: 'search', label: 'Search', icon: '🔍' },
               { id: 'extraction', label: 'Extraction', icon: '🤖' },
-              { id: 'speakers', label: 'Speakers', icon: '👥' },
+              { id: 'speakers', label: 'Audio ID', icon: '🎙️' },
               { id: 'characters', label: 'Characters', icon: '🎭' },
               { id: 'sponsors', label: 'Sponsors', icon: '📺' },
               { id: 'stats', label: 'Stats', icon: '📊' },
@@ -223,7 +224,19 @@ function App() {
         )}
 
         {activeMainTab === 'speakers' && (
-          <SpeakersPanel onNotification={showNotification} />
+          <SpeakersPanel
+            onNotification={showNotification}
+            onViewEpisode={async (episodeId, timestamp) => {
+              try {
+                const episode = await episodesAPI.getEpisode(episodeId)
+                if (episode) {
+                  setTranscriptEpisode({ ...episode, initialTimestamp: timestamp })
+                }
+              } catch (error) {
+                showNotification(`Error loading episode: ${error.message}`, 'error')
+              }
+            }}
+          />
         )}
 
         {activeMainTab === 'characters' && (

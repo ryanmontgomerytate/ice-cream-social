@@ -1,6 +1,7 @@
 use crate::database::models::{PipelineError, PipelineHealth};
 use crate::database::{AppStats, Database, PipelineStatsResponse};
 use crate::error::AppError;
+use serde::Serialize;
 use std::sync::Arc;
 use tauri::State;
 
@@ -34,4 +35,33 @@ pub async fn get_recent_errors(
 ) -> Result<Vec<PipelineError>, AppError> {
     db.get_recent_pipeline_errors(limit.unwrap_or(20))
         .map_err(AppError::from)
+}
+
+#[derive(Debug, Serialize)]
+pub struct QueueEpisodeItem {
+    pub id: i64,
+    pub title: String,
+    pub episode_number: Option<i64>,
+    pub added_date: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct QueueEpisodeLists {
+    pub transcribe: Vec<QueueEpisodeItem>,
+    pub diarize: Vec<QueueEpisodeItem>,
+}
+
+#[tauri::command]
+pub async fn get_queue_episode_lists(
+    db: State<'_, Arc<Database>>,
+) -> Result<QueueEpisodeLists, AppError> {
+    let (transcribe, diarize) = db.get_queue_episode_lists().map_err(AppError::from)?;
+    Ok(QueueEpisodeLists {
+        transcribe: transcribe.into_iter().map(|(id, title, episode_number, added_date)| {
+            QueueEpisodeItem { id, title, episode_number, added_date }
+        }).collect(),
+        diarize: diarize.into_iter().map(|(id, title, episode_number, added_date)| {
+            QueueEpisodeItem { id, title, episode_number, added_date }
+        }).collect(),
+    })
 }

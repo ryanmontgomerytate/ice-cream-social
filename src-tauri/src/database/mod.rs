@@ -1994,6 +1994,36 @@ Mark the start time of each segment.',
         Ok(items)
     }
 
+    /// Get pending episodes in each queue for display — (id, title, episode_number, added_date)
+    pub fn get_queue_episode_lists(&self) -> Result<(Vec<(i64, String, Option<i64>, String)>, Vec<(i64, String, Option<i64>, String)>)> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT e.id, e.title, e.episode_number, q.added_to_queue_date
+             FROM transcription_queue q
+             JOIN episodes e ON q.episode_id = e.id
+             WHERE q.status IN ('pending', 'processing')
+               AND (q.queue_type IS NULL OR q.queue_type = 'full')
+             ORDER BY q.priority DESC, q.added_to_queue_date ASC"
+        )?;
+        let transcribe_queue = stmt.query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?, row.get::<_, Option<i64>>(2)?, row.get::<_, String>(3)?))
+        })?.filter_map(|r| r.ok()).collect();
+
+        let mut stmt2 = conn.prepare(
+            "SELECT e.id, e.title, e.episode_number, q.added_to_queue_date
+             FROM transcription_queue q
+             JOIN episodes e ON q.episode_id = e.id
+             WHERE q.status IN ('pending', 'processing')
+               AND q.queue_type = 'diarize_only'
+             ORDER BY q.priority DESC, q.added_to_queue_date ASC"
+        )?;
+        let diarize_queue = stmt2.query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?, row.get::<_, Option<i64>>(2)?, row.get::<_, String>(3)?))
+        })?.filter_map(|r| r.ok()).collect();
+
+        Ok((transcribe_queue, diarize_queue))
+    }
+
     // =========================================================================
     // Settings
     // =========================================================================
@@ -3381,7 +3411,7 @@ Mark the start time of each segment.',
                       fs.corrected_speaker, fs.character_id, c.name, fs.notes, fs.speaker_ids, fs.resolved, fs.created_at
                FROM flagged_segments fs
                LEFT JOIN characters c ON fs.character_id = c.id
-               WHERE fs.episode_id = ?1 AND fs.flag_type IN ('wrong_speaker', 'multiple_speakers') AND fs.resolved = 0
+               WHERE fs.episode_id = ?1 AND fs.flag_type IN ('wrong_speaker', 'multiple_speakers', 'character_voice') AND fs.resolved = 0
                ORDER BY fs.segment_idx"#
         )?;
         let flags = stmt.query_map([episode_id], |row| {

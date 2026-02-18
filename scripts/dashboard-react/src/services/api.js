@@ -436,6 +436,18 @@ export const statsAPI = {
     }
     return [];
   },
+
+  async getQueueEpisodeLists() {
+    if (isTauri) {
+      try {
+        return await tauriAPI.statsAPI.getQueueEpisodeLists();
+      } catch (e) {
+        console.error('Tauri getQueueEpisodeLists failed:', e);
+        return { transcribe: [], diarize: [] };
+      }
+    }
+    return { transcribe: [], diarize: [] };
+  },
 };
 
 // ============================================================================

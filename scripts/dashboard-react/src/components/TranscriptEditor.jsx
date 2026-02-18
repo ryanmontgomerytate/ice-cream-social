@@ -76,6 +76,9 @@ export default function TranscriptEditor({
   const [audioDrops, setAudioDrops] = useState([])
   const [audioDropInstances, setAudioDropInstances] = useState([])
 
+  // Episode speaker assignments (authoritative speaker/sound bite mappings from DB)
+  const [episodeSpeakerAssignments, setEpisodeSpeakerAssignments] = useState([])
+
   // Inline picker state
   const [activePicker, setActivePicker] = useState(null)
   const [newCharacterName, setNewCharacterName] = useState('')
@@ -109,7 +112,7 @@ export default function TranscriptEditor({
       setLoading(true)
       setError(null)
 
-      const [data, voices, types, chapters, flags, charAppearances, allCharacters, drops, dropInstances] = await Promise.all([
+      const [data, voices, types, chapters, flags, charAppearances, allCharacters, drops, dropInstances, speakerAssignments] = await Promise.all([
         episodesAPI.getTranscript(episode.id),
         speakersAPI.getVoiceLibrary().catch(() => []),
         contentAPI.getChapterTypes().catch(() => []),
@@ -118,7 +121,8 @@ export default function TranscriptEditor({
         contentAPI.getCharacterAppearancesForEpisode(episode.id).catch(() => []),
         contentAPI.getCharacters().catch(() => []),
         contentAPI.getAudioDrops().catch(() => []),
-        contentAPI.getAudioDropInstances(episode.id).catch(() => [])
+        contentAPI.getAudioDropInstances(episode.id).catch(() => []),
+        speakersAPI.getEpisodeSpeakerAssignments(episode.id).catch(() => [])
       ])
 
       setTranscript(data)
@@ -141,9 +145,27 @@ export default function TranscriptEditor({
       setFlaggedSegments(flagsMap)
       onFlaggedSegmentsChange?.(flagsMap)
 
-      if (data.speaker_names) {
-        setSpeakerNames(data.speaker_names)
+      setEpisodeSpeakerAssignments(speakerAssignments)
+
+      // Restore marked samples from transcript JSON
+      if (data.marked_samples && Array.isArray(data.marked_samples)) {
+        const samplesMap = {}
+        data.marked_samples.forEach(idx => { samplesMap[idx] = true })
+        setMarkedSamples(samplesMap)
+        onMarkedSamplesChange?.(samplesMap)
       }
+
+      // Build speaker names: start from JSON, then overlay DB assignments
+      const names = { ...(data.speaker_names || {}) }
+      for (const assignment of speakerAssignments) {
+        if (assignment.speaker_name) {
+          names[assignment.diarization_label] = assignment.speaker_name
+        } else if (assignment.audio_drop_name) {
+          // Use the drop name directly (no 🔊 prefix — visual indicator handled in render)
+          names[assignment.diarization_label] = assignment.audio_drop_name
+        }
+      }
+      setSpeakerNames(names)
     } catch (err) {
       console.error('Error loading transcript:', err)
       setError(err.message || 'Failed to load transcript')
@@ -436,7 +458,7 @@ export default function TranscriptEditor({
       onAudioDropInstancesChange?.(instances)
       setActivePicker(null)
     } catch (err) {
-      onNotification?.(`Failed to add audio drop: ${err.message}`, 'error')
+      onNotification?.(`Failed to add sound bite: ${err.message}`, 'error')
     }
   }
 
@@ -449,7 +471,7 @@ export default function TranscriptEditor({
       setAudioDrops(allDrops)
       setNewDropName('')
     } catch (err) {
-      onNotification?.(`Failed to create audio drop: ${err.message}`, 'error')
+      onNotification?.(`Failed to create sound bite: ${err.message}`, 'error')
     }
   }
 
@@ -460,7 +482,7 @@ export default function TranscriptEditor({
       setAudioDropInstances(instances)
       onAudioDropInstancesChange?.(instances)
     } catch (err) {
-      onNotification?.(`Failed to remove audio drop: ${err.message}`, 'error')
+      onNotification?.(`Failed to remove sound bite: ${err.message}`, 'error')
     }
   }
 
@@ -483,6 +505,45 @@ export default function TranscriptEditor({
     setHasUnsavedChanges(true)
     setActivePicker(null)
   }
+
+  // Audio drop assignment to diarization label
+  const handleAssignAudioDrop = async (originalLabel, drop) => {
+    setSpeakerNames(prev => ({ ...prev, [originalLabel]: drop.name }))
+    setActivePicker(null)
+    try {
+      await speakersAPI.linkEpisodeAudioDrop(episode.id, originalLabel, drop.id)
+      // Update local assignments so isSoundBite() works immediately
+      setEpisodeSpeakerAssignments(prev => [
+        ...prev.filter(a => a.diarization_label !== originalLabel),
+        { diarization_label: originalLabel, audio_drop_id: drop.id, audio_drop_name: drop.name, speaker_id: null, speaker_name: null }
+      ])
+    } catch (err) {
+      console.error('Failed to link audio drop:', err)
+    }
+  }
+
+  // Unassign speaker/drop from diarization label
+  const handleUnassignSpeaker = async (originalLabel) => {
+    setSpeakerNames(prev => {
+      const next = { ...prev }
+      delete next[originalLabel]
+      return next
+    })
+    setActivePicker(null)
+    setHasUnsavedChanges(true)
+    // Clear from local assignments
+    setEpisodeSpeakerAssignments(prev => prev.filter(a => a.diarization_label !== originalLabel))
+    try {
+      await speakersAPI.unlinkEpisodeSpeaker(episode.id, originalLabel)
+    } catch (err) {
+      console.error('Failed to unlink speaker:', err)
+    }
+  }
+
+  // Check if a diarization label is assigned to a sound bite (not a speaker)
+  const isSoundBite = useCallback((speakerId) => {
+    return episodeSpeakerAssignments.some(a => a.diarization_label === speakerId && a.audio_drop_id)
+  }, [episodeSpeakerAssignments])
 
   // Helpers
   const getCharacterForSegment = (idx) => characterAppearances.find(ca => ca.segment_idx === idx)
@@ -507,16 +568,19 @@ export default function TranscriptEditor({
     if (!hasUnsavedChanges) return
     try {
       setSaving(true)
-      await episodesAPI.updateSpeakerNames(episode.id, speakerNames)
+      const sampleIndices = Object.keys(markedSamples).map(idx => parseInt(idx))
+      await episodesAPI.updateSpeakerNames(episode.id, speakerNames, sampleIndices.length > 0 ? sampleIndices : null)
       if (Object.keys(markedSamples).length > 0 && segments) {
         const samplesToSave = Object.keys(markedSamples).map(idx => {
-          const segment = segments[parseInt(idx)]
+          const segIdx = parseInt(idx)
+          const segment = segments[segIdx]
           return {
             speaker: segment.speaker,
             speakerName: speakerNames[segment.speaker] || segment.speaker,
             startTime: parseTimestampToSeconds(segment),
             endTime: getSegmentEndTime(segment),
-            text: segment.text
+            text: segment.text,
+            segmentIdx: segIdx,
           }
         })
         await episodesAPI.saveVoiceSamples(episode.id, samplesToSave).catch(() => {})
@@ -621,6 +685,7 @@ export default function TranscriptEditor({
       window.__transcriptEditorDeleteChapter = deleteChapter
       window.__transcriptEditorToggleVoiceSample = toggleVoiceSample
       window.__transcriptEditorRemoveAudioDrop = removeAudioDropInstance
+      window.__transcriptEditorAssignAudioDrop = handleAssignAudioDrop
     }
     return () => {
       if (typeof window !== 'undefined') {
@@ -636,6 +701,7 @@ export default function TranscriptEditor({
         delete window.__transcriptEditorDeleteChapter
         delete window.__transcriptEditorToggleVoiceSample
         delete window.__transcriptEditorRemoveAudioDrop
+        delete window.__transcriptEditorAssignAudioDrop
       }
     }
   })
@@ -748,26 +814,45 @@ export default function TranscriptEditor({
       const segment = segments?.[idx]
       if (!segment) return null
       return (
-        <div className="mt-2 p-2 bg-white rounded-lg border border-gray-200 shadow-sm">
-          <div className="text-[10px] text-gray-400 uppercase tracking-wide mb-1 px-1">Assign speaker</div>
+        <div className="mt-2 p-2 bg-white rounded-lg border border-gray-200 shadow-sm max-h-64 overflow-y-auto">
+          <div className="text-[10px] text-gray-400 uppercase tracking-wide mb-1 px-1">Assign to speaker</div>
           {voiceLibrary.map(v => (
             <button key={v.name} onClick={(e) => { e.stopPropagation(); handleAssignSpeakerName(segment.speaker, v.name) }} className="w-full px-2 py-1.5 text-sm text-left rounded hover:bg-yellow-50 text-yellow-800 flex items-center gap-2">
               <span>🎤</span> {v.short_name || v.name}
             </button>
           ))}
+          {audioDrops.length > 0 && (
+            <>
+              <div className="text-[10px] text-gray-400 uppercase tracking-wide mb-1 mt-2 px-1 border-t border-gray-100 pt-2">Assign to sound bite</div>
+              {audioDrops.map(drop => (
+                <button key={drop.id} onClick={(e) => { e.stopPropagation(); handleAssignAudioDrop(segment.speaker, drop) }} className="w-full px-2 py-1.5 text-sm text-left rounded hover:bg-teal-50 text-teal-800 flex items-center gap-2">
+                  <span>🔊</span> {drop.name}
+                </button>
+              ))}
+            </>
+          )}
+          {speakerNames[segment.speaker] && (
+            <>
+              <div className="border-t border-gray-100 mt-2 pt-2">
+                <button onClick={(e) => { e.stopPropagation(); handleUnassignSpeaker(segment.speaker) }} className="w-full px-2 py-1.5 text-sm text-left rounded hover:bg-red-50 text-red-600 flex items-center gap-2">
+                  <span>✕</span> Unassign
+                </button>
+              </div>
+            </>
+          )}
         </div>
       )
     }
     if (pickerType === 'audiodrop') {
       return (
         <div className="mt-2 p-2 bg-white rounded-lg border border-gray-200 shadow-sm">
-          <div className="text-[10px] text-gray-400 uppercase tracking-wide mb-1 px-1">Audio drop</div>
+          <div className="text-[10px] text-gray-400 uppercase tracking-wide mb-1 px-1">Sound bite</div>
           {audioDrops.map(drop => (
             <button key={drop.id} onClick={(e) => { e.stopPropagation(); addAudioDropToSegment(idx, drop.id) }} className="w-full px-2 py-1.5 text-sm text-left rounded hover:bg-teal-50 text-teal-800 flex items-center gap-2">
               <span>🔊</span> {drop.name}
             </button>
           ))}
-          <input type="text" placeholder="+ New drop..." value={newDropName} onChange={(e) => setNewDropName(e.target.value)} onKeyDown={(e) => {
+          <input type="text" placeholder="+ New sound bite..." value={newDropName} onChange={(e) => setNewDropName(e.target.value)} onKeyDown={(e) => {
             if (e.key === 'Enter' && newDropName.trim()) createDropAndAdd(idx, newDropName)
           }} className="w-full mt-1 px-2 py-1.5 text-sm border rounded" onClick={(e) => e.stopPropagation()} />
         </div>
@@ -1024,11 +1109,11 @@ export default function TranscriptEditor({
             <button
               disabled={reprocessing}
               onClick={async () => {
-                if (!confirm('Reprocess diarization for this episode? This will use any speaker corrections as hints to improve results.')) return
                 setReprocessing(true)
                 try {
                   await episodesAPI.reprocessDiarization(episode.id)
                   onNotification?.('Episode queued for re-diarization with hints', 'success')
+                  setTimeout(() => setReprocessing(false), 4000)
                 } catch (err) {
                   onNotification?.(`Failed to queue re-diarization: ${err.message}`, 'error')
                   setReprocessing(false)
@@ -1144,10 +1229,6 @@ export default function TranscriptEditor({
               const isSelected = selectedSegmentIdx === idx
               const flag = flaggedSegments[idx]
 
-              // Consecutive same-speaker: show name only on first
-              const prevSegment = idx > 0 ? filteredSegments[idx - 1] : null
-              const isContinuation = prevSegment && prevSegment.speaker === segment.speaker
-
               return (
                 <div
                   key={idx}
@@ -1174,13 +1255,9 @@ export default function TranscriptEditor({
                         setActivePicker('speaker')
                       }}
                     >
-                      {!isContinuation ? (
-                        <span className="text-xs font-semibold text-gray-700 text-center leading-tight cursor-pointer hover:underline">
-                          {displayName}
-                        </span>
-                      ) : (
-                        <span className="text-[10px] text-gray-400">⋮</span>
-                      )}
+                      <span className="text-xs font-semibold text-gray-700 text-center leading-tight cursor-pointer hover:underline">
+                        {isSoundBite(segment.speaker) && <span title="Sound bite">🔊 </span>}{displayName}
+                      </span>
                     </div>
 
                     {/* Right: Content Column */}

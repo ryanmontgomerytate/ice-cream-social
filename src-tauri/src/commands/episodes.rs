@@ -3,7 +3,7 @@ use crate::error::AppError;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tauri::State;
+use tauri::{Emitter, State};
 use tokio::io::AsyncWriteExt;
 
 #[derive(Debug, Deserialize)]
@@ -1209,6 +1209,7 @@ pub async fn retry_diarization(
 #[tauri::command]
 pub async fn reprocess_diarization(
     db: State<'_, Arc<Database>>,
+    app_handle: tauri::AppHandle,
     episode_id: i64,
 ) -> Result<(), AppError> {
     log::info!("reprocess_diarization called for episode: {}", episode_id);
@@ -1252,6 +1253,17 @@ pub async fn reprocess_diarization(
                     "speaker_ids": speaker_ids_parsed,
                 }));
             }
+            "character_voice" => {
+                // Use the character name as the corrected speaker hint
+                if let Some(ref name) = flag.character_name {
+                    corrections.push(serde_json::json!({
+                        "segment_idx": flag.segment_idx,
+                        "corrected_speaker": name,
+                        "is_character": true,
+                    }));
+                    all_speakers.insert(name.clone());
+                }
+            }
             _ => {}
         }
     }
@@ -1290,6 +1302,17 @@ pub async fn reprocess_diarization(
         .map_err(|e| format!("Failed to requeue for diarization: {}", e))?;
 
     log::info!("Episode {} queued for re-diarization with hints", episode_id);
+
+    // Notify frontend so queue display updates
+    let _ = app_handle.emit("queue_update", serde_json::json!({
+        "action": "diarization_queued",
+        "episode_id": episode_id,
+        "hints": {
+            "corrections": corrections.len(),
+            "multiple_speakers_segments": multiple_speakers_segments.len(),
+        }
+    }));
+
     Ok(())
 }
 

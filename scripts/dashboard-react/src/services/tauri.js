@@ -220,6 +220,9 @@ export const statsAPI = {
     return tauriInvoke('get_recent_errors', { limit });
   },
 
+  async getQueueEpisodeLists() {
+    return tauriInvoke('get_queue_episode_lists');
+  },
 
   async getStats() {
     console.log('Tauri getStats called');

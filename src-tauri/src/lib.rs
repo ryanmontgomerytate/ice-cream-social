@@ -158,6 +158,7 @@ pub fn run() {
             commands::get_pipeline_stats,
             commands::get_pipeline_health,
             commands::get_recent_errors,
+            commands::get_queue_episode_lists,
             // Worker commands
             commands::get_worker_status,
             commands::stop_current_transcription,
