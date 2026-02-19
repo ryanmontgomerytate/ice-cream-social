@@ -222,6 +222,22 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
     }
   }
 
+  // Sound bite deletion
+  const handleDeleteSoundBite = async (item) => {
+    if (!item.drop?.id) {
+      onNotification?.('Cannot delete: sound bite has no ID', 'error')
+      return
+    }
+    if (!await confirm(`Delete sound bite "${item.cleanName}"? This will remove it from all episodes.`)) return
+    try {
+      await contentAPI.deleteAudioDrop(item.drop.id)
+      onNotification?.(`Sound bite "${item.cleanName}" deleted`, 'success')
+      loadData()
+    } catch (error) {
+      onNotification?.(`Error deleting sound bite: ${error.message}`, 'error')
+    }
+  }
+
   // Sample deletion
   const handleDeleteSample = async (speakerName, sample) => {
     if (!await confirm(`Delete sample "${sample.file_name}"?`)) return
@@ -421,6 +437,16 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
                 )}
               </div>
             )}
+            {!isSpeaker && item.drop && (
+              <div className="flex gap-2 mb-3">
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleDeleteSoundBite(item); }}
+                  className="px-3 py-1 text-xs text-red-600 hover:bg-red-100 rounded border border-red-200 transition-colors"
+                >
+                  Delete Sound Bite
+                </button>
+              </div>
+            )}
 
             {/* Voice ID info */}
             {hasEmbedding && (
@@ -504,12 +530,12 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
                         {sample.episode_id && onViewEpisode && (
                           <button
                             onClick={() => onViewEpisode(sample.episode_id, sample.start_time)}
-                            className="p-1 text-gray-400 hover:text-purple-500 hover:bg-purple-50 rounded transition-colors"
-                            title="Jump to source"
+                            className="flex items-center gap-1 px-2 py-1 text-xs text-purple-600 hover:bg-purple-50 rounded border border-purple-200 transition-colors flex-shrink-0"
                           >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                             </svg>
+                            Jump to source
                           </button>
                         )}
                         <button

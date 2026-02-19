@@ -88,6 +88,7 @@ export default function TranscriptModal({ episode, onClose }) {
   const audioRef = useRef(null)
   const transcriptContainerRef = useRef(null)
   const segmentRefs = useRef({})
+  const initialScrollDoneRef = useRef(false)
 
   useEffect(() => {
     if (episode?.id) {
@@ -533,6 +534,32 @@ export default function TranscriptModal({ episode, onClose }) {
     }
   }, [episode?.id])
 
+  // Scroll to the initial segment when segments first load (e.g. from search result)
+  useEffect(() => {
+    if (!segments || !episode?.initialTimestamp || initialScrollDoneRef.current) return
+    initialScrollDoneRef.current = true
+
+    // Use segment_idx directly if provided (from search results), else find by timestamp
+    let targetIdx = episode.initialSegmentIdx != null ? episode.initialSegmentIdx : null
+    if (targetIdx == null) {
+      let closestDelta = Infinity
+      segments.forEach((seg, idx) => {
+        const delta = Math.abs(parseTimestampToSeconds(seg) - episode.initialTimestamp)
+        if (delta < closestDelta) {
+          closestDelta = delta
+          targetIdx = idx
+        }
+      })
+    }
+
+    if (targetIdx == null) return
+    setTimeout(() => {
+      if (segmentRefs.current[targetIdx]) {
+        segmentRefs.current[targetIdx].scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }
+    }, 200)
+  }, [segments]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Get chapter for a segment index
   const getChapterForSegment = (segmentIdx) => {
     return episodeChapters.find(ch =>
@@ -859,7 +886,17 @@ export default function TranscriptModal({ episode, onClose }) {
                 </svg>
               </button>
             </div>
-            <audio ref={audioRef} src={audioPath} preload="metadata" />
+            <audio
+              ref={audioRef}
+              src={audioPath}
+              preload="metadata"
+              onLoadedMetadata={() => {
+                if (episode?.initialTimestamp && audioRef.current) {
+                  audioRef.current.currentTime = episode.initialTimestamp
+                  setCurrentTime(episode.initialTimestamp)
+                }
+              }}
+            />
           </div>
         )}
 

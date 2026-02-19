@@ -207,11 +207,11 @@ function App() {
         {activeMainTab === 'search' && (
           <SearchPanel
             onNotification={showNotification}
-            onViewEpisode={async (episodeId, timestamp) => {
+            onViewEpisode={async (episodeId, timestamp, segmentIdx) => {
               try {
                 const episode = await episodesAPI.getEpisode(episodeId)
                 if (episode) {
-                  setTranscriptEpisode({ ...episode, initialTimestamp: timestamp })
+                  setTranscriptEpisode({ ...episode, initialTimestamp: timestamp, initialSegmentIdx: segmentIdx })
                 }
               } catch (error) {
                 showNotification(`Error loading episode: ${error.message}`, 'error')

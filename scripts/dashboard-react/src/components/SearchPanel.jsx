@@ -174,9 +174,9 @@ export default function SearchPanel({ onNotification, onViewEpisode }) {
   }
 
   const handleViewResult = async (result) => {
-    // Open the episode transcript at the specific timestamp
+    // Open the episode transcript at the specific timestamp and segment
     if (onViewEpisode) {
-      onViewEpisode(result.episode_id, result.start_time)
+      onViewEpisode(result.episode_id, result.start_time, result.segment_idx)
     }
   }
 

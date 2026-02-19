@@ -501,19 +501,19 @@ export default function PropertiesPanel({
           </div>
         )}
 
-        {/* Audio Samples Section */}
-        <SectionHeader open={openSections.samples} onClick={() => toggleSection('samples')} icon="⭐" label="Audio Samples" count={sampleCount} color="yellow" />
+        {/* Audio IDs Section */}
+        <SectionHeader open={openSections.samples} onClick={() => toggleSection('samples')} icon="⭐" label="Audio IDs" count={sampleCount} color="yellow" />
         {openSections.samples && (
           <div className="p-3 space-y-2 border-b border-gray-100">
             {sampleCount === 0 ? (
               <p className="text-xs text-gray-500 text-center py-2">
-                No audio samples marked.<br/>
-                Use the ... menu on segments to mark good audio samples.
+                No audio IDs marked.<br/>
+                Use the ... menu on segments to mark good audio IDs.
               </p>
             ) : (
               <>
                 <div className="text-xs text-gray-600 mb-2">
-                  {sampleCount} sample{sampleCount !== 1 ? 's' : ''} marked
+                  {sampleCount} audio ID{sampleCount !== 1 ? 's' : ''} marked
                 </div>
                 {Object.keys(markedSamples).map(idx => (
                   <div
