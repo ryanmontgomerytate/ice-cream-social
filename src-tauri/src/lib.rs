@@ -185,6 +185,7 @@ pub fn run() {
             commands::get_voice_sample_path,
             commands::get_voice_samples,
             commands::delete_voice_sample,
+            commands::delete_voice_print,
             commands::update_voice_sample_rating,
             // Content commands (chapters, characters, sponsors)
             commands::get_chapter_types,

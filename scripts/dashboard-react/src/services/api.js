@@ -691,6 +691,13 @@ export const speakersAPI = {
     }
     throw new Error('Voice sample ratings only available in Tauri mode');
   },
+
+  async deleteVoicePrint(speakerName) {
+    if (isTauri) {
+      return await tauriAPI.speakersAPI.deleteVoicePrint(speakerName);
+    }
+    throw new Error('Voice print deletion only available in Tauri mode');
+  },
 };
 
 // ============================================================================

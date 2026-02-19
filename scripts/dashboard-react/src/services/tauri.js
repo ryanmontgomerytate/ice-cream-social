@@ -401,6 +401,10 @@ export const speakersAPI = {
   async updateVoiceSampleRating(id, rating) {
     return tauriInvoke('update_voice_sample_rating', { id, rating });
   },
+
+  async deleteVoicePrint(speakerName) {
+    return tauriInvoke('delete_voice_print', { speakerName });
+  },
 };
 
 // ============================================================================

@@ -410,6 +410,40 @@ pub async fn delete_voice_sample(
     Ok(())
 }
 
+/// Delete a speaker's voice print (embeddings) from the voice library.
+/// This removes the trained embedding from embeddings.json so the speaker
+/// can be re-trained from scratch. Audio sample files are NOT deleted.
+#[tauri::command]
+pub async fn delete_voice_print(speaker_name: String) -> Result<(), AppError> {
+    let home_dir = dirs::home_dir().ok_or("Failed to get home directory")?;
+    let project_dir = home_dir
+        .join("Desktop")
+        .join("Projects")
+        .join("ice-cream-social-app");
+    let venv_python = project_dir.join("venv").join("bin").join("python");
+    let voice_library_script = project_dir.join("scripts").join("voice_library.py");
+
+    if !venv_python.exists() {
+        return Err(AppError::from("Python venv not found"));
+    }
+    if !voice_library_script.exists() {
+        return Err(AppError::from("voice_library.py not found"));
+    }
+
+    let output = std::process::Command::new(&venv_python)
+        .args([voice_library_script.to_str().unwrap(), "remove", &speaker_name])
+        .output()
+        .map_err(|e| format!("Failed to run voice_library.py: {}", e))?;
+
+    if output.status.success() {
+        log::info!("Deleted voice print for '{}'", speaker_name);
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(AppError::from(format!("Failed to delete voice print: {}", stderr)))
+    }
+}
+
 /// Count actual audio files for a speaker/sound bite
 fn count_audio_files_for(name: &str, samples_dir: &std::path::Path, sound_bites_dir: &std::path::Path) -> i32 {
     let mut count = 0;

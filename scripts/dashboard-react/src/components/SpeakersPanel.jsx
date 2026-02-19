@@ -241,6 +241,19 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
     }
   }
 
+  // Voice print deletion (removes embeddings from voice library, keeps audio files)
+  const handleDeleteVoicePrint = async (item) => {
+    if (!await confirm(`Delete voice print for "${item.cleanName || item.name}"? This removes the trained embeddings so they can be re-trained from scratch. Audio clip files are NOT deleted.`)) return
+    try {
+      await speakersAPI.deleteVoicePrint(item.cleanName || item.name)
+      onNotification?.(`Voice print for "${item.cleanName || item.name}" deleted`, 'success')
+      const voiceData = await speakersAPI.getVoiceLibrary()
+      setVoiceLibrary(voiceData)
+    } catch (error) {
+      onNotification?.(`Error deleting voice print: ${error.message}`, 'error')
+    }
+  }
+
   // Sound bite deletion
   const handleDeleteSoundBite = async (item) => {
     if (!item.drop?.id) {
@@ -263,11 +276,12 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
     try {
       await speakersAPI.deleteVoiceSample(speakerName, sample.file_path, sample.id)
       onNotification?.(`Deleted "${sample.file_name}"`, 'success')
-      // Reload samples for this row
-      setExpandedSamples(prev => ({ ...prev, [speakerName]: undefined }))
-      loadSamplesForRow(speakerName)
-      // Also reload voice library to update counts
-      const voiceData = await speakersAPI.getVoiceLibrary()
+      // Directly fetch fresh samples — avoids stale closure in loadSamplesForRow
+      const [freshSamples, voiceData] = await Promise.all([
+        speakersAPI.getVoiceSamples(speakerName),
+        speakersAPI.getVoiceLibrary(),
+      ])
+      setExpandedSamples(prev => ({ ...prev, [speakerName]: freshSamples }))
       setVoiceLibrary(voiceData)
     } catch (error) {
       onNotification?.(`Error deleting sample: ${error.message}`, 'error')
@@ -469,11 +483,20 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
 
             {/* Voice ID info */}
             {hasEmbedding && (
-              <div className="mb-3 p-2 bg-green-50 rounded border border-green-200 text-xs text-green-700">
-                Voice print trained from {embeddingCount} clip{embeddingCount !== 1 ? 's' : ''}
-                {sourceFile && (
-                  <span className="text-green-600 ml-1">&middot; Last source: {sourceFile}</span>
-                )}
+              <div className="mb-3 p-2 bg-green-50 rounded border border-green-200 text-xs text-green-700 flex items-center justify-between gap-2">
+                <span>
+                  Voice print trained from {embeddingCount} clip{embeddingCount !== 1 ? 's' : ''}
+                  {sourceFile && (
+                    <span className="text-green-600 ml-1">&middot; Last source: {sourceFile}</span>
+                  )}
+                </span>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleDeleteVoicePrint(item) }}
+                  className="flex-shrink-0 px-2 py-1 text-xs text-red-600 hover:bg-red-100 rounded border border-red-200 transition-colors"
+                  title="Delete trained voice print (keep audio clips)"
+                >
+                  Delete print
+                </button>
               </div>
             )}
 

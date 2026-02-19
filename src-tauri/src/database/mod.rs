@@ -617,6 +617,7 @@ Mark the start time of each segment.',
             );
             CREATE INDEX IF NOT EXISTS idx_voice_samples_speaker ON voice_samples(speaker_name);
             CREATE INDEX IF NOT EXISTS idx_voice_samples_episode ON voice_samples(episode_id);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_voice_samples_file_path ON voice_samples(file_path);
             "#,
         )?;
 
@@ -2199,7 +2200,7 @@ Mark the start time of each segment.',
     ) -> Result<i64> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT INTO voice_samples (speaker_name, episode_id, segment_idx, start_time, end_time, transcript_text, file_path)
+            "INSERT OR IGNORE INTO voice_samples (speaker_name, episode_id, segment_idx, start_time, end_time, transcript_text, file_path)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![speaker_name, episode_id, segment_idx, start_time, end_time, transcript_text, file_path],
         )?;
