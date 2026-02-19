@@ -37,33 +37,38 @@ function App() {
       console.log('Running in Tauri mode')
       setConnected(true)
 
-      const setupEvents = async () => {
-        const cleanup = await setupEventListeners({
-          onStatusUpdate: (data) => {
-            console.log('Status update:', data)
-            loadCurrentActivity()
-          },
-          onQueueUpdate: (data) => {
-            console.log('Queue update:', data)
-            loadStats()
-          },
-          onStatsUpdate: (data) => {
-            console.log('Stats update:', data)
-            loadStats()
-          },
-          onTranscriptionComplete: (episodeId) => {
-            showNotification(`Transcription completed for episode ${episodeId}`, 'success')
-            loadStats()
-          },
-          onTranscriptionFailed: ([episodeId, error]) => {
-            showNotification(`Transcription failed: ${error}`, 'error')
-          },
-        })
+      let cleanupFn = null
+      let cancelled = false
 
-        return cleanup
+      setupEventListeners({
+        onStatusUpdate: (data) => {
+          loadCurrentActivity()
+        },
+        onQueueUpdate: () => {
+          loadStats()
+        },
+        onStatsUpdate: () => {
+          loadStats()
+        },
+        onTranscriptionComplete: (episodeId) => {
+          showNotification(`Transcription completed for episode ${episodeId}`, 'success')
+          loadStats()
+        },
+        onTranscriptionFailed: ([episodeId, error]) => {
+          showNotification(`Transcription failed: ${error}`, 'error')
+        },
+      }).then(cleanup => {
+        if (cancelled) {
+          cleanup()
+        } else {
+          cleanupFn = cleanup
+        }
+      })
+
+      return () => {
+        cancelled = true
+        cleanupFn?.()
       }
-
-      setupEvents()
     } else {
       // Fall back to Socket.IO for development
       console.log('Running in browser mode (Socket.IO)')

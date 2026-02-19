@@ -53,6 +53,10 @@ export function ConfirmProvider({ children }) {
 
 export function useConfirm() {
   const confirm = useContext(ConfirmContext)
-  if (!confirm) throw new Error('useConfirm must be used within a ConfirmProvider')
+  if (!confirm) {
+    // ConfirmProvider not found — return a no-op that cancels the action
+    // rather than crashing the app.
+    return () => Promise.resolve(false)
+  }
   return confirm
 }
