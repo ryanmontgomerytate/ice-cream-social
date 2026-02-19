@@ -84,6 +84,8 @@ export default function TranscriptEditor({
   const [activePicker, setActivePicker] = useState(null)
   const [newCharacterName, setNewCharacterName] = useState('')
   const [newDropName, setNewDropName] = useState('')
+  const [newSpeakerName, setNewSpeakerName] = useState('')
+  const [flagInlineInput, setFlagInlineInput] = useState('') // for wrong_speaker / other inline inputs
   const [speakerPickerIdx, setSpeakerPickerIdx] = useState(null)  // segment idx for multi-speaker picker
   const [speakerPickerSelected, setSpeakerPickerSelected] = useState([])  // selected speaker IDs
 
@@ -492,6 +494,21 @@ export default function TranscriptEditor({
     }
   }
 
+  // Create a new speaker in the DB and assign to the diarization label
+  const createSpeakerAndAssign = async (originalLabel, name) => {
+    if (!name.trim()) return
+    try {
+      await speakersAPI.createSpeaker(name.trim(), null, false)
+      handleAssignSpeakerName(originalLabel, name.trim())
+      setNewSpeakerName('')
+      const voices = await speakersAPI.getVoiceLibrary()
+      setVoiceLibrary(voices)
+      onVoiceLibraryChange?.(voices)
+    } catch (err) {
+      onNotification?.(`Failed to create speaker: ${err.message}`, 'error')
+    }
+  }
+
   const removeAudioDropInstance = async (instanceId) => {
     try {
       await contentAPI.deleteAudioDropInstance(instanceId)
@@ -781,15 +798,14 @@ export default function TranscriptEditor({
             <button key={ft.id} onClick={(e) => {
               e.stopPropagation()
               if (ft.needsSpeaker) {
-                const speaker = prompt('Who should this be?')
-                if (speaker) createFlag(idx, ft.id, speaker)
+                setFlagInlineInput('')
+                setActivePicker('flag-wrong-speaker')
               } else if (ft.needsSpeakers) {
-                // Show inline speaker checklist
                 setSpeakerPickerIdx(idx)
                 setSpeakerPickerSelected([])
               } else if (ft.needsNotes) {
-                const notes = prompt('Add a note:')
-                if (notes) createFlag(idx, ft.id, null, null, notes)
+                setFlagInlineInput('')
+                setActivePicker('flag-other')
               } else {
                 createFlag(idx, ft.id)
               }
@@ -797,6 +813,64 @@ export default function TranscriptEditor({
               <span>{ft.icon}</span> {ft.label}
             </button>
           ))}
+        </div>
+      )
+    }
+    if (pickerType === 'flag-wrong-speaker') {
+      const segment = segments?.[idx]
+      return (
+        <div className="mt-2 p-2 bg-white rounded-lg border border-red-200 shadow-sm">
+          <div className="text-[10px] text-gray-400 uppercase tracking-wide mb-1 px-1">
+            Who should this be? (current: {segment?.speaker})
+          </div>
+          {voiceLibrary.map(v => (
+            <button key={v.name} onClick={(e) => {
+              e.stopPropagation()
+              createFlag(idx, 'wrong_speaker', v.name)
+              setActivePicker(null)
+            }} className="w-full px-2 py-1.5 text-sm text-left rounded hover:bg-red-50 text-red-800 flex items-center gap-2">
+              <span>🎤</span> {v.short_name || v.name}
+            </button>
+          ))}
+          <input
+            type="text"
+            placeholder="Or type a name..."
+            value={flagInlineInput}
+            onChange={(e) => setFlagInlineInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && flagInlineInput.trim()) {
+                createFlag(idx, 'wrong_speaker', flagInlineInput.trim())
+                setActivePicker(null)
+              }
+            }}
+            className="w-full mt-1 px-2 py-1.5 text-sm border border-red-200 rounded"
+            onClick={(e) => e.stopPropagation()}
+            autoFocus
+          />
+          <button onClick={(e) => { e.stopPropagation(); setActivePicker('flag') }} className="mt-1 text-xs text-gray-400 hover:text-gray-600">← Back</button>
+        </div>
+      )
+    }
+    if (pickerType === 'flag-other') {
+      return (
+        <div className="mt-2 p-2 bg-white rounded-lg border border-yellow-200 shadow-sm">
+          <div className="text-[10px] text-gray-400 uppercase tracking-wide mb-1 px-1">Add a note about this segment</div>
+          <input
+            type="text"
+            placeholder="Describe the issue... (press Enter to save)"
+            value={flagInlineInput}
+            onChange={(e) => setFlagInlineInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && flagInlineInput.trim()) {
+                createFlag(idx, 'other', null, null, flagInlineInput.trim())
+                setActivePicker(null)
+              }
+            }}
+            className="w-full px-2 py-1.5 text-sm border border-yellow-200 rounded"
+            onClick={(e) => e.stopPropagation()}
+            autoFocus
+          />
+          <button onClick={(e) => { e.stopPropagation(); setActivePicker('flag') }} className="mt-1 text-xs text-gray-400 hover:text-gray-600">← Back</button>
         </div>
       )
     }
@@ -838,6 +912,17 @@ export default function TranscriptEditor({
               <span>🎤</span> {v.short_name || v.name}
             </button>
           ))}
+          <input
+            type="text"
+            placeholder="+ New speaker..."
+            value={newSpeakerName}
+            onChange={(e) => setNewSpeakerName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && newSpeakerName.trim()) createSpeakerAndAssign(segment.speaker, newSpeakerName)
+            }}
+            className="w-full mt-1 px-2 py-1.5 text-sm border rounded"
+            onClick={(e) => e.stopPropagation()}
+          />
           {audioDrops.length > 0 && (
             <>
               <div className="text-[10px] text-gray-400 uppercase tracking-wide mb-1 mt-2 px-1 border-t border-gray-100 pt-2">Assign to sound bite</div>

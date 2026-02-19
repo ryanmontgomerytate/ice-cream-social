@@ -88,6 +88,8 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
   const [expandedRow, setExpandedRow] = useState(null)
   const [expandedSamples, setExpandedSamples] = useState({})
   const [loadingSamples, setLoadingSamples] = useState({})
+  const [inlineAddSpeaker, setInlineAddSpeaker] = useState(null) // voice entry name being added inline
+  const [inlineAddForm, setInlineAddForm] = useState({ name: '', shortName: '', isHost: false })
   const [playingFile, setPlayingFile] = useState(null)
   const audioRef = useRef(null)
 
@@ -205,6 +207,23 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
   const cancelEditing = () => {
     setEditingSpeaker(null)
     setFormData({ name: '', shortName: '', isHost: false })
+  }
+
+  const handleInlineAddSpeaker = async () => {
+    if (!inlineAddForm.name.trim()) return
+    try {
+      await speakersAPI.createSpeaker(
+        inlineAddForm.name.trim(),
+        inlineAddForm.shortName.trim() || null,
+        inlineAddForm.isHost
+      )
+      onNotification?.(`Speaker "${inlineAddForm.name}" added`, 'success')
+      setInlineAddSpeaker(null)
+      setInlineAddForm({ name: '', shortName: '', isHost: false })
+      loadData()
+    } catch (error) {
+      onNotification?.(`Error adding speaker: ${error.message}`, 'error')
+    }
   }
 
   // Sample playback
@@ -673,32 +692,95 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
                     Voice Library Only (not added as speaker)
                   </div>
                   {unlinkedEntries.map(v => (
-                    <div key={v.name} className="flex items-center justify-between px-4 py-2.5 rounded-lg border border-dashed border-yellow-300 bg-yellow-50">
-                      <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-sm bg-yellow-500">
-                          {v.short_name.charAt(0).toUpperCase()}
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium text-gray-800">{v.name}</span>
-                            <span className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-xs font-medium">
-                              Voice ID ({v.sample_count}x)
-                            </span>
+                    <div key={v.name}>
+                      <div className="flex items-center justify-between px-4 py-2.5 rounded-lg border border-dashed border-yellow-300 bg-yellow-50">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-sm bg-yellow-500">
+                            {v.short_name.charAt(0).toUpperCase()}
                           </div>
-                          {v.sample_file && (
-                            <div className="text-xs text-gray-400 mt-0.5">Source: {v.sample_file}</div>
-                          )}
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-gray-800">{v.name}</span>
+                              <span className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-xs font-medium">
+                                Voice ID ({v.sample_count}x)
+                              </span>
+                            </div>
+                            {v.sample_file && (
+                              <div className="text-xs text-gray-400 mt-0.5">Source: {v.sample_file}</div>
+                            )}
+                          </div>
                         </div>
+                        <button
+                          onClick={() => {
+                            if (inlineAddSpeaker === v.name) {
+                              setInlineAddSpeaker(null)
+                            } else {
+                              setInlineAddSpeaker(v.name)
+                              setInlineAddForm({ name: v.name, shortName: v.short_name || '', isHost: false })
+                              setShowAddForm(false)
+                              setEditingSpeaker(null)
+                            }
+                          }}
+                          className={`px-3 py-1 text-xs rounded border transition-colors ${
+                            inlineAddSpeaker === v.name
+                              ? 'bg-purple-100 text-purple-700 border-purple-300'
+                              : 'text-purple-600 hover:bg-purple-100 border-purple-200'
+                          }`}
+                        >
+                          {inlineAddSpeaker === v.name ? 'Cancel' : 'Add as Speaker'}
+                        </button>
                       </div>
-                      <button
-                        onClick={() => {
-                          setFormData({ name: v.name, shortName: v.short_name, isHost: false })
-                          setShowAddForm(true)
-                        }}
-                        className="px-3 py-1 text-xs text-purple-600 hover:bg-purple-100 rounded border border-purple-200 transition-colors"
-                      >
-                        Add as Speaker
-                      </button>
+                      {/* Inline add form — pops right under this card */}
+                      {inlineAddSpeaker === v.name && (
+                        <div className="mt-1 p-3 bg-purple-50 rounded-lg border border-purple-200">
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">Full Name *</label>
+                              <input
+                                type="text"
+                                value={inlineAddForm.name}
+                                onChange={(e) => setInlineAddForm(f => ({ ...f, name: e.target.value }))}
+                                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-purple-500"
+                                autoFocus
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">Short Name</label>
+                              <input
+                                type="text"
+                                value={inlineAddForm.shortName}
+                                onChange={(e) => setInlineAddForm(f => ({ ...f, shortName: e.target.value }))}
+                                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-purple-500"
+                              />
+                            </div>
+                            <div className="flex items-end gap-3">
+                              <label className="flex items-center gap-1.5 cursor-pointer text-sm text-gray-700">
+                                <input
+                                  type="checkbox"
+                                  checked={inlineAddForm.isHost}
+                                  onChange={(e) => setInlineAddForm(f => ({ ...f, isHost: e.target.checked }))}
+                                  className="w-3.5 h-3.5"
+                                />
+                                Is Host
+                              </label>
+                            </div>
+                          </div>
+                          <div className="flex gap-2 mt-3">
+                            <button
+                              onClick={handleInlineAddSpeaker}
+                              className="px-3 py-1.5 bg-purple-500 hover:bg-purple-600 text-white rounded text-xs font-medium transition-colors"
+                            >
+                              Add Speaker
+                            </button>
+                            <button
+                              onClick={() => setInlineAddSpeaker(null)}
+                              className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded text-xs transition-colors"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </>
