@@ -16,6 +16,10 @@ node_modules/
 /playwright/.cache/
 /playwright/.auth/
 
+# macOS
+.DS_Store
+**/.DS_Store
+
 # Rust/Tauri
 /src-tauri/target/
 
@@ -23,6 +27,13 @@ node_modules/
 __pycache__/
 *.pyc
 venv/
+
+# Build output
+scripts/dashboard-react/dist/
+
+# Accidental files
+--help
+scripts/dashboard-react/--help
 
 # Data files (large / generated)
 scripts/episodes/*.mp3
