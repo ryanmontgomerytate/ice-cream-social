@@ -25,11 +25,12 @@ const CONTEXT_COLORS = {
   diarize:    'bg-orange-100 text-orange-700',
 }
 
-function PipelineStats({ stats, currentActivity }) {
+function PipelineStats({ stats, currentActivity, onOpenEpisode }) {
   const [pipelineStats, setPipelineStats] = useState(null)
   const [health, setHealth] = useState(null)
   const [recentErrors, setRecentErrors] = useState([])
   const [loading, setLoading] = useState(true)
+  const [errorsVisible, setErrorsVisible] = useState(true)
   const fetchingRef = useRef(false)
 
   const loadPipelineStats = async () => {
@@ -63,7 +64,7 @@ function PipelineStats({ stats, currentActivity }) {
 
   return (
     <div className="space-y-6">
-      <Stats stats={stats} />
+      <Stats stats={stats} onOpenEpisode={onOpenEpisode} />
       <CurrentActivity activity={currentActivity} />
 
       {/* Pipeline Health Cards */}
@@ -128,11 +129,22 @@ function PipelineStats({ stats, currentActivity }) {
       )}
 
       {/* Recent Pipeline Errors */}
-      {recentErrors.length > 0 && (
+      {recentErrors.length > 0 && errorsVisible && (
         <div className="bg-white rounded-lg shadow-sm border border-red-200">
           <div className="px-4 py-3 border-b border-red-100 flex items-center justify-between">
             <h3 className="text-sm font-semibold text-red-800">Recent Pipeline Errors</h3>
-            <span className="text-xs text-red-500">{recentErrors.filter(e => !e.resolved).length} unresolved</span>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-red-500">{recentErrors.filter(e => !e.resolved).length} unresolved</span>
+              <button
+                onClick={() => setErrorsVisible(false)}
+                className="text-red-400 hover:text-red-600 transition-colors"
+                title="Dismiss"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
           </div>
           <div className="divide-y divide-red-50">
             {recentErrors.map((err) => (

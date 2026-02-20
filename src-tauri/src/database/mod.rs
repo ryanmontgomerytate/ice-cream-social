@@ -536,6 +536,23 @@ Mark the start time of each segment.',
             conn.execute_batch("ALTER TABLE category_rules ADD COLUMN keywords TEXT")?;
         }
 
+        // Chapter label rules (auto-labeling from transcript text)
+        conn.execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS chapter_label_rules (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                chapter_type_id INTEGER NOT NULL,
+                pattern TEXT NOT NULL,
+                match_type TEXT NOT NULL DEFAULT 'contains',
+                priority INTEGER DEFAULT 0,
+                enabled INTEGER DEFAULT 1,
+                created_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (chapter_type_id) REFERENCES chapter_types(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_chapter_label_rules_type ON chapter_label_rules(chapter_type_id);
+            "#,
+        )?;
+
         // Wiki lore tables (fandom wiki integration)
         conn.execute_batch(
             r#"
@@ -635,6 +652,36 @@ Mark the start time of each segment.',
             );
             CREATE INDEX IF NOT EXISTS idx_pipeline_errors_episode ON pipeline_errors(episode_id);
             CREATE INDEX IF NOT EXISTS idx_pipeline_errors_occurred ON pipeline_errors(occurred_at DESC);
+            "#,
+        )?;
+
+        // Migration: Add is_performance_bit column to transcript_segments (idempotent)
+        let _ = conn.execute(
+            "ALTER TABLE transcript_segments ADD COLUMN is_performance_bit INTEGER DEFAULT 0",
+            [],
+        ); // Ignore error if column already exists
+
+        // Segment classifications (Qwen audio analysis results, pending human review)
+        conn.execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS segment_classifications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                episode_id INTEGER NOT NULL,
+                segment_idx INTEGER NOT NULL,
+                classifier TEXT NOT NULL DEFAULT 'qwen_omni',
+                is_performance_bit INTEGER DEFAULT 0,
+                character_name TEXT,
+                character_id INTEGER,
+                speaker_note TEXT,
+                tone_description TEXT,
+                confidence REAL,
+                approved INTEGER DEFAULT 0,
+                created_at TEXT DEFAULT (datetime('now', 'localtime')),
+                FOREIGN KEY (episode_id) REFERENCES episodes(id) ON DELETE CASCADE,
+                FOREIGN KEY (character_id) REFERENCES characters(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_seg_class_episode ON segment_classifications(episode_id);
+            CREATE INDEX IF NOT EXISTS idx_seg_class_approved ON segment_classifications(approved);
             "#,
         )?;
 
@@ -1968,6 +2015,16 @@ Mark the start time of each segment.',
         })
     }
 
+    pub fn get_processed_today(&self) -> Result<i32> {
+        let conn = self.conn.lock().unwrap();
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM episodes WHERE date(transcribed_date) = date('now', 'localtime') AND canonical_id IS NULL",
+            [],
+            |row| row.get(0),
+        )?;
+        Ok(count as i32)
+    }
+
     pub fn get_recently_completed_episodes(&self, limit: i64) -> Result<Vec<CompletedEpisodeTiming>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
@@ -2271,6 +2328,21 @@ Mark the start time of each segment.',
         Ok(())
     }
 
+    /// Returns a map of speaker_name -> episode_count (how many distinct episodes each speaker appears in)
+    pub fn get_speaker_episode_counts(&self) -> Result<std::collections::HashMap<String, i32>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT s.name, COUNT(DISTINCT es.episode_id) as episode_count
+             FROM episode_speakers es
+             JOIN speakers s ON es.speaker_id = s.id
+             GROUP BY s.id, s.name"
+        )?;
+        let map: std::collections::HashMap<String, i32> = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i32>(1)?))
+        })?.filter_map(|r| r.ok()).collect();
+        Ok(map)
+    }
+
     pub fn get_episode_speaker_assignments(&self, episode_id: i64) -> Result<Vec<EpisodeSpeakerAssignment>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
@@ -2444,6 +2516,73 @@ Mark the start time of each segment.',
         let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM episode_chapters WHERE id = ?1", [chapter_id])?;
         Ok(())
+    }
+
+    // =========================================================================
+    // Chapter Label Rules
+    // =========================================================================
+
+    pub fn get_chapter_label_rules(&self) -> Result<Vec<models::ChapterLabelRule>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            r#"SELECT clr.id, clr.chapter_type_id, ct.name, ct.color, ct.icon,
+                      clr.pattern, clr.match_type, clr.priority, clr.enabled
+               FROM chapter_label_rules clr
+               JOIN chapter_types ct ON clr.chapter_type_id = ct.id
+               ORDER BY clr.priority DESC, clr.id"#,
+        )?;
+        let rules = stmt.query_map([], |row| {
+            Ok(models::ChapterLabelRule {
+                id: row.get(0)?,
+                chapter_type_id: row.get(1)?,
+                chapter_type_name: row.get(2)?,
+                chapter_type_color: row.get(3)?,
+                chapter_type_icon: row.get(4)?,
+                pattern: row.get(5)?,
+                match_type: row.get(6)?,
+                priority: row.get(7)?,
+                enabled: row.get::<_, i32>(8)? != 0,
+            })
+        })?.filter_map(|r| r.ok()).collect();
+        Ok(rules)
+    }
+
+    pub fn save_chapter_label_rule(
+        &self, id: Option<i64>, chapter_type_id: i64, pattern: &str,
+        match_type: &str, priority: i32, enabled: bool,
+    ) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        if let Some(rule_id) = id {
+            conn.execute(
+                "UPDATE chapter_label_rules SET chapter_type_id=?1, pattern=?2, match_type=?3, priority=?4, enabled=?5 WHERE id=?6",
+                params![chapter_type_id, pattern, match_type, priority, enabled as i32, rule_id],
+            )?;
+            Ok(rule_id)
+        } else {
+            conn.execute(
+                "INSERT INTO chapter_label_rules (chapter_type_id, pattern, match_type, priority, enabled) VALUES (?1,?2,?3,?4,?5)",
+                params![chapter_type_id, pattern, match_type, priority, enabled as i32],
+            )?;
+            Ok(conn.last_insert_rowid())
+        }
+    }
+
+    pub fn delete_chapter_label_rule(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM chapter_label_rules WHERE id = ?1", [id])?;
+        Ok(())
+    }
+
+    /// Get raw transcript segments for an episode (for auto-labeling)
+    pub fn get_transcript_segments_for_episode(&self, episode_id: i64) -> Result<Vec<(i32, String, f64)>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT segment_idx, text, start_time FROM transcript_segments WHERE episode_id = ?1 ORDER BY segment_idx",
+        )?;
+        let rows = stmt.query_map([episode_id], |row| {
+            Ok((row.get::<_, i32>(0)?, row.get::<_, String>(1)?, row.get::<_, f64>(2)?))
+        })?.filter_map(|r| r.ok()).collect();
+        Ok(rows)
     }
 
     // =========================================================================
@@ -3404,6 +3543,17 @@ Mark the start time of each segment.',
         Ok(count)
     }
 
+    /// Mark speaker-correction flags as resolved after successful re-diarization
+    pub fn resolve_speaker_flags_for_episode(&self, episode_id: i64) -> Result<usize> {
+        let conn = self.conn.lock().unwrap();
+        let n = conn.execute(
+            "UPDATE flagged_segments SET resolved = 1 \
+             WHERE episode_id = ?1 AND flag_type IN ('wrong_speaker', 'multiple_speakers', 'character_voice') AND resolved = 0",
+            [episode_id],
+        )?;
+        Ok(n)
+    }
+
     /// Get unresolved speaker-related flags for an episode (wrong_speaker + multiple_speakers)
     pub fn get_unresolved_speaker_flags(&self, episode_id: i64) -> Result<Vec<models::FlaggedSegment>> {
         let conn = self.conn.lock().unwrap();
@@ -3557,6 +3707,243 @@ Mark the start time of each segment.',
     pub fn delete_audio_drop_instance(&self, id: i64) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM audio_drop_instances WHERE id = ?1", [id])?;
+        Ok(())
+    }
+
+    // -------------------------------------------------------------------------
+    // Subagent support queries
+    // -------------------------------------------------------------------------
+
+    /// Count completed+diarized episodes that still have raw SPEAKER_XX labels
+    /// in transcript_segments (i.e., speaker names were never saved).
+    pub fn count_unresolved_speaker_labels(&self) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(DISTINCT ts.episode_id)
+             FROM transcript_segments ts
+             JOIN episodes e ON e.id = ts.episode_id
+             WHERE e.status = 'completed'
+               AND e.has_diarization = 1
+               AND ts.speaker LIKE 'SPEAKER_%'",
+            [],
+            |row| row.get(0),
+        )?;
+        Ok(count)
+    }
+
+    /// Count completed episodes with zero FTS-indexed segments.
+    pub fn count_unindexed_completed_episodes(&self) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*)
+             FROM episodes e
+             WHERE e.status = 'completed'
+               AND NOT EXISTS (
+                   SELECT 1 FROM transcript_segments ts WHERE ts.episode_id = e.id
+               )",
+            [],
+            |row| row.get(0),
+        )?;
+        Ok(count)
+    }
+
+    /// Return episode IDs for completed episodes that have no extraction_runs record.
+    pub fn get_unextracted_episode_ids(&self, limit: i64) -> Result<Vec<i64>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT e.id FROM episodes e
+             WHERE e.status = 'completed'
+               AND NOT EXISTS (
+                   SELECT 1 FROM extraction_runs er WHERE er.episode_id = e.id
+               )
+             ORDER BY e.id DESC
+             LIMIT ?1",
+        )?;
+        let ids = stmt
+            .query_map([limit], |row| row.get(0))?
+            .collect::<std::result::Result<Vec<i64>, _>>()?;
+        Ok(ids)
+    }
+
+    /// Return episode IDs that have unresolved speaker-related flags but no
+    /// hints file on disk (so hints_prefetch_agent can pre-generate them).
+    pub fn get_episodes_with_unresolved_speaker_flags(&self) -> Result<Vec<i64>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT DISTINCT episode_id FROM flagged_segments
+             WHERE flag_type IN ('wrong_speaker', 'multiple_speakers', 'character_voice')
+               AND resolved = 0
+             ORDER BY episode_id",
+        )?;
+        let ids = stmt
+            .query_map([], |row| row.get(0))?
+            .collect::<std::result::Result<Vec<i64>, _>>()?;
+        Ok(ids)
+    }
+
+    /// Get just the audio_file_path for an episode (for subprocess calls).
+    pub fn get_episode_audio_path(&self, episode_id: i64) -> Result<Option<String>> {
+        let conn = self.conn.lock().unwrap();
+        let path = conn.query_row(
+            "SELECT audio_file_path FROM episodes WHERE id = ?1",
+            [episode_id],
+            |row| row.get(0),
+        ).optional()?;
+        Ok(path)
+    }
+
+    // =========================================================================
+    // Segment Classifications (Qwen audio analysis)
+    // =========================================================================
+
+    /// Save a batch of classification results (all pending, approved=0).
+    /// Replaces any existing pending classification for the same (episode_id, segment_idx).
+    pub fn save_segment_classifications(
+        &self,
+        episode_id: i64,
+        results: &[serde_json::Value],
+    ) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
+        for result in results {
+            let segment_idx = result.get("segment_idx").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+            let is_performance_bit = result.get("is_performance_bit").and_then(|v| v.as_bool()).unwrap_or(false) as i32;
+            let character_name = result.get("character_name").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let speaker_note = result.get("speaker_note").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let tone_description = result.get("tone_description").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let confidence = result.get("confidence").and_then(|v| v.as_f64());
+
+            // Try to resolve character_id from name
+            let character_id: Option<i64> = if let Some(ref name) = character_name {
+                conn.query_row(
+                    "SELECT id FROM characters WHERE LOWER(name) = LOWER(?1) LIMIT 1",
+                    params![name],
+                    |row| row.get(0),
+                ).optional().unwrap_or(None)
+            } else {
+                None
+            };
+
+            // Delete existing pending classification for this segment (replace strategy)
+            conn.execute(
+                "DELETE FROM segment_classifications WHERE episode_id = ?1 AND segment_idx = ?2 AND approved = 0",
+                params![episode_id, segment_idx],
+            )?;
+
+            conn.execute(
+                "INSERT INTO segment_classifications
+                 (episode_id, segment_idx, classifier, is_performance_bit, character_name, character_id,
+                  speaker_note, tone_description, confidence, approved, created_at)
+                 VALUES (?1, ?2, 'qwen_omni', ?3, ?4, ?5, ?6, ?7, ?8, 0, ?9)",
+                params![
+                    episode_id, segment_idx, is_performance_bit,
+                    character_name, character_id,
+                    speaker_note, tone_description, confidence,
+                    now,
+                ],
+            )?;
+        }
+
+        Ok(())
+    }
+
+    /// Get all segment classifications for an episode (with joined segment text/timing).
+    pub fn get_segment_classifications(
+        &self,
+        episode_id: i64,
+    ) -> Result<Vec<models::SegmentClassification>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT sc.id, sc.episode_id, sc.segment_idx, sc.classifier,
+                    sc.is_performance_bit, sc.character_name, sc.character_id,
+                    sc.speaker_note, sc.tone_description, sc.confidence,
+                    sc.approved, sc.created_at,
+                    ts.text, ts.start_time
+             FROM segment_classifications sc
+             LEFT JOIN transcript_segments ts
+               ON ts.episode_id = sc.episode_id AND ts.segment_idx = sc.segment_idx
+             WHERE sc.episode_id = ?1
+             ORDER BY sc.segment_idx ASC",
+        )?;
+        let rows = stmt.query_map([episode_id], |row| {
+            Ok(models::SegmentClassification {
+                id: row.get(0)?,
+                episode_id: row.get(1)?,
+                segment_idx: row.get(2)?,
+                classifier: row.get(3)?,
+                is_performance_bit: {
+                    let v: i32 = row.get(4)?;
+                    v != 0
+                },
+                character_name: row.get(5)?,
+                character_id: row.get(6)?,
+                speaker_note: row.get(7)?,
+                tone_description: row.get(8)?,
+                confidence: row.get(9)?,
+                approved: row.get(10)?,
+                created_at: row.get(11)?,
+                segment_text: row.get(12)?,
+                segment_start_time: row.get(13)?,
+            })
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// Approve a classification: set approved=1, write is_performance_bit to
+    /// transcript_segments, and optionally create a character_appearances entry.
+    pub fn approve_segment_classification(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+
+        // Fetch the classification
+        let (episode_id, segment_idx, is_performance_bit, character_id, start_time_opt): (i64, i32, i32, Option<i64>, Option<f64>) =
+            conn.query_row(
+                "SELECT sc.episode_id, sc.segment_idx, sc.is_performance_bit, sc.character_id,
+                        ts.start_time
+                 FROM segment_classifications sc
+                 LEFT JOIN transcript_segments ts
+                   ON ts.episode_id = sc.episode_id AND ts.segment_idx = sc.segment_idx
+                 WHERE sc.id = ?1",
+                [id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+            )?;
+
+        // Mark approved
+        conn.execute(
+            "UPDATE segment_classifications SET approved = 1 WHERE id = ?1",
+            [id],
+        )?;
+
+        // Write is_performance_bit to transcript_segments
+        if is_performance_bit != 0 {
+            conn.execute(
+                "UPDATE transcript_segments SET is_performance_bit = 1
+                 WHERE episode_id = ?1 AND segment_idx = ?2",
+                params![episode_id, segment_idx],
+            )?;
+        }
+
+        // Create character_appearance if character matched
+        if let Some(char_id) = character_id {
+            conn.execute(
+                "INSERT OR IGNORE INTO character_appearances
+                 (character_id, episode_id, start_time, segment_idx, notes)
+                 VALUES (?1, ?2, ?3, ?4, 'Auto-detected by Qwen classification')",
+                params![char_id, episode_id, start_time_opt, segment_idx],
+            )?;
+        }
+
+        Ok(())
+    }
+
+    /// Reject a classification: set approved=-1, no writes to segments.
+    pub fn reject_segment_classification(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE segment_classifications SET approved = -1 WHERE id = ?1",
+            [id],
+        )?;
         Ok(())
     }
 }

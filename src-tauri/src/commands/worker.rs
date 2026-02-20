@@ -1,4 +1,4 @@
-use crate::database::EpisodeSummary;
+use crate::database::{Database, EpisodeSummary};
 use crate::error::AppError;
 use crate::worker::WorkerState;
 use serde::Serialize;
@@ -46,10 +46,12 @@ pub struct WorkerInfo {
 #[tauri::command]
 pub async fn get_worker_status(
     worker_state: State<'_, Arc<RwLock<WorkerState>>>,
+    db: State<'_, Arc<Database>>,
 ) -> Result<WorkerStatus, AppError> {
     let state = worker_state.read().await;
 
     let memory_info = get_memory_info();
+    let processed_today = db.get_processed_today().unwrap_or(state.processed_today);
 
     // Convert slots to serializable info
     let slot_infos: Vec<PipelineSlotInfo> = state
@@ -96,7 +98,7 @@ pub async fn get_worker_status(
             model: state.model.clone(),
             memory_mb: memory_info.0,
             memory_percent: memory_info.1,
-            processed_today: Some(state.processed_today),
+            processed_today: Some(processed_today),
         },
     })
 }

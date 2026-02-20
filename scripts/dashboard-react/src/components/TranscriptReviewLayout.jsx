@@ -1,7 +1,13 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
+import { episodesAPI } from '../services/api'
 import EpisodeSidebar from './EpisodeSidebar'
 import TranscriptEditor from './TranscriptEditor'
 import PropertiesPanel from './PropertiesPanel'
+import {
+  TranscriptReviewErrorBoundary,
+  TranscriptReviewProvider,
+  useTranscriptReview,
+} from './TranscriptReviewContext'
 
 /**
  * TranscriptReviewLayout - Master-detail layout for transcript review
@@ -15,27 +21,38 @@ import PropertiesPanel from './PropertiesPanel'
  *
  * When an episode is selected, the sidebar collapses to a thin strip.
  * Click the strip to re-expand and browse episodes again.
+ *
+ * All shared state (flags, characters, chapters, speakers, etc.) lives in
+ * TranscriptReviewContext so TranscriptEditor and PropertiesPanel can
+ * communicate without window globals or deep prop drilling.
  */
-export default function TranscriptReviewLayout({ onNotification }) {
+export default function TranscriptReviewLayout({ onNotification, isVisible, openEpisodeId, onOpenEpisodeHandled }) {
   const [selectedEpisode, setSelectedEpisode] = useState(null)
+
+  return (
+    <TranscriptReviewProvider episode={selectedEpisode} onNotification={onNotification} isVisible={isVisible}>
+      <TranscriptReviewErrorBoundary>
+        <TranscriptReviewLayoutInner
+          selectedEpisode={selectedEpisode}
+          setSelectedEpisode={setSelectedEpisode}
+          onNotification={onNotification}
+          openEpisodeId={openEpisodeId}
+          onOpenEpisodeHandled={onOpenEpisodeHandled}
+        />
+      </TranscriptReviewErrorBoundary>
+    </TranscriptReviewProvider>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Inner layout — has access to TranscriptReviewContext
+// ---------------------------------------------------------------------------
+function TranscriptReviewLayoutInner({ selectedEpisode, setSelectedEpisode, onNotification, openEpisodeId, onOpenEpisodeHandled }) {
+  const { resetState } = useTranscriptReview()
+
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [hasTranscript, setHasTranscript] = useState(false)
   const [transcriptLoading, setTranscriptLoading] = useState(false)
-
-  // Shared state between TranscriptEditor and PropertiesPanel
-  const [flaggedSegments, setFlaggedSegments] = useState({})
-  const [characterAppearances, setCharacterAppearances] = useState([])
-  const [episodeChapters, setEpisodeChapters] = useState([])
-  const [markedSamples, setMarkedSamples] = useState({})
-  const [characters, setCharacters] = useState([])
-  const [chapterTypes, setChapterTypes] = useState([])
-  const [voiceLibrary, setVoiceLibrary] = useState([])
-  const [speakers, setSpeakers] = useState([])
-  const [speakerNames, setSpeakerNames] = useState({})
-  const [audioDropInstances, setAudioDropInstances] = useState([])
-  const [audioDrops, setAudioDrops] = useState([])
-  const [segments, setSegments] = useState(null)
-  const [selectedSegmentIdx, setSelectedSegmentIdx] = useState(null)
 
   // Handle closing transcript — deselect episode, expand library
   const handleCloseEpisode = useCallback(() => {
@@ -43,17 +60,8 @@ export default function TranscriptReviewLayout({ onNotification }) {
     setSidebarCollapsed(false)
     setHasTranscript(false)
     setTranscriptLoading(false)
-    setFlaggedSegments({})
-    setCharacterAppearances([])
-    setEpisodeChapters([])
-    setMarkedSamples({})
-    setSpeakers([])
-    setSpeakerNames({})
-    setAudioDropInstances([])
-    setAudioDrops([])
-    setSegments(null)
-    setSelectedSegmentIdx(null)
-  }, [])
+    resetState()
+  }, [resetState, setSelectedEpisode])
 
   // Handle episode selection — collapse sidebar when viewing transcript
   const handleSelectEpisode = useCallback((episode) => {
@@ -61,73 +69,27 @@ export default function TranscriptReviewLayout({ onNotification }) {
     setSidebarCollapsed(true)
     setHasTranscript(false)
     setTranscriptLoading(true)
-    // Reset state for new episode
-    setFlaggedSegments({})
-    setCharacterAppearances([])
-    setEpisodeChapters([])
-    setMarkedSamples({})
-    setSpeakers([])
-    setSpeakerNames({})
-    setAudioDropInstances([])
-    setAudioDrops([])
-    setSegments(null)
-    setSelectedSegmentIdx(null)
-  }, [])
+    resetState()
+  }, [resetState, setSelectedEpisode])
 
   const handleTranscriptLoaded = useCallback((loaded) => {
     setHasTranscript(loaded)
     setTranscriptLoading(false)
   }, [])
 
+  // When openEpisodeId is set from outside (e.g. Stats tab), fetch and open that episode
+  useEffect(() => {
+    if (!openEpisodeId) return
+    episodesAPI.getEpisode(openEpisodeId)
+      .then(episode => {
+        if (episode) handleSelectEpisode(episode)
+      })
+      .catch(() => {})
+      .finally(() => onOpenEpisodeHandled?.())
+  }, [openEpisodeId])
+
   // Show editor layout when transcript is loaded OR while loading (so spinner is visible)
   const showEditorPanels = selectedEpisode && (hasTranscript || transcriptLoading)
-
-  // PropertiesPanel callbacks — route through TranscriptEditor's window globals
-  const handleDeleteFlag = useCallback((idx) => {
-    window.__transcriptEditorDeleteFlag?.(idx)
-  }, [])
-
-  const handleRemoveCharacter = useCallback((appearanceId) => {
-    window.__transcriptEditorRemoveCharacter?.(appearanceId)
-  }, [])
-
-  const handleDeleteChapter = useCallback((chapterId) => {
-    window.__transcriptEditorDeleteChapter?.(chapterId)
-  }, [])
-
-  const handleToggleVoiceSample = useCallback((idx) => {
-    window.__transcriptEditorToggleVoiceSample?.(idx)
-  }, [])
-
-  const handleSeekToSegment = useCallback((idx) => {
-    if (typeof window !== 'undefined' && window.__transcriptEditorSeekToSegment) {
-      window.__transcriptEditorSeekToSegment(idx)
-    }
-  }, [])
-
-  const handleRemoveAudioDrop = useCallback((instanceId) => {
-    window.__transcriptEditorRemoveAudioDrop?.(instanceId)
-  }, [])
-
-  const handleSeekToSpeaker = useCallback((speakerId) => {
-    if (typeof window !== 'undefined' && window.__transcriptEditorSeekToSpeaker) {
-      window.__transcriptEditorSeekToSpeaker(speakerId)
-    }
-  }, [])
-
-  const handleAssignSpeakerName = useCallback((speakerId, name) => {
-    setSpeakerNames(prev => ({ ...prev, [speakerId]: name }))
-    if (typeof window !== 'undefined' && window.__transcriptEditorAssignSpeakerName) {
-      window.__transcriptEditorAssignSpeakerName(speakerId, name)
-    }
-  }, [])
-
-  const handleAssignAudioDrop = useCallback((speakerId, drop) => {
-    setSpeakerNames(prev => ({ ...prev, [speakerId]: drop.name }))
-    if (typeof window !== 'undefined' && window.__transcriptEditorAssignAudioDrop) {
-      window.__transcriptEditorAssignAudioDrop(speakerId, drop)
-    }
-  }, [])
 
   return (
     <div className="h-[calc(100vh-220px)] flex bg-gray-100 rounded-xl overflow-hidden shadow-lg border border-gray-200">
@@ -184,24 +146,10 @@ export default function TranscriptReviewLayout({ onNotification }) {
       )}
 
       {/* Center - Transcript Editor (hidden when library is expanded) */}
-      {(selectedEpisode) && (
+      {selectedEpisode && (
         <div className={`${showEditorPanels ? 'flex-1' : 'w-0 overflow-hidden'} min-w-0`}>
           <TranscriptEditor
-            episode={selectedEpisode}
             onClose={handleCloseEpisode}
-            onNotification={onNotification}
-            onFlaggedSegmentsChange={setFlaggedSegments}
-            onCharacterAppearancesChange={setCharacterAppearances}
-            onChaptersChange={setEpisodeChapters}
-            onMarkedSamplesChange={setMarkedSamples}
-            onSpeakersChange={setSpeakers}
-            onSpeakerNamesChange={setSpeakerNames}
-            onVoiceLibraryChange={setVoiceLibrary}
-            onAudioDropInstancesChange={setAudioDropInstances}
-            onAudioDropsChange={setAudioDrops}
-            onSegmentsChange={setSegments}
-            selectedSegmentIdx={selectedSegmentIdx}
-            onSelectedSegmentChange={setSelectedSegmentIdx}
             onTranscriptLoaded={handleTranscriptLoaded}
           />
         </div>
@@ -209,31 +157,7 @@ export default function TranscriptReviewLayout({ onNotification }) {
 
       {/* Right Sidebar - Properties Panel (only when transcript is loaded) */}
       {showEditorPanels && (
-        <PropertiesPanel
-          episode={selectedEpisode}
-          flaggedSegments={flaggedSegments}
-          characterAppearances={characterAppearances}
-          episodeChapters={episodeChapters}
-          characters={characters}
-          chapterTypes={chapterTypes}
-          voiceLibrary={voiceLibrary}
-          markedSamples={markedSamples}
-          speakers={speakers}
-          speakerNames={speakerNames}
-          audioDropInstances={audioDropInstances}
-          audioDrops={audioDrops}
-          segments={segments}
-          selectedSegmentIdx={selectedSegmentIdx}
-          onDeleteFlag={handleDeleteFlag}
-          onRemoveCharacter={handleRemoveCharacter}
-          onDeleteChapter={handleDeleteChapter}
-          onToggleVoiceSample={handleToggleVoiceSample}
-          onSeekToSegment={handleSeekToSegment}
-          onAssignSpeakerName={handleAssignSpeakerName}
-          onAssignAudioDrop={handleAssignAudioDrop}
-          onSeekToSpeaker={handleSeekToSpeaker}
-          onRemoveAudioDrop={handleRemoveAudioDrop}
-        />
+        <PropertiesPanel />
       )}
     </div>
   )

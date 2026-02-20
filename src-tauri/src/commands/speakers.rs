@@ -114,11 +114,15 @@ pub struct VoiceLibrarySpeaker {
     pub sample_count: i32,
     pub sample_file: Option<String>,
     pub file_count: i32,
+    pub episode_count: i32,
 }
 
 /// Get voice library information
 #[tauri::command]
-pub async fn get_voice_library() -> Result<Vec<VoiceLibrarySpeaker>, AppError> {
+pub async fn get_voice_library(
+    db: State<'_, Arc<Database>>,
+) -> Result<Vec<VoiceLibrarySpeaker>, AppError> {
+    let episode_counts = db.get_speaker_episode_counts().unwrap_or_default();
     log::info!("get_voice_library called");
 
     let home_dir = dirs::home_dir().ok_or("Failed to get home directory")?;
@@ -155,12 +159,14 @@ pub async fn get_voice_library() -> Result<Vec<VoiceLibrarySpeaker>, AppError> {
                 .filter_map(|s| {
                     let name = s.get("name")?.as_str()?.to_string();
                     let file_count = count_audio_files_for(&name, &samples_dir, &sound_bites_dir);
+                    let episode_count = *episode_counts.get(&name).unwrap_or(&0);
                     Some(VoiceLibrarySpeaker {
                         name,
                         short_name: s.get("short_name")?.as_str()?.to_string(),
                         sample_count: s.get("sample_count")?.as_i64()? as i32,
                         sample_file: s.get("sample_file").and_then(|f| f.as_str()).map(|s| s.to_string()),
                         file_count,
+                        episode_count,
                     })
                 })
                 .collect()

@@ -1,5 +1,177 @@
 # Development Sessions Log
 
+## Session: February 20, 2026 (continued)
+
+### Exception List Fixes — 11 Bug Reports from exception.md
+
+**Goal**: Fix all actionable items in `exception.md`.
+
+**Changes per exception:**
+
+**#1 Multiple speakers flag** — `TranscriptEditor.jsx`
+- Wrapped speaker checklist in `max-h-48 overflow-y-auto` scroll container
+- Added "← Back" button at top of panel
+- Cancel button now returns to flag type menu (`setActivePicker('flag')`)
+
+**#2 Wrong speaker missing sound bites** — `TranscriptEditor.jsx`
+- Added "Sound Bites" section below voice library in `flag-wrong-speaker` picker
+- Uses existing `audioDrops` state from context
+
+**#3 Queue row → open episode** — `Stats.jsx`, `PipelineStats.jsx`, `App.jsx`, `TranscriptReviewLayout.jsx`
+- Added `onOpenEpisode` callback prop through the component tree
+- Clicking `→` on a queue row switches to Episodes tab and opens the episode
+
+**#4b Model shows "large-v3"** — `worker/mod.rs`, `worker/transcribe.rs`, `lib.rs`
+- Changed `WorkerState::default()` model from `"large-v3"` to `"medium"`
+- Changed transcribe fallback from `"large-v3"` to `"medium"`
+- Worker init now reads `transcription_model` setting from DB
+
+**#4a Done Today resets on restart** — `database/mod.rs`, `commands/worker.rs`
+- Added `get_processed_today()` DB method counting today's episodes from DB
+- `get_worker_status` now returns DB-sourced count instead of in-memory counter
+
+**#5 Settings flickering + scroll** — `SettingsPanel.jsx`
+- Replaced boolean `saving` with `savingKey` string — only disables the specific toggle being saved
+- Added `overflow-y-auto max-h-[calc(100vh-200px)]` to content div
+
+**#6 Qwen targets all flags** — `PropertiesPanel.jsx`
+- `handleRunQwen` now filters to `character_voice` flags only
+- Button shows `characterFlagCount` and is disabled when no character flags exist
+
+**#7 Flags persist after reprocess** — `TranscriptEditor.jsx`
+- Frontend now filters out `resolved: true` flags when loading flagged segments
+- Backend already resolves flags in `handle_diarize_complete` (was already implemented)
+
+**#9 New speakers not in dropdown** — `TranscriptEditor.jsx`, `TranscriptReviewContext.jsx`, `TranscriptReviewLayout.jsx`, `App.jsx`
+- Added `isVisible` prop thread from App → Layout → Context → Editor
+- TranscriptEditor refreshes voiceLibrary when tab becomes visible (using `prevVisibleRef`)
+
+**#10 Voice ID count inaccurate** — `database/mod.rs`, `commands/speakers.rs`, `SpeakersPanel.jsx`
+- Added `get_speaker_episode_counts()` DB method (counts distinct episodes per speaker)
+- `get_voice_library` command now accepts `db` and returns `episode_count`
+- SpeakersPanel shows "Voice ID (N ep)" instead of "Voice ID (Nx)"
+
+**#11 Episode lost on tab switch** — `App.jsx`
+- Switched Episodes tab from conditional render to `display:none`
+- Component stays mounted across tab switches, preserving all state
+
+**Deferred**: #4c/4d (card removal, qwen stats), chapter rule naming, #8 sound bites rebranding
+
+**Current state**: All 11 actionable exceptions addressed. Rust and React both build clean.
+
+---
+
+## Session: February 20, 2026
+
+### Qwen2.5-Omni-3B — Character & Performance Bit Classification (Full Implementation)
+
+**Goal**: Implement the full Qwen classification pipeline as a targeted post-processor on flagged/suspected segments.
+
+**Strategy**: Pyannote stays primary diarization. Qwen runs on short clips (≤60s) around flagged segments to classify:
+1. Is this a performance bit / character voice?
+2. Which character (from known list)?
+3. Was Pyannote wrong about this segment?
+
+**Files created/modified**:
+
+**`scripts/qwen_classify_segments.py`** (new)
+- Accepts `--audio-file`, `--segments` (JSON), `--characters` (JSON)
+- Loads full audio once, then extracts padded clips per segment (±5s, ≤60s cap)
+- Loads Qwen model once (amortize ~60s load time across all segments)
+- Emits `QWEN_PROGRESS: N` to stdout for Tauri subprocess monitor
+- Matches character names to known characters (fuzzy partial match)
+- Outputs final JSON: `{"status","results":[...],"elapsed_secs"}`
+
+**`src-tauri/src/database/mod.rs`** (modified)
+- `ALTER TABLE transcript_segments ADD COLUMN is_performance_bit INTEGER DEFAULT 0`
+- New `segment_classifications` table (id, episode_id, segment_idx, classifier, is_performance_bit, character_name, character_id, speaker_note, tone_description, confidence, approved 0/1/-1, created_at)
+- New DB methods: `get_episode_audio_path`, `save_segment_classifications`, `get_segment_classifications`, `approve_segment_classification`, `reject_segment_classification`
+
+**`src-tauri/src/database/models.rs`** (modified)
+- Added `SegmentClassification` struct with joined `segment_text`, `segment_start_time`
+
+**`src-tauri/src/commands/content.rs`** (modified)
+- `run_qwen_classification(episode_id, segment_indices)` — spawns Python subprocess, streams QWEN_PROGRESS events, saves pending results to DB
+- `get_segment_classifications(episode_id)` — returns all classifications
+- `approve_segment_classification(id)` — writes is_performance_bit + optional character_appearance
+- `reject_segment_classification(id)` — marks rejected, no segment writes
+
+**`src-tauri/src/lib.rs`** (modified)
+- Registered 4 new commands in invoke_handler
+
+**`scripts/dashboard-react/src/services/tauri.js`** (modified)
+- Added `runQwenClassification`, `getSegmentClassifications`, `approveSegmentClassification`, `rejectSegmentClassification`
+
+**`scripts/dashboard-react/src/services/api.js`** (modified)
+- Added wrappers in `contentAPI` for all 4 new Qwen commands
+
+**`scripts/dashboard-react/src/components/PropertiesPanel.jsx`** (modified)
+- Added `QwenClassificationCard` sub-component
+- Added "Qwen Analysis" accordion section (visible when episode is downloaded + Tauri mode)
+- "Analyze Flagged" button — sends flagged segment indices to Qwen
+- Progress bar while running (listens for `qwen_progress` events)
+- Classification cards: segment text, timestamp, is_performance_bit badge, character name, confidence bar, speaker note
+- Approve / Reject / Approve All actions
+
+### Current State
+- Rust backend compiles clean
+- React frontend builds clean
+- Full Qwen classification pipeline from button → subprocess → DB → review UI
+- Pending verification: actual end-to-end test with a downloaded episode
+
+---
+
+## Session: February 19, 2026
+
+### Qwen2.5-Omni-3B Evaluation
+
+**Goal**: Test Qwen2.5-Omni-3B as a single-pass replacement for the Whisper + Pyannote pipeline, focusing on `is_performance_bit` character-voice detection.
+
+**Model downloaded**: `giangndm/qwen2.5-omni-3b-mlx-4bit` — but this was an MLX conversion with the audio encoder stripped. Deleted it. Downloaded the PyTorch version via HuggingFace `transformers` (~6 GB cached to `~/.cache/huggingface`).
+
+**Script created**: `scripts/qwen_inference.py`
+- Uses `venv/bin/python3.9` (has torch + MPS; python3.14 env lacks torch)
+- Loads `Qwen/Qwen2.5-Omni-3B` via `Qwen2_5OmniForConditionalGeneration`
+- Resamples audio: 44100 Hz → 16000 Hz (Whisper encoder requirement)
+- Disabled TTS talker via `return_audio=False`
+- Uses `json-repair` to recover truncated output
+
+**Test result** (30s of Episode 1171, "High Fives for 2024"):
+- Transcription quality: **accurate** — real words, correct timestamps, detected music intro
+- Speed: **13.6× realtime** (30s audio → 407s processing)
+- Speaker diarization: assigned all segments to SPEAKER_00 (no multi-speaker separation on 30s clip)
+- `is_performance_bit`: fields lost in truncation
+
+**Verdict**: Too slow for batch transcription (68× slower than Whisper). Quality is real.
+
+**Decision**: Keep Whisper + Pyannote for transcription/diarization. Use Qwen later as a **post-processing text classifier** only — feed completed transcript text, ask it to flag `is_performance_bit` per segment. Essentially free in that mode.
+
+**Dependencies added to `venv/lib/python3.9`**:
+- `transformers 4.57.6`
+- `torch 2.8.0`, `torchvision 0.23.0`, `torchaudio 2.8.0` (upgraded from 2.5.1)
+- `soundfile`, `librosa`, `json-repair`, `accelerate`
+
+### Diarization Pipeline Fix
+
+**Problem**: Upgrading torch from 2.5.1 → 2.8.0 (required for Qwen) broke Pyannote. PyTorch 2.6+ changed `torch.load` default from `weights_only=False` → `True`. The existing monkey-patch in `speaker_diarization.py` used `setdefault` which doesn't override explicit `weights_only=True` passed by `lightning_fabric`.
+
+**Fix**: Changed `kwargs.setdefault('weights_only', False)` → `kwargs['weights_only'] = False` (unconditional override) in `speaker_diarization.py:31`.
+
+**Affected episodes** (failed during the bad window, need retry):
+- Episode 899: The Bear, The Fish and The Baby Duckling
+- Episode 900: Dick or Ditch
+- Episode 901: One Beep Strike, Two Beeps Ball
+
+**Verified**: `from pyannote.audio import Pipeline` imports cleanly with torch 2.8.0 after fix.
+
+### Current State
+- Diarization pipeline restored and working
+- Episodes 899–901 need to be requeued for diarization
+- `qwen_inference.py` retained as a test harness for future post-processing classifier work
+- P3 (React Context refactor) + S1–S5 (Rust subagents) plan still pending
+
+---
+
 ## Session: January 27, 2026
 
 ### Setup
@@ -538,3 +710,687 @@
 - Episode sidebar has proper pagination + labeled filter rows
 - Wiki sync more resilient to naming differences between RSS and wiki
 - cargo check passes clean
+
+
+
+## Session: February 14, 2026
+
+  This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+                                 
+     Analysis:                          
+     Let me chronologically analyze the conversation:                   
+
+     1. **First user message**: Implement a detailed plan for "Audio Identification Panel Redesign" - renaming the Speakers tab, adding new backend commands for voice samples,
+     rewriting the SpeakersPanel.jsx component with expandable rows, two sections (Speakers/Sound Bites), lazy sample loading, play/delete per sample.
+                                                       
+     2. **My initial implementation**:                                                                                                                                           
+        - Read all 6 key files (speakers.rs, lib.rs, tauri.js, api.js, SpeakersPanel.jsx, App.jsx)                                
+        - Explored voice library directory structure (samples/ empty, sound_bites/Intro/ with 1 wav file)                                                                        
+        - Discovered embeddings.json has speakers + "🔊 Intro" sound bite entry                                                                                                  
+        - Added VoiceSample struct + get_voice_samples + delete_voice_sample commands to speakers.rs                                                                             
+        - Registered commands in lib.rs                                                                                                                                          
+        - Added API methods to tauri.js and api.js                                                                                                                               
+        - Renamed tab from "Speakers"/"👥" to "Audio ID"/"🎙️ " in App.jsx                                                                                                         
+        - Fully rewrote SpeakersPanel.jsx with expandable rows, two sections, lazy loading                                                                                       
+                                      
+     3. **Second user message**: "these tags are not lining up 4 samples, did you remove the previos samples?, only intro has one be sayd there are 4, also it was not linked to
+     where the sample was taken from. also the loader and all loders going forward should be the ice cream cone one like in the episode editor"
+
+     4. **My fix for the badge/loader issues**:
+        - Discovered embeddings.json `sample_count` is embedding averaging count, not actual file count
+        - Fixed VoiceSample struct name conflict (renamed to VoiceSampleFile to avoid collision with VoiceSample in episodes.rs)
+        - Changed badge from "4 samples" to "Voice ID (4x)" to accurately represent embedding training count
+        - Added green info bar showing source file when expanded
+        - Replaced generic spinner with ice cream cone loader (IceCreamLoader component)
+        - Added MiniIceCreamLoader for inline sample loading (3 bouncing neapolitan scoops)
+
+     5. **Third user message**: "I just added intro to sample and it said it was saved it said but I didn't see it in audio ID?"
+
+     6. **My investigation**:
+        - Checked Tauri logs - confirmed save DID work (ep2213_94s-98s.wav saved)
+        - Found the file was overwritten (same filename from previous save)
+        - Realized the badge only showed "Voice ID (4x)" with no file count indicator
+        - Added `file_count` field to VoiceLibrarySpeaker struct
+        - Added `count_audio_files_for()` helper that scans filesystem
+        - Updated get_voice_library to populate file_count
+        - Added yellow "1 clip" badge to collapsed rows
+
+     7. **Fourth user message**: "in Audio ID why can't I access the 4 clips here? all clips saved need to be accessed here. is there a way to have a rating to know if it is a
+     good clip? also where is the feature to jump to where the clip is saved?"
+
+     8. **My response**: Entered plan mode to design a larger solution:
+        - The "4 clips" in Voice ID (4x) are embeddings, not saved audio files - the speaker path in save_voice_samples only calls voice_library.py add (saves embedding),
+     doesn't extract audio via ffmpeg
+        - Need to: save audio clips for speakers too, add voice_samples DB table, add rating, add jump-to-source
+        - Launched Explore agent to understand the full flow
+        - Wrote a plan file but got an error (file not read first)
+        - Then the conversation was interrupted for summary
+
+     Key technical findings:
+     - save_voice_samples in episodes.rs has two paths:
+       - Sound bite path: uses ffmpeg to extract audio clip, saves to sound_bites/{name}/
+       - Speaker path: only calls voice_library.py add (embedding only, NO audio file saved)
+     - This is why "Voice ID (4x)" shows 4 clips trained but 0 audio files for speakers
+     - The voice_samples DB table doesn't exist yet - need to create it
+     - Need rating system and episode source tracking
+
+     Summary:
+     1. Primary Request and Intent:
+        The user initially requested implementation of an "Audio Identification Panel Redesign" plan that includes:
+        - Renaming the "Speakers" tab to "Audio ID" with new icon
+        - Adding backend commands `get_voice_samples` and `delete_voice_sample`
+        - Rewriting SpeakersPanel.jsx with expandable rows, two sections (Speakers/Sound Bites), lazy sample loading, per-sample play/delete
+        - Separating speakers from sound bites (like "Intro")
+
+        After initial implementation, the user identified several issues:
+        - Badge showing "4 samples" was misleading (it's embedding count, not files)
+        - Loaders should use the ice cream cone animation from TranscriptEditor, not generic spinners
+        - Sample was saved but not visible in Audio ID panel
+        - **Most recent request**: All 4 clips trained into a voice print should be accessible as playable files in Audio ID. Wants a rating system for clip quality. Wants
+     ability to jump to where a clip was saved from (episode + timestamp).
+
+     2. Key Technical Concepts:
+        - **Tauri v2 IPC**: Rust backend commands invoked via `@tauri-apps/api/core` invoke()
+        - **Voice Library architecture**: `embeddings.json` stores averaged voice embeddings with `sample_count` (times averaged, NOT file count). `sample_file` references
+     source episode filename, not a stored clip.
+        - **Two save paths in save_voice_samples**: Sound bites extract audio via ffmpeg to `sound_bites/{name}/`. Speakers only call `voice_library.py add` which updates
+     embedding but saves NO audio file.
+        - **Database**: SQLite via rusqlite with `init_schema()` pattern using `CREATE TABLE IF NOT EXISTS` and ALTER TABLE migrations
+        - **React frontend**: Services layer with `tauri.js` (direct IPC) and `api.js` (Tauri/HTTP facade)
+        - **File naming convention**: `ep{episode_id}_{start:.0}s-{end:.0}s.wav`
+        - **Ice cream cone loader**: Neapolitan scoops dropping into cone animation, established pattern in TranscriptEditor.jsx
+
+     3. Files and Code Sections:
+
+        - **`src-tauri/src/commands/speakers.rs`** — Core file for voice sample commands
+          - Added `VoiceSampleFile` struct (renamed from VoiceSample to avoid conflict with episodes.rs)
+          - Added `get_voice_samples(speaker_name)` — scans `samples/` and `sound_bites/{clean_name}/` for audio files
+          - Added `delete_voice_sample(speaker_name, file_path)` — validates path within voice_library/, deletes file
+          - Added `count_audio_files_for()` helper for filesystem scanning
+          - Added `file_count` field to `VoiceLibrarySpeaker` struct
+          - Updated `get_voice_library()` to populate `file_count` by scanning directories
+          ```rust
+          #[derive(Debug, Serialize)]
+          pub struct VoiceSampleFile {
+              pub file_path: String,
+              pub file_name: String,
+              pub file_size: u64,
+              pub created: Option<String>,
+          }
+
+          #[derive(Debug, Serialize)]
+          pub struct VoiceLibrarySpeaker {
+              pub name: String,
+              pub short_name: String,
+              pub sample_count: i32,
+              pub sample_file: Option<String>,
+              pub file_count: i32,
+          }
+          ```
+
+        - **`src-tauri/src/commands/episodes.rs`** (lines 1293-1410) — The save_voice_samples function
+          - **Sound bite path** (lines 1335-1376): Uses ffmpeg to extract audio, saves to `sound_bites/{name}/`
+          - **Speaker path** (lines 1377-1404): Only calls `voice_library.py add` — NO audio file extraction
+          - This is the root cause: speaker clips are not saved as files
+          ```rust
+          // Sound bite path extracts audio:
+          let output = std::process::Command::new("ffmpeg")
+              .args(["-y", "-i", audio_path.as_str(),
+                     "-ss", &format!("{:.3}", sample.start_time),
+                     "-to", &format!("{:.3}", sample.end_time),
+                     "-ar", "16000", "-ac", "1",
+                     sample_path.to_str().unwrap()])
+              .output()...
+
+          // Speaker path only does embedding:
+          let output = std::process::Command::new(&venv_python)
+              .args([voice_library_script.to_str().unwrap(), "add",
+                     &sample.speaker_name, audio_path.as_str(),
+                     &format!("{:.3}", sample.start_time),
+                     &format!("{:.3}", sample.end_time)])
+              .output()...
+          ```
+
+        - **`src-tauri/src/lib.rs`** — Command registration
+          - Added `commands::get_voice_samples` and `commands::delete_voice_sample` to invoke_handler
+
+        - **`scripts/dashboard-react/src/services/tauri.js`** — Tauri IPC layer
+          - Added `getVoiceSamples(speakerName)` and `deleteVoiceSample(speakerName, filePath)`
+
+        - **`scripts/dashboard-react/src/services/api.js`** — API facade
+          - Added `getVoiceSamples(speakerName)` and `deleteVoiceSample(speakerName, filePath)` with Tauri/fallback pattern
+
+        - **`scripts/dashboard-react/src/App.jsx`** — Tab renamed
+          - Changed `{ id: 'speakers', label: 'Speakers', icon: '👥' }` to `{ id: 'speakers', label: 'Audio ID', icon: '🎙️ ' }`
+
+        - **`scripts/dashboard-react/src/components/SpeakersPanel.jsx`** — Full rewrite
+          - `IceCreamLoader` component: Neapolitan scoops-into-cone animation
+          - `MiniIceCreamLoader` component: 3 bouncing scoops for inline loading
+          - Two sections: Speakers (hosts pinned top, sorted by episode count) and Sound Bites
+          - Expandable rows with lazy sample loading via `get_voice_samples`
+          - Per-sample play/delete controls
+          - Badges: green "Voice ID (Nx)" for embedding count, yellow "N clips" for actual files
+          - Green info bar showing "Voice print trained from N clips · Last source: {file}"
+          - Unlinked entries at bottom with "Add as Speaker" action
+
+        - **`src-tauri/src/database/mod.rs`** — Database schema reference
+          - `episode_speakers` table has `diarization_label`, `speaker_id`, `audio_drop_id`
+          - `get_audio_drop_for_label()` checks if a diarization label maps to a sound bite
+          - `audio_drops` table with `reference_audio_path` column
+          - No `voice_samples` table exists yet
+
+        - **`src-tauri/src/database/models.rs`** — Struct definitions
+          - Has patterns for FlaggedSegment, AudioDrop, EpisodeSpeakerAssignment etc.
+
+        - **`scripts/voice_library/embeddings.json`** — Voice library data
+          - Contains: Matt Donnelly (1 sample), Jacob Smith (2), Paul Mattingly (1), Mike Mills (1), Justin Robert Young (1), 🔊 Intro (4 samples)
+          - `sample_count` = times embedding was averaged, `sample_file` = source episode filename
+
+        - **TranscriptEditor.jsx ice cream loader** (lines 969-997) — Reference for loader animation
+          ```jsx
+          <div className="relative mx-auto mb-6 w-20 h-28">
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-14 h-14 rounded-full bg-pink-400 shadow-md scoop-anim" style={{ animationDelay: '0s', zIndex: 3 }}></div>
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-14 h-14 rounded-full bg-amber-100 shadow-md scoop-anim" style={{ animationDelay: '0.6s', zIndex: 2
+     }}></div>
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-14 h-14 rounded-full bg-amber-800 shadow-md scoop-anim" style={{ animationDelay: '1.2s', zIndex: 1
+     }}></div>
+            <div className="absolute bottom-0 left-1/2 -translate-x-1/2" style={{ width: 0, height: 0, borderLeft: '24px solid transparent', borderRight: '24px solid
+     transparent', borderTop: '40px solid #d97706', zIndex: 4 }}></div>
+          </div>
+          ```
+
+     4. Errors and Fixes:
+        - **VoiceSample name collision**: `VoiceSample` struct existed in both `speakers.rs` (Serialize) and `episodes.rs` (Deserialize). Both modules use `pub use *` in
+     `commands/mod.rs`. Fixed by renaming to `VoiceSampleFile` in speakers.rs.
+        - **Badge showing misleading "4 samples"**: The `sample_count` from embeddings.json tracks embedding averaging count, not actual audio files. Fixed by changing badge
+     text to "Voice ID (4x)" and adding separate `file_count` field that scans filesystem.
+        - **Plan file write error**: Tried to Write plan file without reading it first. Got `File has not been read yet` error. This was at the very end of the conversation.
+        - **User feedback on loaders**: User explicitly requested ice cream cone loaders be used everywhere, not generic spinners. Fixed by adding IceCreamLoader and
+     MiniIceCreamLoader components.
+        - **User feedback on sample visibility**: User saved a sample but couldn't see it in Audio ID. Investigation showed the save worked (confirmed via Tauri logs) but the
+     collapsed row had no visual indicator of actual files. Fixed by adding `file_count` and yellow "N clips" badge.
+
+     5. Problem Solving:
+        - **Sample count vs file count**: Discovered that `sample_count` in embeddings.json means "times the embedding was averaged" not "number of audio files". Speakers have 0
+      stored audio files (only embeddings). Sound bites store actual .wav files via ffmpeg extraction.
+        - **Root cause of missing clips**: The `save_voice_samples` speaker path calls `voice_library.py add` which only creates/updates an embedding — it never saves the audio
+     clip. Sound bite path correctly uses ffmpeg to extract audio. This is the fundamental issue the user identified in their last message.
+        - **Transcript save flow**: `sample.speaker` = raw diarization label (e.g., "SPEAKER_01"), `sample.speakerName` = display name. `get_audio_drop_for_label()` correctly
+     matches via `episode_speakers` table.
+
+     6. All User Messages:
+        - **Message 1**: "Implement the following plan: [detailed Audio Identification Panel Redesign plan with 7 sections covering backend commands, tab rename, SpeakersPanel
+     rewrite, sample interaction design, API layer, and verification steps]"
+        - **Message 2**: "these tags are not lining up 4 samples, did you remove the previos samples?, only intro has one be sayd there are 4, also it was not linked to where
+     the sample was taken from. also the loader and all loders going forward should be the ice cream cone one like in the episode editor"
+        - **Message 3**: "I just added intro to sample and it said it was saved it said but I didn't see it in audio ID?" [with screenshot showing transcript viewer with Intro
+     segments and Properties panel showing 1 sample marked at Segment #19]
+        - **Message 4**: "in Audio ID why can't I access the 4 clips here? all clips saved need to be accessed here. is there a way to have a rating to know if it is a good
+     clip? also where is the feature to jump to where the clip is saved?" [with screenshot showing Sound Bites section expanded for Intro, showing "Voice ID (4x)" badge, "1
+     clip" badge, green bar "Voice print trained from 4 clips", and only 1 audio file ep2213_94s-98s.wav]
+
+     7. Pending Tasks:
+        - **Save audio clips for speakers**: Modify `save_voice_samples` speaker path in `episodes.rs` to also extract audio via ffmpeg (same as sound bite path), saving to
+     `samples/{Speaker_Name}/ep{id}_{start}s-{end}s.wav`
+        - **Create `voice_samples` database table**: Track all clips with episode_id, speaker_name, segment_idx, start_time, end_time, file_path, rating
+        - **Add rating system**: 1-5 star rating on each clip, persisted to DB, visible in expanded row
+        - **Add jump-to-source**: Each clip shows source episode + timestamp, clickable to navigate to that episode at that timestamp
+        - **Update `get_voice_samples`**: Return DB-backed data instead of filesystem-only scan
+        - **New command `update_voice_sample_rating`**: Set rating on a voice sample
+        - **API layer updates**: Add rating API method to tauri.js and api.js
+        - **Frontend updates**: Star rating UI, source episode link in expanded sample rows
+
+     8. Current Work:
+        I was in **plan mode** designing the solution for the user's most recent request about making all clips accessible, adding rating, and jump-to-source. I had:
+        - Entered plan mode
+        - Launched an Explore agent that completed successfully with full analysis of the save flow
+        - Attempted to write the plan file but got an error because I didn't read it first
+        - The conversation was interrupted for summary at this point
+
+     9. Optional Next Step:
+        Read the existing plan file at `/Users/ryan/.claude/plans/distributed-booping-squid.md`, then write the final plan addressing the user's request: "in Audio ID why can't
+     I access the 4 clips here? all clips saved need to be accessed here. is there a way to have a rating to know if it is a good clip? also where is the feature to jump to
+     where the clip is saved?" — then call ExitPlanMode for approval, and implement:
+        1. Add `voice_samples` DB table with rating field
+        2. Fix `save_voice_samples` speaker path to extract audio via ffmpeg
+        3. Add rating command and jump-to-source data
+        4. Update SpeakersPanel.jsx with star ratings and source episode links
+
+     If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at:
+     /Users/ryan/.claude/projects/-Users-ryan-Desktop-Projects-ice-cream-social-app/0645969c-ac37-48bf-a2c7-687437542fe8.jsonl
+     Please continue the conversation from where we left off without asking the user any further questions. Continue with the last task that you were asked to work on.
+  ⎿  Referenced file src/components/SpeakersPanel.jsx
+  ⎿  Read ../../src-tauri/src/commands/speakers.rs (396 lines)
+  ⎿  Referenced file ../../../../../Library/Logs/com.icecreamsocial.app/Ice Cream Social.log
+  ⎿  Read src/App.jsx (262 lines)
+  ⎿  Referenced file src/services/api.js
+  ⎿  Plan file referenced (~/.claude/plans/distributed-booping-squid.md)
+
+∴ Thinking…
+
+  Looking at the summary, I was in plan mode designing a solution for making all voice clips accessible, adding ratings, and jump-to-source. I need to write the plan and get
+  approval. Let me read the current plan file first, then write the updated plan.
+
+                                                                                                                                                 03:04 PM claude-opus-4-6
+⏺ I was in plan mode designing the solution for making all voice clips accessible, adding ratings, and jump-to-source. Let me read the current plan file and write the updated
+  plan.
+
+## Session: February 19, 2026
+
+   Session Plan: Remaining Work + Web Goal                                                                                                                                       │
+│                                                                                                                                                                               │
+│ Context                                                                                                                                                                       │
+│                                                                                                                                                                               │
+│ Picking up from Feb 18 session (melodic-strolling-matsumoto) and the exception.md bug log.                                                                                    │
+│ Three things to address today:                                                                                                                                                │
+│ 1. Outstanding exceptions (bugs/UX)                                                                                                                                           │
+│ 2. Remaining capabilities audit items                                                                                                                                         │
+│ 3. MCP clarification + new "Operation Feed the Scoops" web goal                                                                                                               │
+│                                                                                                                                                                               │
+│ ---                                                                                                                                                                           │
+│ What Was Completed (Feb 18)                                                                                                                                                   │
+│                                                                                                                                                                               │
+│ From the capabilities audit:                                                                                                                                                  │
+│ - P1 ✅ Typed Error Hierarchy (src-tauri/src/error.rs)                                                                                                                        │
+│ - P2 ✅ FTS Auto-Index after pipeline (index_episode_from_file, fires in worker/update_speaker_names/save_transcript_edits)                                                   │
+│ - P7 ✅ Stale-Request Protection for Search (useSearch hook in SearchPanel.jsx)                                                                                               │
+│                                                                                                                                                                               │
+│ From exception.md (from git commits):                                                                                                                                         │
+│ - ✅ Item 5: Renamed "audio sample" → "Audio ID"                                                                                                                              │
+│ - ✅ Item 6c: Added text label to "Jump to Source" button                                                                                                                     │
+│ - ✅ Item 6e / Item 11: Delete sound bite button added                                                                                                                        │
+│ - ✅ Item 8 (partial): flag picker without prompt(), new speaker in editor, inline speaker form                                                                               │
+│ - ✅ Item 9iii: Search results jump to segment                                                                                                                                │
+│                                                                                                                                                                               │
+│ ---                                                                                                                                                                           │
+│ Still Outstanding: Exception.md Bugs                                                                                                                                          │
+│                                                                                                                                                                               │
+│ High Priority (Core functionality broken)                                                                                                                                     │
+│                                                                                                                                                                               │
+│ #: 1                                                                                                                                                                          │
+│ Issue: Flag segment bugs — "Other" flag button not working, "Wrong Speaker" flag broken, can't flag intro properly, multiple-speakers selection doesn't allow adding new      │
+│ speaker                                                                                                                                                                       │
+│ Notes: Blocking good diarization feedback loop                                                                                                                                │
+│ ────────────────────────────────────────                                                                                                                                      │
+│ #: 2                                                                                                                                                                          │
+│ Issue: Reprocess diarization — No indication it goes into queue when clicked                                                                                                  │
+│ Notes: Confusing UX                                                                                                                                                           │
+│ ────────────────────────────────────────                                                                                                                                      │
+│ #: 6a                                                                                                                                                                         │
+│ Issue: Add as Speaker button jumps UI to "Add New Speaker" area instead of appearing below the card                                                                           │
+│ Notes: Disorienting                                                                                                                                                           │
+│ ────────────────────────────────────────                                                                                                                                      │
+│ #: 6d                                                                                                                                                                         │
+│ Issue: Jump to Source timestamp — Goes to right episode but audio player doesn't seek to correct time                                                                         │
+│ Notes: Broken feature                                                                                                                                                         │
+│ ────────────────────────────────────────                                                                                                                                      │
+│ #: 7                                                                                                                                                                          │
+│ Issue: Duplicate speakers (e.g., 2x "Jacob Smith" in ep 1288), only 5 colors for speaker tags                                                                                 │
+│ Notes: Data/display bug                                                                                                                                                       │
+│                                                                                                                                                                               │
+│ Medium Priority (UX friction)                                                                                                                                                 │
+│                                                                                                                                                                               │
+│ ┌─────┬────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬───────────────────┐                          │
+│ │  #  │                                                         Issue                                                          │       Notes       │                          │
+│ ├─────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼───────────────────┤                          │
+│ │ 3   │ Stats tab: add "## In Queue to Diarization" stat box alongside transcription queue count                               │ Visibility        │                          │
+│ ├─────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼───────────────────┤                          │
+│ │ 4   │ Queue section: two collapsible/scrollable tables (transcribe queue + diarize queue), rename "Episode Tracking" section │ Organization      │                          │
+│ ├─────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼───────────────────┤                          │
+│ │ 8   │ Identity tooling: "+ New Speaker" textbox should appear in speaker section (not just sound bite section)               │ Workflow friction │                          │
+│ ├─────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼───────────────────┤                          │
+│ │ 10  │ Chapter labeling: settings page with rules to auto-label chapters from transcript text                                 │ New feature       │                          │
+│ └─────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴───────────────────┘                          │
+│                                                                                                                                                                               │
+│ ---                                                                                                                                                                           │
+│ Still Outstanding: Capabilities Audit (melodic-strolling-matsumoto)                                                                                                           │
+│                                                                                                                                                                               │
+│ Architectural Patterns Remaining                                                                                                                                              │
+│                                                                                                                                                                               │
+│ ┌─────┬───────────────────────────────────────────────────────────────────────────────────────────────┬────────────────────────────────────────────────────┐                  │
+│ │  #  │                                            Pattern                                            │                      Priority                      │                  │
+│ ├─────┼───────────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────┤                  │
+│ │ P3  │ React Context + Error Boundaries — refactor TranscriptReviewLayout's 14 useState declarations │ Medium                                             │                  │
+│ ├─────┼───────────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────┤                  │
+│ │ P4  │ Exponential Backoff + Circuit Breaker for downloads                                           │ Low                                                │                  │
+│ ├─────┼───────────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────┤                  │
+│ │ P5  │ sqlite-vec Semantic Search — embeddings in DB, acoustic similarity                            │ Low (big lift)                                     │                  │
+│ ├─────┼───────────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────┤                  │
+│ │ P6  │ Diarization Hints from Human Corrections — use flagged_segments to improve reprocessing       │ Medium (depends on item 1 flags being fixed first) │                  │
+│ └─────┴───────────────────────────────────────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────┘                  │
+│                                                                                                                                                                               │
+│ Subagents (Section 2) — All 5 Not Started                                                                                                                                     │
+│                                                                                                                                                                               │
+│ These are Rust/scheduled background jobs that run automatically:                                                                                                              │
+│ - S1: Transcript Quality Agent (flag inconsistencies)                                                                                                                         │
+│ - S2: Content Extraction Coordinator (batch character/trivia extraction)                                                                                                      │
+│ - S3: Wiki Sync Agent                                                                                                                                                         │
+│ - S4: Diarization Hints Generator (feeds into P6)                                                                                                                             │
+│ - S5: Codebase Guard (pre-commit review)                                                                                                                                      │
+│                                                                                                                                                                               │
+│ Features Not Started                                                                                                                                                          │
+│                                                                                                                                                                               │
+│ - F2: Bulk Wiki Sync + Jock/Nerd trivia extraction                                                                                                                            │
+│ - F3: sqlite-vec Speaker Deduplication (would fix duplicate Jacob Smith problem)                                                                                              │
+│                                                                                                                                                                               │
+│ ---                                                                                                                                                                           │
+│ MCP Clarification: Why It Helps Without Making the App Depend on AI                                                                                                           │
+│                                                                                                                                                                               │
+│ The plan suggested these MCP servers for my use during coding sessions only — not for the app's runtime:                                                                      │
+│                                                                                                                                                                               │
+│ ┌─────────────────────────────────────────┬───────────────────────────────────────────────────────────────┬──────────────────────────────────────────────┐                    │
+│ │               MCP Server                │                    What It Does for Coding                    │                  App Impact                  │                    │
+│ ├─────────────────────────────────────────┼───────────────────────────────────────────────────────────────┼──────────────────────────────────────────────┤                    │
+│ │ @modelcontextprotocol/server-sqlite     │ Lets me query your DB directly during planning                │ Zero — I just read/inspect, don't add to app │                    │
+│ ├─────────────────────────────────────────┼───────────────────────────────────────────────────────────────┼──────────────────────────────────────────────┤                    │
+│ │ @modelcontextprotocol/server-filesystem │ Lets me read project files faster without explicit Read calls │ Zero — dev tooling only                      │                    │
+│ ├─────────────────────────────────────────┼───────────────────────────────────────────────────────────────┼──────────────────────────────────────────────┤                    │
+│ │ @modelcontextprotocol/server-memory     │ Already installed — persistent knowledge graph                │ Zero — already in use                        │                    │
+│ └─────────────────────────────────────────┴───────────────────────────────────────────────────────────────┴──────────────────────────────────────────────┘                    │
+│                                                                                                                                                                               │
+│ Bottom line: MCP is like giving me better tools to work with your codebase. The app itself stays entirely local, native, and subscription-AI-free. Whisper still runs         │
+│ offline, the pipeline is still Rust/SQLite. MCP doesn't touch any of that.                                                                                                    │
+│                                                                                                                                                                               │
+│ The sqlite MCP server would be the most useful — it means when you report a bug like "2 Jacob Smith in ep 1288" I could directly query the DB to investigate instead of       │
+│ asking you to run queries.                                                                                                                                                    │
+│                                                                                                                                                                               │
+│ ---                                                                                                                                                                           │
+│ New Goal: Operation Feed the Scoops (Web Version)                                                                                                                             │
+│                                                                                                                                                                               │
+│ Vision: Once the local app is solid, open it up so other Scoops fans can use it.                                                                                              │
+│                                                                                                                                                                               │
+│ You're creating feedTheScoops.md to track this. Key questions to answer there:                                                                                                │
+│ - Self-hosted (VPS) vs. managed hosting?                                                                                                                                      │
+│ - Auth: Patreon OAuth (only subscribers get access)?                                                                                                                          │
+│ - Data sync: Does the local Tauri app become the "ingest server" and the web app reads a shared DB?                                                                           │
+│ - What features go to web first? (Search is the obvious first win)                                                                                                            │
+│                                                                                                                                                                               │
+│ This doesn't need to be planned now — it's a flag-in-the-ground for after the current local app is solid.                                                                     │
+│                                                                                                                                                                               │
+│ ---                                                                                                                                                                           │
+│ Recommended Work Order for This Session                                                                                                                                       │
+│                                                                                                                                                                               │
+│ 1. Fix broken flags (exception item 1) — gates diarization hint feedback loop                                                                                                 │
+│ 2. Fix reprocess diarization queue indication (item 2) + add diarization queue stats (item 3)                                                                                 │
+│ 3. Fix Jump to Source timestamp (item 6d)                                                                                                                                     │
+│ 4. Fix duplicate speakers + more colors (item 7)                                                                                                                              │
+│ 5. Queue tables redesign (item 4)                                                                                                                                             │
+│ 6. P6: Diarization Hints — now flags are fixed, hints can actually be generated                                                                                               │
+│ 7. Chapter labeling (item 10) — new settings feature                                                                                                                          │
+│                                                                                                                                                                               │
+│ MCP sqlite server install is quick and worth doing at start of session for better debugging.                                                                                  │
+│                                                                                                                                                                               │
+│ ---                                                                                                                                                                           │
+│ Files Most Likely Touched                                                                                                                                                     │
+│                                                                                                                                                                               │
+│ - src-tauri/src/commands/speakers.rs — duplicate dedup, color expansion                                                                                                       │
+│ - src-tauri/src/commands/episodes.rs — reprocess queue indication                                                                                                             │
+│ - src-tauri/src/commands/stats.rs — diarization queue stat                                                                                                                    │
+│ - src-tauri/src/database/mod.rs — diarization hints, queue queries                                                                                                            │
+│ - scripts/dashboard-react/src/components/SpeakersPanel.jsx — Add as Speaker jump fix                                                                                          │
+│ - scripts/dashboard-react/src/components/TranscriptSegment.jsx — flag bugs                                                                                                    │
+│ - scripts/dashboard-react/src/components/StatsTab.jsx — queue stats display                                                                                                   │
+│ - scripts/dashboard-react/src/components/AudioPlayer.jsx — timestamp seek fix
+
+---
+
+## Session: February 19, 2026
+
+### Tasks Completed
+
+**Exception.md Bug Fixes (from prior session + this session)**
+
+- ✅ **Item 1 — Flag segment bugs** (TranscriptEditor.jsx):
+  - `character_voice` flag: Added `needsCharacter` branch in onClick + `flag-character` sub-picker with character list and "+ New character..." input + Back button
+  - `wrong_speaker` flag: Added explicit Save button (not just Enter key)
+  - `other` flag: Added explicit Save button
+  - `multiple_speakers` picker: Added text input + Add button for unlisted speaker names; chips to show/remove custom-added names
+- ✅ **Item 6d — Jump to Source audio seek** (TranscriptModal.jsx):
+  - Fixed cached-audio race condition: added `useEffect` that checks `audio.readyState >= 1` immediately, otherwise attaches one-time `loadedmetadata` listener
+- ✅ **Item 7 — Duplicate speakers + more colors** (TranscriptEditor.jsx, PropertiesPanel.jsx):
+  - Replaced 6-entry `SPEAKER_COLORS` dict with 12-color `SPEAKER_COLOR_PALETTE` array + modulo-based `getSpeakerColor` in both files
+  - PropertiesPanel: Added `deduplicatedSpeakers` filter (deduplicates by display name) + changed `speakerCount` and render loop to use it
+- ✅ **Item 8 — Identity tooling friction** (TranscriptEditor.jsx):
+  - Speaker picker's "Assign to sound bite" section now always visible (not conditional on existing drops)
+  - Added `+ New sound bite...` input to speaker picker (calls new `createDropAndAssign()` helper)
+  - Existing `+ New speaker...` input was already in the speaker picker
+
+**Confirmed Already Done (no changes needed)**
+- Items 2, 3, 4 from exception.md (reprocess diarization UX, diarization queue stat, two-table queue section) — already in Stats.jsx
+- Item 6a (Add as Speaker inline form) — already fixed with `inlineAddSpeaker` state in SpeakersPanel.jsx
+
+### Current State
+- All React changes build cleanly (`npm run build` passes)
+- Flag system fully wired up: wrong_speaker, character_voice, multiple_speakers, audio_issue, other all have working pickers
+- Speaker color palette extended to 12 colors with modulo wrapping
+- Duplicate speaker deduplication active in PropertiesPanel
+
+### Remaining from Plan
+- P3: React Context + Error Boundaries for TranscriptReviewLayout (14 useState declarations)
+- P6: Diarization Hints from Human Corrections (flagged_segments → diarization reprocessing hints)
+- Item 10: Chapter labeling settings page with auto-label rules
+- Subagents S1-S5: Not started
+
+ompleted fixes:                                                                                                                                                               
+                                                                                                                                                                                 
+  1. Item 7 (duplicate speakers) — final step: Changed PropertiesPanel.jsx speaker render loop to use deduplicatedSpeakers (was already filtered, just not used in the map). Two 
+  "Jacob Smith" labels now show as one.                                                                                                                                          
+  2. Item 8 (identity tooling friction): In the pickerType === 'speaker' picker inside TranscriptEditor, the "Assign to sound bite" section now:
+    - Always shows (was previously hidden when no drops existed)
+    - Has a + New sound bite... text input that creates a drop and immediately assigns it to the speaker label via a new createDropAndAssign() helper
+    - The existing + New speaker... input was already there
+
+  Prior session work (carried over, already done):
+  - Item 1 flags: character_voice, wrong_speaker, other, multiple_speakers all fixed
+  - Item 6d: Jump to Source audio seek fixed for cached audio
+  - Items 2/3/4: Already done in Stats.jsx
+  - Speaker color palette expanded to 12 colors
+
+  Still remaining from the plan: P6 (diarization hints), P3 (React context refactor), item 10 (chapter labeling), and subagents S1-S5.
+  
+  ## Session: February 20, 2026
+
+### Tasks Completed
+
+  All done. Here's what was completed:
+
+  P3 (React Context refactor) — already done in the previous session; marked complete.
+
+  S1–S4 (Rust subagent schedulers)
+  - src-tauri/src/worker/subagents.rs — new file with 4 scheduler functions:
+    - S1 quality_scan_agent — every 6 hrs, counts unresolved SPEAKER_XX labels + unindexed completed episodes, emits quality_alert
+    - S2 extraction_coordinator_agent — every 2 hrs, surfaces episodes awaiting LLM extraction, emits extraction_queued
+    - S3 wiki_sync_agent — daily at 3 AM, emits wiki_sync_ready (wiki sync is user-initiated via HTTP)
+    - S4 hints_prefetch_agent — every hour, pre-generates {episode_id}_hints.json for episodes with unresolved speaker flags
+  - 4 new DB methods added to database/mod.rs: count_unresolved_speaker_labels, count_unindexed_completed_episodes, get_unextracted_episode_ids, get_episodes_with_unresolved_speaker_flags
+  - worker/mod.rs — added pub mod subagents;
+  - lib.rs — 4 new tauri::async_runtime::spawn calls after the feed sync scheduler
+
+  S5 (git pre-commit hook)
+  - scripts/pre-commit — runs cargo fmt --check + cargo clippy when Rust files are staged; npm run build when React files are staged
+  - scripts/install-hooks.sh — copies hook to .git/hooks/pre-commit and makes it executable
+
+  Pipeline Errors close button — added an × button in the "Recent Pipeline Errors" header that hides the section for the current session.
+
+
+
+  ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ Plan: Qwen2.5-Omni-3B for Character & Performance Bit Classification                                                                                                                                          
+                                                                                                                                                                                                               
+ Context                                                                                                                                                                                                       
+                                                                                                                                                                                                               
+ Pyannote diarizes purely by acoustic fingerprinting — when a host does a character voice or                                                                                                                   
+ silly bit, it can create a phantom new speaker (SPEAKER_03) instead of keeping it as SPEAKER_00.                                                                                                              
+ Qwen2.5-Omni-3B reasons about BOTH voice characteristics AND spoken content simultaneously,                                                                                                                   
+ so it can recognize "the host is just doing a bit" and flag is_performance_bit: true while
+ keeping the speaker ID consistent. The model is already downloaded to ~/.cache/huggingface                                                                                                                    
+ and there's a working test harness in scripts/qwen_inference.py to build from.                                                                                                                                
+                                                                                                                                                                                                               
+ Since the model is slow (~13x realtime including load), this runs targeted on specific                                                                                                                        
+ flagged/suspected segments — not full episodes. Output goes to a review panel for human                                                                                                                       
+ approval before touching the database.
+
+ ---
+ Files to Create / Modify
+
+ ┌───────────────────────────────────────────────────────────────────┬────────────────────────────────────────────────────────────────────────────────────────┐
+ │                               File                                │                                         Action                                         │
+ ├───────────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────┤
+ │ scripts/qwen_classify_segments.py                                 │ Create — new classification script                                                     │
+ ├───────────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────┤
+ │ src-tauri/src/database/mod.rs                                     │ Modify — add segment_classifications table + is_performance_bit to transcript_segments │
+ ├───────────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────┤
+ │ src-tauri/src/database/models.rs                                  │ Modify — add SegmentClassification struct                                              │
+ ├───────────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────┤
+ │ src-tauri/src/commands/content.rs                                 │ Modify — add run_qwen_classification command                                           │
+ ├───────────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────┤
+ │ src-tauri/src/lib.rs                                              │ Modify — register new command                                                          │
+ ├───────────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────┤
+ │ scripts/dashboard-react/src/services/tauri.js                     │ Modify — add runQwenClassification, getSegmentClassifications, approveClassification   │
+ ├───────────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────┤
+ │ scripts/dashboard-react/src/services/api.js                       │ Modify — add wrappers                                                                  │
+ ├───────────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────┤
+ │ scripts/dashboard-react/src/components/TranscriptReviewLayout.jsx │ Modify — add "Analyze" button + classification review panel                            │
+ └───────────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────────────────┘
+
+ ---
+ Step 1: Python Script — scripts/qwen_classify_segments.py
+
+ Adapted from qwen_inference.py. Key differences:
+ - Accepts a list of target segments (not a full file)
+ - Extracts a 60s audio window around each segment using librosa slice (already in venv)
+ - Accepts --characters JSON string listing known character names + catchphrases (context for the model)
+ - Processes all segments in one model load (amortize the ~60s load time)
+ - Emits QWEN_PROGRESS: N lines to stdout (same pattern as speaker_diarization.py)
+ - Final output: single JSON object to stdout
+
+ CLI signature:
+ python qwen_classify_segments.py \
+   --audio-file scripts/episodes/episode.mp3 \
+   --segments '[{"segment_idx":42,"start":304.2,"end":318.7}, ...]' \
+   --characters '[{"name":"Sweet Bean","catchphrase":"Sweet Bean!"},...]'
+
+ Output JSON (stdout after all QWEN_PROGRESS lines):
+ {
+   "status": "success",
+   "results": [
+     {
+       "segment_idx": 42,
+       "is_performance_bit": true,
+       "character_name": "Sweet Bean",
+       "speaker_note": "Host doing exaggerated high-pitched character voice",
+       "tone_description": "Comic, exaggerated, high-pitched",
+       "confidence": 0.87
+     }
+   ],
+   "elapsed_secs": 124.3
+ }
+
+ Prompt template sent to Qwen per clip:
+ "Listen to this audio clip. Known recurring characters: {character_list}.
+ Determine: (1) Is the speaker doing a performance bit or character voice?
+ (2) If so, which character are they voicing (if any from the list)?
+ (3) Note: keep the speaker ID consistent — a host doing a funny voice is still the same speaker.
+ Respond only in JSON: {is_performance_bit, character_name, speaker_note, tone_description, confidence}"
+
+ ---
+ Step 2: Database Changes
+
+ New column on transcript_segments
+
+ ALTER TABLE transcript_segments ADD COLUMN is_performance_bit INTEGER DEFAULT 0;
+ Written on approval, not during classification.
+
+ New table segment_classifications
+
+ CREATE TABLE segment_classifications (
+     id INTEGER PRIMARY KEY,
+     episode_id INTEGER NOT NULL,
+     segment_idx INTEGER NOT NULL,
+     classifier TEXT NOT NULL DEFAULT 'qwen_omni',
+     is_performance_bit INTEGER DEFAULT 0,
+     character_name TEXT,
+     character_id INTEGER,          -- Matched to characters table (if found)
+     speaker_note TEXT,
+     tone_description TEXT,
+     confidence REAL,
+     approved INTEGER DEFAULT 0,   -- 0=pending, 1=approved, -1=rejected
+     created_at TEXT,
+     FOREIGN KEY (episode_id) REFERENCES episodes(id) ON DELETE CASCADE,
+     FOREIGN KEY (character_id) REFERENCES characters(id)
+ );
+
+ Add to init_schema() in src-tauri/src/database/mod.rs.
+
+ New DB methods needed (in mod.rs)
+
+ - save_segment_classifications(episode_id, results: Vec<...>)
+ - get_segment_classifications(episode_id) → Vec<SegmentClassification>
+ - approve_segment_classification(id) → updates approved=1, sets transcript_segments.is_performance_bit=1, optionally creates character_appearances entry
+ - reject_segment_classification(id) → sets approved=-1
+
+ ---
+ Step 3: New Tauri Command — run_qwen_classification
+
+ Location: src-tauri/src/commands/content.rs
+
+ #[tauri::command]
+ pub async fn run_qwen_classification(
+     db: State<'_, Arc<Database>>,
+     app: AppHandle,
+     episode_id: i64,
+     segment_indices: Vec<i32>,   // Which segments to analyze
+ ) -> Result<(), AppError>
+
+ Logic:
+ 1. Fetch episode audio path from DB (error if not downloaded)
+ 2. Fetch segments (start/end times) for the given indices from transcript_segments
+ 3. Fetch all characters from characters table for context prompt
+ 4. Spawn Python subprocess: venv/bin/python3 scripts/qwen_classify_segments.py ...
+   - Pattern from src-tauri/src/worker/diarize.rs: piped stdout, emit progress events
+ 5. Parse QWEN_PROGRESS: N lines → emit qwen_progress Tauri event
+ 6. Parse final JSON from stdout
+ 7. Match character_name results against characters table (fuzzy match on name)
+ 8. Call db.save_segment_classifications(...) with pending status
+ 9. Emit qwen_complete event
+
+ Register in src-tauri/src/lib.rs invoke handler.
+
+ ---
+ Step 4: Frontend — Review UI
+
+ In TranscriptReviewLayout.jsx:
+
+ Add "Analyze with Qwen" button in the episode toolbar (near existing FTS/chapter buttons).
+ - Clicking opens a segment selector: "Analyze all flagged segments" or "Analyze selected"
+ - Shows a progress bar while running (listening for qwen_progress event)
+ - On qwen_complete, shows the classifications panel
+
+ Classifications Panel (inline below toolbar or slide-in):
+ - Cards per result showing: segment text, timestamp, is_performance_bit badge, character name, confidence bar, speaker note
+ - Each card: ✓ Approve / ✗ Reject buttons
+ - "Approve All" bulk action
+ - On approve: calls approve_segment_classification(id) → writes to DB
+   - If character identified: also creates a character_appearance entry
+
+ ---
+ Step 5: Chapter Identification (Deferred)
+
+ Qwen can help here too (audio reasoning for detecting "we're now doing Scoop Mail" by tone +
+ content) but this should be v2 — chapter detection works reasonably well with the existing
+ text-based Ollama extraction. Add after character flow is validated.
+
+ ---
+ Verification
+
+ 1. Run cargo tauri dev — confirm no compile errors
+ 2. Open an episode with transcribed + downloaded audio
+ 3. Click "Analyze with Qwen" on 2-3 flagged segments
+ 4. Confirm progress events fire (progress bar moves)
+ 5. Review panel appears with results
+ 6. Approve one result — verify:
+   - segment_classifications.approved = 1
+   - transcript_segments.is_performance_bit = 1 for that segment_idx
+   - If character matched: character_appearances row created
+ 7. Confirm rejected results have approved = -1 and nothing written to transcript_segments
+ ~/.claude/plans/validated-yawning-elephant.md

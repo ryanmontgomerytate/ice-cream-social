@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react'
-import { wikiAPI } from '../services/api'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { wikiAPI, contentAPI, isTauri } from '../services/api'
+import { useTranscriptReview } from './TranscriptReviewContext'
 
 // Flag types
 const FLAG_TYPES = [
@@ -37,17 +38,30 @@ function SectionHeader({ open, onClick, icon, label, count, color = 'gray' }) {
   )
 }
 
-// Speaker color palette
-const SPEAKER_COLORS = {
-  'SPEAKER_00': { bg: 'bg-blue-100', text: 'text-blue-700', border: 'border-blue-300' },
-  'SPEAKER_01': { bg: 'bg-green-100', text: 'text-green-700', border: 'border-green-300' },
-  'SPEAKER_02': { bg: 'bg-orange-100', text: 'text-orange-700', border: 'border-orange-300' },
-  'SPEAKER_03': { bg: 'bg-purple-100', text: 'text-purple-700', border: 'border-purple-300' },
-  'SPEAKER_04': { bg: 'bg-pink-100', text: 'text-pink-700', border: 'border-pink-300' },
-  'SPEAKER_05': { bg: 'bg-cyan-100', text: 'text-cyan-700', border: 'border-cyan-300' },
-}
+// Speaker color palette — 12 colors, cycles for SPEAKER_12+
+const SPEAKER_COLOR_PALETTE = [
+  { bg: 'bg-blue-100', text: 'text-blue-700', border: 'border-blue-300' },
+  { bg: 'bg-green-100', text: 'text-green-700', border: 'border-green-300' },
+  { bg: 'bg-orange-100', text: 'text-orange-700', border: 'border-orange-300' },
+  { bg: 'bg-purple-100', text: 'text-purple-700', border: 'border-purple-300' },
+  { bg: 'bg-pink-100', text: 'text-pink-700', border: 'border-pink-300' },
+  { bg: 'bg-cyan-100', text: 'text-cyan-700', border: 'border-cyan-300' },
+  { bg: 'bg-red-100', text: 'text-red-700', border: 'border-red-300' },
+  { bg: 'bg-teal-100', text: 'text-teal-700', border: 'border-teal-300' },
+  { bg: 'bg-yellow-100', text: 'text-yellow-700', border: 'border-yellow-300' },
+  { bg: 'bg-indigo-100', text: 'text-indigo-700', border: 'border-indigo-300' },
+  { bg: 'bg-rose-100', text: 'text-rose-700', border: 'border-rose-300' },
+  { bg: 'bg-lime-100', text: 'text-lime-700', border: 'border-lime-300' },
+]
 
-const getSpeakerColor = (speaker) => SPEAKER_COLORS[speaker] || { bg: 'bg-gray-100', text: 'text-gray-700', border: 'border-gray-300' }
+const getSpeakerColor = (speaker) => {
+  const match = speaker?.match(/^SPEAKER_(\d+)$/)
+  if (match) {
+    const idx = parseInt(match[1], 10) % SPEAKER_COLOR_PALETTE.length
+    return SPEAKER_COLOR_PALETTE[idx]
+  }
+  return { bg: 'bg-gray-100', text: 'text-gray-700', border: 'border-gray-300' }
+}
 
 const formatTime = (seconds) => {
   if (!seconds || isNaN(seconds)) return '00:00'
@@ -56,40 +70,129 @@ const formatTime = (seconds) => {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
-export default function PropertiesPanel({
-  episode,
-  flaggedSegments = {},
-  characterAppearances = [],
-  episodeChapters = [],
-  characters = [],
-  chapterTypes = [],
-  voiceLibrary = [],
-  markedSamples = {},
-  speakers = [],
-  speakerNames = {},
-  audioDropInstances = [],
-  audioDrops = [],
-  segments = null,
-  selectedSegmentIdx = null,
-  onCreateFlag,
-  onDeleteFlag,
-  onAddCharacter,
-  onRemoveCharacter,
-  onCreateChapter,
-  onDeleteChapter,
-  onToggleVoiceSample,
-  onSeekToSegment,
-  onAssignSpeakerName,
-  onAssignAudioDrop,
-  onSeekToSpeaker,
-  onRemoveAudioDrop
-}) {
+// ---------------------------------------------------------------------------
+// Qwen Classification Card
+// ---------------------------------------------------------------------------
+function QwenClassificationCard({ classification: c, onApprove, onReject, onSeek }) {
+  const pct = Math.round((c.confidence ?? 0) * 100)
+  return (
+    <div className="rounded border border-violet-200 bg-violet-50 p-2 space-y-1.5">
+      {/* Header row */}
+      <div className="flex items-center justify-between gap-1">
+        <button
+          onClick={onSeek}
+          className="text-xs font-medium text-violet-700 hover:underline truncate flex-1 text-left"
+          title="Jump to segment"
+        >
+          Seg {c.segment_idx}
+          {c.segment_start_time != null && (
+            <span className="ml-1 text-violet-400 font-normal">
+              {Math.floor(c.segment_start_time / 60)}:{String(Math.floor(c.segment_start_time % 60)).padStart(2, '0')}
+            </span>
+          )}
+        </button>
+        {c.is_performance_bit ? (
+          <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-pink-100 text-pink-700 flex-shrink-0">🎭 bit</span>
+        ) : (
+          <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-gray-100 text-gray-500 flex-shrink-0">normal</span>
+        )}
+      </div>
+
+      {/* Segment text preview */}
+      {c.segment_text && (
+        <p className="text-[11px] text-gray-600 line-clamp-2 italic">"{c.segment_text}"</p>
+      )}
+
+      {/* Character name */}
+      {c.character_name && (
+        <div className="flex items-center gap-1">
+          <span className="text-[10px] text-pink-600 font-medium">Character:</span>
+          <span className="text-[11px] text-pink-700">{c.character_name}</span>
+        </div>
+      )}
+
+      {/* Tone description */}
+      {c.tone_description && (
+        <p className="text-[10px] text-gray-500">{c.tone_description}</p>
+      )}
+
+      {/* Confidence bar */}
+      <div className="flex items-center gap-1.5">
+        <span className="text-[10px] text-gray-400 flex-shrink-0">Confidence</span>
+        <div className="flex-1 bg-gray-200 rounded-full h-1">
+          <div
+            className={`h-1 rounded-full ${pct >= 70 ? 'bg-green-400' : pct >= 40 ? 'bg-yellow-400' : 'bg-red-400'}`}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+        <span className="text-[10px] text-gray-500 flex-shrink-0">{pct}%</span>
+      </div>
+
+      {/* Speaker note */}
+      {c.speaker_note && (
+        <p className="text-[10px] text-gray-400 italic line-clamp-2">{c.speaker_note}</p>
+      )}
+
+      {/* Actions */}
+      <div className="flex gap-1.5 pt-0.5">
+        <button
+          onClick={onApprove}
+          className="flex-1 py-1 text-[11px] rounded bg-green-100 hover:bg-green-200 text-green-700 font-medium transition-colors"
+        >
+          ✓ Approve
+        </button>
+        <button
+          onClick={onReject}
+          className="flex-1 py-1 text-[11px] rounded bg-red-100 hover:bg-red-200 text-red-700 font-medium transition-colors"
+        >
+          ✗ Reject
+        </button>
+      </div>
+    </div>
+  )
+}
+
+export default function PropertiesPanel() {
+  const {
+    episode,
+    flaggedSegments,
+    characterAppearances,
+    episodeChapters,
+    characters,
+    chapterTypes,
+    voiceLibrary,
+    markedSamples,
+    speakers,
+    speakerNames,
+    audioDropInstances,
+    audioDrops,
+    segments,
+    selectedSegmentIdx,
+    // Action proxies
+    deleteFlag,
+    removeCharacter,
+    deleteChapter,
+    toggleVoiceSample,
+    seekToSegment,
+    assignSpeakerName,
+    assignAudioDrop,
+    seekToSpeaker,
+    removeAudioDropInstance,
+  } = useTranscriptReview()
+
   const [openSections, setOpenSections] = useState({ flags: true })
   const [collapsed, setCollapsed] = useState(false)
   const [editingSpeaker, setEditingSpeaker] = useState(null)
   const [wikiMeta, setWikiMeta] = useState(null)
   const [wikiLoading, setWikiLoading] = useState(false)
   const [wikiSyncing, setWikiSyncing] = useState(false)
+
+  // Qwen classification state
+  const [qwenClassifications, setQwenClassifications] = useState([])
+  const [qwenRunning, setQwenRunning] = useState(false)
+  const [qwenProgress, setQwenProgress] = useState(0)
+  const [qwenError, setQwenError] = useState(null)
+  const qwenUnlistenRef = useRef(null)
 
   const toggleSection = (key) => {
     setOpenSections(prev => ({ ...prev, [key]: !prev[key] }))
@@ -122,7 +225,7 @@ export default function PropertiesPanel({
     setWikiSyncing(true)
     try {
       const epNum = episode.category_number || episode.episode_number
-      const result = await wikiAPI.syncWikiEpisode(epNum)
+      await wikiAPI.syncWikiEpisode(epNum)
       // Reload the meta
       const meta = await wikiAPI.getWikiEpisodeMeta(episode.id)
       setWikiMeta(meta)
@@ -133,11 +236,136 @@ export default function PropertiesPanel({
     }
   }
 
+  // Load existing classifications when episode changes
+  useEffect(() => {
+    if (!episode?.id) {
+      setQwenClassifications([])
+      return
+    }
+    let cancelled = false
+    contentAPI.getSegmentClassifications(episode.id)
+      .then(list => { if (!cancelled) setQwenClassifications(list || []) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [episode?.id])
+
+  // Set up Tauri event listeners for Qwen progress + completion
+  useEffect(() => {
+    if (!isTauri) return
+    let unlistenProgress = null
+    let unlistenComplete = null
+
+    const setup = async () => {
+      try {
+        const { listen } = await import('@tauri-apps/api/event')
+        unlistenProgress = await listen('qwen_progress', (event) => {
+          if (event.payload?.episode_id === episode?.id) {
+            setQwenProgress(event.payload.progress ?? 0)
+          }
+        })
+        unlistenComplete = await listen('qwen_complete', async (event) => {
+          if (event.payload?.episode_id === episode?.id) {
+            setQwenRunning(false)
+            setQwenProgress(100)
+            // Reload classifications
+            try {
+              const list = await contentAPI.getSegmentClassifications(episode.id)
+              setQwenClassifications(list || [])
+              if (!openSections.qwen) {
+                setOpenSections(prev => ({ ...prev, qwen: true }))
+              }
+            } catch (e) {
+              console.error('Failed to reload qwen classifications:', e)
+            }
+          }
+        })
+        qwenUnlistenRef.current = () => {
+          unlistenProgress?.()
+          unlistenComplete?.()
+        }
+      } catch (e) {
+        console.error('Failed to set up Qwen event listeners:', e)
+      }
+    }
+
+    setup()
+    return () => { qwenUnlistenRef.current?.() }
+  }, [episode?.id])
+
+  const handleRunQwen = useCallback(async (mode) => {
+    if (!episode?.id || qwenRunning) return
+    setQwenError(null)
+    setQwenRunning(true)
+    setQwenProgress(0)
+
+    let indices = []
+    if (mode === 'flagged') {
+      // Only analyze character_voice flags — Qwen is specifically for character/performance bit detection
+      indices = Object.keys(flaggedSegments)
+        .filter(idx => flaggedSegments[idx]?.flag_type === 'character_voice')
+        .map(Number)
+    } else if (mode === 'all' && segments) {
+      indices = segments.map((_, i) => i)
+    }
+
+    if (indices.length === 0) {
+      setQwenError('No character voice flags to analyze. Flag segments as "Character Voice" first.')
+      setQwenRunning(false)
+      return
+    }
+
+    try {
+      await contentAPI.runQwenClassification(episode.id, indices)
+      // qwen_complete event will handle the rest
+    } catch (e) {
+      console.error('Qwen classification error:', e)
+      setQwenError(e?.message || String(e))
+      setQwenRunning(false)
+    }
+  }, [episode?.id, qwenRunning, flaggedSegments, segments])
+
+  const handleApprove = useCallback(async (id) => {
+    try {
+      await contentAPI.approveSegmentClassification(id)
+      setQwenClassifications(prev =>
+        prev.map(c => c.id === id ? { ...c, approved: 1 } : c)
+      )
+    } catch (e) {
+      console.error('Failed to approve classification:', e)
+    }
+  }, [])
+
+  const handleReject = useCallback(async (id) => {
+    try {
+      await contentAPI.rejectSegmentClassification(id)
+      setQwenClassifications(prev =>
+        prev.map(c => c.id === id ? { ...c, approved: -1 } : c)
+      )
+    } catch (e) {
+      console.error('Failed to reject classification:', e)
+    }
+  }, [])
+
+  const handleApproveAll = useCallback(async () => {
+    const pending = qwenClassifications.filter(c => c.approved === 0)
+    for (const c of pending) {
+      await handleApprove(c.id)
+    }
+  }, [qwenClassifications, handleApprove])
+
   const flagCount = Object.keys(flaggedSegments).length
+  const characterFlagCount = Object.values(flaggedSegments).filter(f => f?.flag_type === 'character_voice').length
   const characterCount = characterAppearances.length
   const chapterCount = episodeChapters.length
   const sampleCount = Object.keys(markedSamples).length
-  const speakerCount = speakers.length
+  const qwenPendingCount = qwenClassifications.filter(c => c.approved === 0).length
+  // Deduplicate speakers with the same display name
+  const deduplicatedSpeakers = speakers.filter((speakerId, idx) => {
+    const displayName = speakerNames[speakerId]
+    if (!displayName) return true // unnamed — always show
+    return speakers.findIndex(s => speakerNames[s] === displayName) === idx
+  })
+  const speakerCount = deduplicatedSpeakers.length
   const dropCount = audioDropInstances.length
 
   const getSegmentTime = (idx) => {
@@ -216,7 +444,7 @@ export default function PropertiesPanel({
             </span>
           </div>
           <div className="flex flex-wrap gap-1">
-            {speakers.map(speakerId => {
+            {deduplicatedSpeakers.map(speakerId => {
               const colors = getSpeakerColor(speakerId)
               const displayName = speakerNames[speakerId]
               const isEditing = editingSpeaker === speakerId
@@ -224,7 +452,7 @@ export default function PropertiesPanel({
               return (
                 <div key={speakerId} className="relative">
                   <button
-                    onClick={() => onSeekToSpeaker?.(speakerId)}
+                    onClick={() => seekToSpeaker?.(speakerId)}
                     className={`px-2 py-1 rounded text-xs font-medium flex items-center gap-1 ${colors.bg} ${colors.text} ${colors.border} border hover:shadow-sm transition-all`}
                     title={`Click to hear ${speakerId}`}
                   >
@@ -253,7 +481,7 @@ export default function PropertiesPanel({
                           key={v.name}
                           onClick={(e) => {
                             e.stopPropagation()
-                            onAssignSpeakerName?.(speakerId, v.name)
+                            assignSpeakerName?.(speakerId, v.name)
                             setEditingSpeaker(null)
                           }}
                           className="block w-full px-2 py-1 text-xs text-left hover:bg-yellow-50 text-yellow-800 rounded"
@@ -269,11 +497,7 @@ export default function PropertiesPanel({
                               key={drop.id}
                               onClick={(e) => {
                                 e.stopPropagation()
-                                if (onAssignAudioDrop) {
-                                  onAssignAudioDrop(speakerId, drop)
-                                } else {
-                                  onAssignSpeakerName?.(speakerId, drop.name)
-                                }
+                                assignAudioDrop?.(speakerId, drop)
                                 setEditingSpeaker(null)
                               }}
                               className="block w-full px-2 py-1 text-xs text-left hover:bg-teal-50 text-teal-800 rounded"
@@ -324,7 +548,7 @@ export default function PropertiesPanel({
                       flag.flag_type === 'audio_issue' ? 'bg-gray-50 border-gray-200' :
                       'bg-yellow-50 border-yellow-200'
                     }`}
-                    onClick={() => onSeekToSegment?.(parseInt(idx))}
+                    onClick={() => seekToSegment?.(parseInt(idx))}
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
@@ -334,7 +558,7 @@ export default function PropertiesPanel({
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
-                          onDeleteFlag?.(parseInt(idx))
+                          deleteFlag?.(parseInt(idx))
                         }}
                         className="p-1 text-gray-400 hover:text-red-500 transition-colors"
                       >
@@ -371,7 +595,7 @@ export default function PropertiesPanel({
                 <div
                   key={appearance.id}
                   className="p-2 rounded-lg bg-pink-50 border border-pink-200 cursor-pointer hover:shadow-sm transition-shadow"
-                  onClick={() => onSeekToSegment?.(appearance.segment_idx)}
+                  onClick={() => seekToSegment?.(appearance.segment_idx)}
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -381,7 +605,7 @@ export default function PropertiesPanel({
                     <button
                       onClick={(e) => {
                         e.stopPropagation()
-                        onRemoveCharacter?.(appearance.id)
+                        removeCharacter?.(appearance.id)
                       }}
                       className="p-1 text-gray-400 hover:text-red-500 transition-colors"
                     >
@@ -417,7 +641,7 @@ export default function PropertiesPanel({
                     backgroundColor: chapter.chapter_type_color + '20',
                     borderColor: chapter.chapter_type_color + '60'
                   }}
-                  onClick={() => onSeekToSegment?.(chapter.start_segment_idx)}
+                  onClick={() => seekToSegment?.(chapter.start_segment_idx)}
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -429,7 +653,7 @@ export default function PropertiesPanel({
                     <button
                       onClick={(e) => {
                         e.stopPropagation()
-                        onDeleteChapter?.(chapter.id)
+                        deleteChapter?.(chapter.id)
                       }}
                       className="p-1 text-gray-400 hover:text-red-500 transition-colors"
                     >
@@ -469,7 +693,7 @@ export default function PropertiesPanel({
                   <div
                     key={instance.id}
                     className="p-2 rounded-lg bg-teal-50 border border-teal-200 cursor-pointer hover:shadow-sm transition-shadow"
-                    onClick={() => onSeekToSegment?.(instance.segment_idx)}
+                    onClick={() => seekToSegment?.(instance.segment_idx)}
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
@@ -482,7 +706,7 @@ export default function PropertiesPanel({
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
-                          onRemoveAudioDrop?.(instance.id)
+                          removeAudioDropInstance?.(instance.id)
                         }}
                         className="p-1 text-gray-400 hover:text-red-500 transition-colors"
                       >
@@ -519,7 +743,7 @@ export default function PropertiesPanel({
                   <div
                     key={idx}
                     className="p-2 rounded-lg bg-yellow-50 border border-yellow-200 cursor-pointer hover:shadow-sm transition-shadow"
-                    onClick={() => onSeekToSegment?.(parseInt(idx))}
+                    onClick={() => seekToSegment?.(parseInt(idx))}
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
@@ -529,7 +753,7 @@ export default function PropertiesPanel({
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
-                          onToggleVoiceSample?.(parseInt(idx))
+                          toggleVoiceSample?.(parseInt(idx))
                         }}
                         className="p-1 text-gray-400 hover:text-red-500 transition-colors"
                       >
@@ -667,6 +891,106 @@ export default function PropertiesPanel({
                 {!episode?.category_number && !episode?.episode_number && (
                   <p className="text-[10px] text-gray-400 mt-2">
                     Episode has no number — can't match to wiki.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Qwen Classification Section */}
+        {isTauri && episode?.is_downloaded && (
+          <div className="border-b border-gray-100">
+            <SectionHeader
+              open={!!openSections.qwen}
+              onClick={() => toggleSection('qwen')}
+              icon="🤖"
+              label="Qwen Analysis"
+              count={qwenPendingCount}
+              color="violet"
+            />
+            {openSections.qwen && (
+              <div className="p-3 space-y-3">
+                {/* Run buttons */}
+                {!qwenRunning ? (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleRunQwen('flagged')}
+                      disabled={characterFlagCount === 0}
+                      className="flex-1 px-2 py-1.5 text-xs rounded bg-violet-100 hover:bg-violet-200 text-violet-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                      title={characterFlagCount === 0 ? 'Flag segments as "Character Voice" first' : `Analyze ${characterFlagCount} character voice flag(s)`}
+                    >
+                      Analyze Character Flags ({characterFlagCount})
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between text-xs text-violet-700">
+                      <span>Running Qwen...</span>
+                      <span>{qwenProgress}%</span>
+                    </div>
+                    <div className="w-full bg-violet-100 rounded-full h-1.5">
+                      <div
+                        className="bg-violet-500 h-1.5 rounded-full transition-all duration-300"
+                        style={{ width: `${qwenProgress}%` }}
+                      />
+                    </div>
+                    <p className="text-[10px] text-gray-400">Model takes ~13× realtime — be patient</p>
+                  </div>
+                )}
+
+                {qwenError && (
+                  <div className="p-2 rounded bg-red-50 border border-red-200">
+                    <p className="text-xs text-red-600">{qwenError}</p>
+                  </div>
+                )}
+
+                {/* Pending classifications */}
+                {qwenClassifications.filter(c => c.approved === 0).length > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">
+                        Pending Review ({qwenPendingCount})
+                      </span>
+                      <button
+                        onClick={handleApproveAll}
+                        className="text-[10px] px-2 py-0.5 rounded bg-green-100 hover:bg-green-200 text-green-700"
+                      >
+                        Approve All
+                      </button>
+                    </div>
+                    {qwenClassifications.filter(c => c.approved === 0).map(c => (
+                      <QwenClassificationCard
+                        key={c.id}
+                        classification={c}
+                        onApprove={() => handleApprove(c.id)}
+                        onReject={() => handleReject(c.id)}
+                        onSeek={() => seekToSegment?.(c.segment_idx)}
+                      />
+                    ))}
+                  </div>
+                )}
+
+                {/* Approved classifications */}
+                {qwenClassifications.filter(c => c.approved === 1).length > 0 && (
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-medium text-gray-400 uppercase tracking-wider">
+                      Approved ({qwenClassifications.filter(c => c.approved === 1).length})
+                    </span>
+                    {qwenClassifications.filter(c => c.approved === 1).map(c => (
+                      <div key={c.id} className="px-2 py-1 rounded bg-green-50 border border-green-100 flex items-center gap-1.5">
+                        <span className="text-green-500 text-xs">✓</span>
+                        <span className="text-xs text-green-700 truncate flex-1">
+                          {c.character_name || 'Performance bit'} @ seg {c.segment_idx}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {qwenClassifications.length === 0 && !qwenRunning && (
+                  <p className="text-xs text-gray-400 text-center py-2">
+                    No classifications yet. Flag segments as "character_voice" then analyze.
                   </p>
                 )}
               </div>

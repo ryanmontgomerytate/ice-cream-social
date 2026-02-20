@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { statsAPI } from '../services/api'
 
-export default function Stats({ stats }) {
+export default function Stats({ stats, onOpenEpisode }) {
   const [collapsed, setCollapsed] = useState(false)
   const [queuesCollapsed, setQueuesCollapsed] = useState(false)
   const [transcribeOpen, setTranscribeOpen] = useState(true)
@@ -13,7 +13,7 @@ export default function Stats({ stats }) {
   const downloaded = stats.downloaded_episodes || 0
   const transcribed = stats.transcribed_episodes || 0
   const diarized = stats.diarized_episodes || 0
-  const inQueue = stats.in_queue || 0
+  const inQueue = stats.in_transcription_queue || 0
   const inDiarizationQueue = stats.in_diarization_queue || 0
   const failed = stats.failed || 0
 
@@ -178,6 +178,11 @@ export default function Stats({ stats }) {
                               <td className="px-4 py-1.5 text-gray-400 w-6 tabular-nums">{i + 1}</td>
                               <td className="px-2 py-1.5 text-gray-500 whitespace-nowrap w-12">{ep.episode_number ? `#${ep.episode_number}` : '—'}</td>
                               <td className="px-2 py-1.5 text-gray-800 truncate max-w-xs">{ep.title}</td>
+                              {onOpenEpisode && (
+                                <td className="px-2 py-1.5 w-8">
+                                  <button onClick={() => onOpenEpisode(ep.id)} className="text-amber-500 hover:text-amber-700 text-xs" title="Open episode">→</button>
+                                </td>
+                              )}
                             </tr>
                           ))}
                         </tbody>
@@ -212,6 +217,11 @@ export default function Stats({ stats }) {
                               <td className="px-4 py-1.5 text-gray-400 w-6 tabular-nums">{i + 1}</td>
                               <td className="px-2 py-1.5 text-gray-500 whitespace-nowrap w-12">{ep.episode_number ? `#${ep.episode_number}` : '—'}</td>
                               <td className="px-2 py-1.5 text-gray-800 truncate max-w-xs">{ep.title}</td>
+                              {onOpenEpisode && (
+                                <td className="px-2 py-1.5 w-8">
+                                  <button onClick={() => onOpenEpisode(ep.id)} className="text-orange-500 hover:text-orange-700 text-xs" title="Open episode">→</button>
+                                </td>
+                              )}
                             </tr>
                           ))}
                         </tbody>

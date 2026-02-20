@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { settingsAPI, episodesAPI, workerAPI } from '../services/api'
+import { settingsAPI, episodesAPI, workerAPI, contentAPI } from '../services/api'
 
 // ============================================================================
 // Category Rule Card - Editable card for a single rule
@@ -474,10 +474,239 @@ function CategoryRulesSection({ onNotification }) {
 // Main Settings Panel
 // ============================================================================
 
+// ============================================================================
+// Chapter Label Rules Section
+// ============================================================================
+
+const MATCH_TYPES = [
+  { value: 'contains', label: 'Contains' },
+  { value: 'starts_with', label: 'Starts with' },
+  { value: 'regex', label: 'Regex' },
+]
+
+function ChapterLabelRuleRow({ rule, chapterTypes, onSave, onDelete }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState({ ...rule })
+  const [saving, setSaving] = useState(false)
+
+  const handleSave = async () => {
+    setSaving(true)
+    try {
+      await onSave(draft)
+      setEditing(false)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!editing) {
+    const ct = chapterTypes.find(t => t.id === rule.chapter_type_id)
+    return (
+      <div className={`flex items-center gap-3 px-3 py-2 rounded border ${rule.enabled ? 'bg-white border-gray-200' : 'bg-gray-50 border-gray-200 opacity-60'}`}>
+        <span className="text-base">{ct?.icon || '📑'}</span>
+        <span className="text-xs font-medium text-gray-700 w-24 flex-shrink-0" style={{ color: ct?.color }}>{ct?.name || '—'}</span>
+        <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 flex-shrink-0">{MATCH_TYPES.find(m => m.value === rule.match_type)?.label || rule.match_type}</span>
+        <span className="text-xs font-mono text-gray-600 flex-1 truncate">{rule.pattern}</span>
+        <span className="text-xs text-gray-400 flex-shrink-0">p{rule.priority}</span>
+        <button onClick={() => setEditing(true)} className="text-xs text-blue-500 hover:text-blue-700 flex-shrink-0">Edit</button>
+        <button onClick={() => onDelete(rule.id)} className="text-xs text-red-400 hover:text-red-600 flex-shrink-0">✕</button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="p-3 rounded border border-blue-200 bg-blue-50 space-y-2">
+      <div className="flex gap-2">
+        <select
+          value={draft.chapter_type_id}
+          onChange={e => setDraft(d => ({ ...d, chapter_type_id: parseInt(e.target.value) }))}
+          className="text-xs border border-gray-300 rounded px-2 py-1 flex-shrink-0"
+        >
+          {chapterTypes.map(t => <option key={t.id} value={t.id}>{t.icon} {t.name}</option>)}
+        </select>
+        <select
+          value={draft.match_type}
+          onChange={e => setDraft(d => ({ ...d, match_type: e.target.value }))}
+          className="text-xs border border-gray-300 rounded px-2 py-1 flex-shrink-0"
+        >
+          {MATCH_TYPES.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+        </select>
+        <input
+          value={draft.pattern}
+          onChange={e => setDraft(d => ({ ...d, pattern: e.target.value }))}
+          placeholder="Pattern to match..."
+          className="text-xs border border-gray-300 rounded px-2 py-1 flex-1 font-mono"
+        />
+        <input
+          type="number"
+          value={draft.priority}
+          onChange={e => setDraft(d => ({ ...d, priority: parseInt(e.target.value) || 0 }))}
+          className="text-xs border border-gray-300 rounded px-2 py-1 w-16"
+          title="Priority (higher runs first)"
+        />
+      </div>
+      <div className="flex items-center gap-3">
+        <label className="flex items-center gap-1.5 text-xs text-gray-600">
+          <input type="checkbox" checked={draft.enabled} onChange={e => setDraft(d => ({ ...d, enabled: e.target.checked }))} />
+          Enabled
+        </label>
+        <div className="flex-1" />
+        <button onClick={() => setEditing(false)} className="text-xs text-gray-500 hover:text-gray-700">Cancel</button>
+        <button onClick={handleSave} disabled={saving || !draft.pattern} className="text-xs bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 disabled:opacity-50">
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function ChapterLabelRulesSection({ onNotification }) {
+  const [rules, setRules] = useState([])
+  const [chapterTypes, setChapterTypes] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [adding, setAdding] = useState(false)
+  const [newRule, setNewRule] = useState({ chapter_type_id: null, pattern: '', match_type: 'contains', priority: 0, enabled: true })
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    load()
+  }, [])
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const [r, t] = await Promise.all([contentAPI.getChapterLabelRules(), contentAPI.getChapterTypes()])
+      setRules(r)
+      setChapterTypes(t)
+      if (t.length > 0 && !newRule.chapter_type_id) setNewRule(d => ({ ...d, chapter_type_id: t[0].id }))
+    } catch (e) {
+      onNotification?.(`Error loading chapter rules: ${e.message}`, 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleSave = async (rule) => {
+    try {
+      await contentAPI.saveChapterLabelRule(rule.id || null, rule.chapter_type_id, rule.pattern, rule.match_type, rule.priority, rule.enabled)
+      await load()
+      onNotification?.('Rule saved', 'success')
+    } catch (e) {
+      onNotification?.(`Save failed: ${e.message}`, 'error')
+      throw e
+    }
+  }
+
+  const handleDelete = async (id) => {
+    try {
+      await contentAPI.deleteChapterLabelRule(id)
+      setRules(r => r.filter(x => x.id !== id))
+      onNotification?.('Rule deleted', 'success')
+    } catch (e) {
+      onNotification?.(`Delete failed: ${e.message}`, 'error')
+    }
+  }
+
+  const handleAdd = async () => {
+    if (!newRule.pattern || !newRule.chapter_type_id) return
+    setSaving(true)
+    try {
+      await contentAPI.saveChapterLabelRule(null, newRule.chapter_type_id, newRule.pattern, newRule.match_type, newRule.priority, newRule.enabled)
+      await load()
+      setNewRule(d => ({ ...d, pattern: '', priority: 0, enabled: true }))
+      setAdding(false)
+      onNotification?.('Rule added', 'success')
+    } catch (e) {
+      onNotification?.(`Add failed: ${e.message}`, 'error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="p-4 bg-white rounded-lg border border-gray-200">
+      <div className="flex items-center justify-between mb-3">
+        <div>
+          <h3 className="font-medium text-gray-800 text-sm">Chapter Label Rules</h3>
+          <p className="text-xs text-gray-500 mt-0.5">Match transcript text to chapter types. Used by "Auto-Label Chapters" in the transcript editor.</p>
+        </div>
+        <button
+          onClick={() => setAdding(a => !a)}
+          className="text-xs bg-indigo-500 text-white px-3 py-1.5 rounded hover:bg-indigo-600"
+        >+ Add Rule</button>
+      </div>
+
+      {adding && (
+        <div className="p-3 rounded border border-indigo-200 bg-indigo-50 space-y-2 mb-3">
+          <div className="flex gap-2">
+            <select
+              value={newRule.chapter_type_id || ''}
+              onChange={e => setNewRule(d => ({ ...d, chapter_type_id: parseInt(e.target.value) }))}
+              className="text-xs border border-gray-300 rounded px-2 py-1 flex-shrink-0"
+            >
+              {chapterTypes.map(t => <option key={t.id} value={t.id}>{t.icon} {t.name}</option>)}
+            </select>
+            <select
+              value={newRule.match_type}
+              onChange={e => setNewRule(d => ({ ...d, match_type: e.target.value }))}
+              className="text-xs border border-gray-300 rounded px-2 py-1 flex-shrink-0"
+            >
+              {MATCH_TYPES.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+            </select>
+            <input
+              value={newRule.pattern}
+              onChange={e => setNewRule(d => ({ ...d, pattern: e.target.value }))}
+              onKeyDown={e => e.key === 'Enter' && handleAdd()}
+              placeholder="Pattern to match in transcript text..."
+              className="text-xs border border-gray-300 rounded px-2 py-1 flex-1 font-mono"
+            />
+            <input
+              type="number"
+              value={newRule.priority}
+              onChange={e => setNewRule(d => ({ ...d, priority: parseInt(e.target.value) || 0 }))}
+              className="text-xs border border-gray-300 rounded px-2 py-1 w-16"
+              title="Priority"
+            />
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-1.5 text-xs text-gray-600">
+              <input type="checkbox" checked={newRule.enabled} onChange={e => setNewRule(d => ({ ...d, enabled: e.target.checked }))} />
+              Enabled
+            </label>
+            <div className="flex-1" />
+            <button onClick={() => setAdding(false)} className="text-xs text-gray-500 hover:text-gray-700">Cancel</button>
+            <button onClick={handleAdd} disabled={saving || !newRule.pattern} className="text-xs bg-indigo-500 text-white px-3 py-1 rounded hover:bg-indigo-600 disabled:opacity-50">
+              {saving ? 'Adding…' : 'Add Rule'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {loading ? (
+        <p className="text-xs text-gray-400 py-2">Loading…</p>
+      ) : rules.length === 0 ? (
+        <p className="text-xs text-gray-400 py-2">No rules yet. Add a rule to enable auto-labeling.</p>
+      ) : (
+        <div className="space-y-1.5">
+          {rules.map(rule => (
+            <ChapterLabelRuleRow
+              key={rule.id}
+              rule={rule}
+              chapterTypes={chapterTypes}
+              onSave={handleSave}
+              onDelete={handleDelete}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function SettingsPanel({ onNotification }) {
   const [settings, setSettings] = useState({})
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
+  const [savingKey, setSavingKey] = useState(null)
   const [preventSleep, setPreventSleep] = useState(false)
   const [preventSleepLoading, setPreventSleepLoading] = useState(false)
 
@@ -524,7 +753,7 @@ export default function SettingsPanel({ onNotification }) {
   }
 
   const updateSetting = async (key, value) => {
-    setSaving(true)
+    setSavingKey(key)
     try {
       await settingsAPI.setSetting(key, value)
       setSettings(prev => ({ ...prev, [key]: value }))
@@ -533,7 +762,7 @@ export default function SettingsPanel({ onNotification }) {
       console.error('Error updating setting:', error)
       onNotification?.(`Error updating setting: ${error.message}`, 'error')
     } finally {
-      setSaving(false)
+      setSavingKey(null)
     }
   }
 
@@ -557,7 +786,7 @@ export default function SettingsPanel({ onNotification }) {
         <h2 className="text-xl font-bold text-white">Settings</h2>
       </div>
 
-      <div className="p-6">
+      <div className="p-6 overflow-y-auto max-h-[calc(100vh-200px)]">
         {loading ? (
           <div className="text-center py-12">
             <div className="w-10 h-10 border-4 border-gray-200 border-t-gray-500 rounded-full animate-spin mx-auto mb-4"></div>
@@ -577,10 +806,10 @@ export default function SettingsPanel({ onNotification }) {
                 </div>
                 <button
                   onClick={toggleAutoTranscribe}
-                  disabled={saving}
+                  disabled={savingKey === 'auto_transcribe'}
                   className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors ${
                     isAutoTranscribeEnabled ? 'bg-blue-500' : 'bg-gray-300'
-                  } ${saving ? 'opacity-50' : ''}`}
+                  } ${savingKey === 'auto_transcribe' ? 'opacity-50' : ''}`}
                 >
                   <span
                     className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-transform ${
@@ -617,10 +846,10 @@ export default function SettingsPanel({ onNotification }) {
                 </div>
                 <button
                   onClick={toggleDiarization}
-                  disabled={saving}
+                  disabled={savingKey === 'enable_diarization'}
                   className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors ${
                     isDiarizationEnabled ? 'bg-purple-500' : 'bg-gray-300'
-                  } ${saving ? 'opacity-50' : ''}`}
+                  } ${savingKey === 'enable_diarization' ? 'opacity-50' : ''}`}
                 >
                   <span
                     className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-transform ${
@@ -690,7 +919,7 @@ export default function SettingsPanel({ onNotification }) {
               <select
                 value={settings.transcription_model || 'medium'}
                 onChange={(e) => updateSetting('transcription_model', e.target.value)}
-                disabled={saving}
+                disabled={savingKey === 'transcription_model'}
                 className="w-full md:w-64 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="tiny">Tiny (fastest, lowest quality)</option>
@@ -706,6 +935,9 @@ export default function SettingsPanel({ onNotification }) {
 
             {/* Category Rules Section */}
             <CategoryRulesSection onNotification={onNotification} />
+
+            {/* Chapter Label Rules Section */}
+            <ChapterLabelRulesSection onNotification={onNotification} />
 
             {/* Current Settings Debug */}
             <div className="p-4 bg-gray-100 rounded-lg border border-gray-200">

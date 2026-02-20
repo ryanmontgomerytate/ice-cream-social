@@ -1,5 +1,6 @@
 pub mod diarize;
 pub mod download;
+pub mod subagents;
 pub mod transcribe;
 
 use crate::database::{Database, EpisodeSummary};
@@ -48,7 +49,7 @@ impl Default for WorkerState {
     fn default() -> Self {
         Self {
             slots: Vec::new(),
-            model: "large-v3".to_string(),
+            model: "medium".to_string(),
             processed_today: 0,
             last_activity: Some(Utc::now()),
             cancel_requested: false,
@@ -901,6 +902,13 @@ impl TranscriptionWorker {
                     if let Err(e) = self.db.update_diarization(episode_id, num_speakers) {
                         log::error!("Failed to update diarization status: {}", e);
                     }
+                }
+
+                // Mark speaker-correction flags as resolved — they've been applied
+                match self.db.resolve_speaker_flags_for_episode(episode_id) {
+                    Ok(0) => {}
+                    Ok(n) => log::info!("Resolved {} speaker-correction flags for episode {}", n, episode_id),
+                    Err(e) => log::warn!("Failed to resolve speaker flags for episode {}: {}", episode_id, e),
                 }
 
                 // Get transcript path from entry

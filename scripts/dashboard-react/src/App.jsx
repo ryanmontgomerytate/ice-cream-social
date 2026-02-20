@@ -29,6 +29,7 @@ function App() {
   const [currentActivity, setCurrentActivity] = useState(null)
   const [notification, setNotification] = useState(null)
   const [transcriptEpisode, setTranscriptEpisode] = useState(null)
+  const [openEpisodeId, setOpenEpisodeId] = useState(null)
 
   // Initialize connection (Tauri events or Socket.IO)
   useEffect(() => {
@@ -202,12 +203,21 @@ function App() {
 
         {/* Tab Content */}
         {activeMainTab === 'stats' && (
-          <PipelineStats stats={stats} currentActivity={currentActivity} />
+          <PipelineStats stats={stats} currentActivity={currentActivity} onOpenEpisode={(id) => {
+            setOpenEpisodeId(id)
+            setActiveMainTab('episodes')
+          }} />
         )}
 
-        {activeMainTab === 'episodes' && (
-          <TranscriptReviewLayout onNotification={showNotification} />
-        )}
+        {/* Episodes tab kept mounted at all times to preserve selected episode state */}
+        <div style={{ display: activeMainTab === 'episodes' ? 'block' : 'none' }}>
+          <TranscriptReviewLayout
+            onNotification={showNotification}
+            isVisible={activeMainTab === 'episodes'}
+            openEpisodeId={openEpisodeId}
+            onOpenEpisodeHandled={() => setOpenEpisodeId(null)}
+          />
+        </div>
 
         {activeMainTab === 'search' && (
           <SearchPanel

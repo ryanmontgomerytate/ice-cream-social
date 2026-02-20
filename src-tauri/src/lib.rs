@@ -51,8 +51,12 @@ pub fn run() {
 
             let db = Arc::new(db);
 
-            // Initialize worker state
-            let worker_state = Arc::new(RwLock::new(WorkerState::default()));
+            // Initialize worker state, reading model from DB settings
+            let mut initial_worker_state = WorkerState::default();
+            if let Ok(Some(model)) = db.get_setting("transcription_model") {
+                initial_worker_state.model = model;
+            }
+            let worker_state = Arc::new(RwLock::new(initial_worker_state));
 
             // Initialize error log for diagnostics
             let error_log = Arc::new(ErrorLog::new(100)); // Keep last 100 errors
@@ -117,6 +121,34 @@ pub fn run() {
             let sync_app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 feed_sync_scheduler(sync_db, sync_app_handle).await;
+            });
+
+            // S1: Quality scan agent (every 6 hours)
+            let db_s1 = db.clone();
+            let ah_s1 = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                worker::subagents::quality_scan_agent(db_s1, ah_s1).await;
+            });
+
+            // S2: Extraction coordinator agent (every 2 hours)
+            let db_s2 = db.clone();
+            let ah_s2 = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                worker::subagents::extraction_coordinator_agent(db_s2, ah_s2).await;
+            });
+
+            // S3: Wiki sync agent (daily at 3:00 AM)
+            let db_s3 = db.clone();
+            let ah_s3 = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                worker::subagents::wiki_sync_agent(db_s3, ah_s3).await;
+            });
+
+            // S4: Hints prefetch agent (every 1 hour)
+            let db_s4 = db.clone();
+            let ah_s4 = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                worker::subagents::hints_prefetch_agent(db_s4, ah_s4).await;
             });
 
             log::info!("Ice Cream Social app initialized");
@@ -229,6 +261,11 @@ pub fn run() {
             commands::add_audio_drop_instance,
             commands::get_audio_drop_instances,
             commands::delete_audio_drop_instance,
+            // Chapter label rules commands
+            commands::get_chapter_label_rules,
+            commands::save_chapter_label_rule,
+            commands::delete_chapter_label_rule,
+            commands::auto_label_chapters,
             // Wiki lore commands
             commands::sync_wiki_episode,
             commands::get_wiki_episode_meta,
@@ -242,6 +279,11 @@ pub fn run() {
             commands::run_extraction,
             commands::test_extraction_prompt,
             commands::get_extraction_runs,
+            // Qwen segment classification commands
+            commands::run_qwen_classification,
+            commands::get_segment_classifications,
+            commands::approve_segment_classification,
+            commands::reject_segment_classification,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

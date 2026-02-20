@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { episodesAPI, speakersAPI, contentAPI, isTauri } from '../services/api'
 import { convertFileSrc } from '@tauri-apps/api/core'
+import { useTranscriptReview } from './TranscriptReviewContext'
 
 // Flag types for segment issues
 const FLAG_TYPES = [
@@ -12,17 +13,30 @@ const FLAG_TYPES = [
 ]
 
 // Speaker color palette with hex values for left column backgrounds
-const SPEAKER_COLORS = {
-  'SPEAKER_00': { bg: 'bg-blue-100', text: 'text-blue-700', label: 'bg-blue-200 text-blue-800', border: 'border-blue-300', ring: 'ring-blue-400', hex: '#dbeafe', borderHex: '#93c5fd' },
-  'SPEAKER_01': { bg: 'bg-green-100', text: 'text-green-700', label: 'bg-green-200 text-green-800', border: 'border-green-300', ring: 'ring-green-400', hex: '#dcfce7', borderHex: '#86efac' },
-  'SPEAKER_02': { bg: 'bg-orange-100', text: 'text-orange-700', label: 'bg-orange-200 text-orange-800', border: 'border-orange-300', ring: 'ring-orange-400', hex: '#ffedd5', borderHex: '#fdba74' },
-  'SPEAKER_03': { bg: 'bg-purple-100', text: 'text-purple-700', label: 'bg-purple-200 text-purple-800', border: 'border-purple-300', ring: 'ring-purple-400', hex: '#f3e8ff', borderHex: '#c084fc' },
-  'SPEAKER_04': { bg: 'bg-pink-100', text: 'text-pink-700', label: 'bg-pink-200 text-pink-800', border: 'border-pink-300', ring: 'ring-pink-400', hex: '#fce7f3', borderHex: '#f9a8d4' },
-  'SPEAKER_05': { bg: 'bg-cyan-100', text: 'text-cyan-700', label: 'bg-cyan-200 text-cyan-800', border: 'border-cyan-300', ring: 'ring-cyan-400', hex: '#cffafe', borderHex: '#67e8f9' },
-  'UNKNOWN': { bg: 'bg-gray-100', text: 'text-gray-600', label: 'bg-gray-200 text-gray-600', border: 'border-gray-300', ring: 'ring-gray-400', hex: '#f3f4f6', borderHex: '#d1d5db' },
-}
+const SPEAKER_COLOR_PALETTE = [
+  { bg: 'bg-blue-100', text: 'text-blue-700', label: 'bg-blue-200 text-blue-800', border: 'border-blue-300', ring: 'ring-blue-400', hex: '#dbeafe', borderHex: '#93c5fd' },
+  { bg: 'bg-green-100', text: 'text-green-700', label: 'bg-green-200 text-green-800', border: 'border-green-300', ring: 'ring-green-400', hex: '#dcfce7', borderHex: '#86efac' },
+  { bg: 'bg-orange-100', text: 'text-orange-700', label: 'bg-orange-200 text-orange-800', border: 'border-orange-300', ring: 'ring-orange-400', hex: '#ffedd5', borderHex: '#fdba74' },
+  { bg: 'bg-purple-100', text: 'text-purple-700', label: 'bg-purple-200 text-purple-800', border: 'border-purple-300', ring: 'ring-purple-400', hex: '#f3e8ff', borderHex: '#c084fc' },
+  { bg: 'bg-pink-100', text: 'text-pink-700', label: 'bg-pink-200 text-pink-800', border: 'border-pink-300', ring: 'ring-pink-400', hex: '#fce7f3', borderHex: '#f9a8d4' },
+  { bg: 'bg-cyan-100', text: 'text-cyan-700', label: 'bg-cyan-200 text-cyan-800', border: 'border-cyan-300', ring: 'ring-cyan-400', hex: '#cffafe', borderHex: '#67e8f9' },
+  { bg: 'bg-red-100', text: 'text-red-700', label: 'bg-red-200 text-red-800', border: 'border-red-300', ring: 'ring-red-400', hex: '#fee2e2', borderHex: '#fca5a5' },
+  { bg: 'bg-teal-100', text: 'text-teal-700', label: 'bg-teal-200 text-teal-800', border: 'border-teal-300', ring: 'ring-teal-400', hex: '#ccfbf1', borderHex: '#5eead4' },
+  { bg: 'bg-yellow-100', text: 'text-yellow-700', label: 'bg-yellow-200 text-yellow-800', border: 'border-yellow-300', ring: 'ring-yellow-400', hex: '#fef9c3', borderHex: '#fde047' },
+  { bg: 'bg-indigo-100', text: 'text-indigo-700', label: 'bg-indigo-200 text-indigo-800', border: 'border-indigo-300', ring: 'ring-indigo-400', hex: '#e0e7ff', borderHex: '#a5b4fc' },
+  { bg: 'bg-rose-100', text: 'text-rose-700', label: 'bg-rose-200 text-rose-800', border: 'border-rose-300', ring: 'ring-rose-400', hex: '#ffe4e6', borderHex: '#fda4af' },
+  { bg: 'bg-lime-100', text: 'text-lime-700', label: 'bg-lime-200 text-lime-800', border: 'border-lime-300', ring: 'ring-lime-400', hex: '#ecfccb', borderHex: '#bef264' },
+]
+const SPEAKER_COLORS_UNKNOWN = { bg: 'bg-gray-100', text: 'text-gray-600', label: 'bg-gray-200 text-gray-600', border: 'border-gray-300', ring: 'ring-gray-400', hex: '#f3f4f6', borderHex: '#d1d5db' }
 
-const getSpeakerColor = (speaker) => SPEAKER_COLORS[speaker] || SPEAKER_COLORS['UNKNOWN']
+const getSpeakerColor = (speaker) => {
+  const match = speaker?.match(/^SPEAKER_(\d+)$/)
+  if (match) {
+    const idx = parseInt(match[1], 10) % SPEAKER_COLOR_PALETTE.length
+    return SPEAKER_COLOR_PALETTE[idx]
+  }
+  return SPEAKER_COLORS_UNKNOWN
+}
 
 const formatTime = (seconds) => {
   if (!seconds || isNaN(seconds)) return '00:00'
@@ -35,47 +49,39 @@ const formatTime = (seconds) => {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
-export default function TranscriptEditor({
-  episode,
-  onClose,
-  onNotification,
-  onFlaggedSegmentsChange,
-  onCharacterAppearancesChange,
-  onChaptersChange,
-  onMarkedSamplesChange,
-  onSpeakersChange,
-  onSpeakerNamesChange,
-  onVoiceLibraryChange,
-  onAudioDropInstancesChange,
-  onAudioDropsChange,
-  onSegmentsChange,
-  selectedSegmentIdx,
-  onSelectedSegmentChange,
-  onTranscriptLoaded,
-}) {
+export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
+  // All shared state comes from context
+  const {
+    episode,
+    onNotification,
+    isVisible,
+    flaggedSegments, setFlaggedSegments,
+    characterAppearances, setCharacterAppearances,
+    episodeChapters, setEpisodeChapters,
+    markedSamples, setMarkedSamples,
+    characters, setCharacters,
+    chapterTypes, setChapterTypes,
+    voiceLibrary, setVoiceLibrary,
+    setSpeakers,
+    speakerNames, setSpeakerNames,
+    audioDropInstances, setAudioDropInstances,
+    audioDrops, setAudioDrops,
+    setSegments: setCtxSegments,
+    selectedSegmentIdx, setSelectedSegmentIdx,
+    registerHandlers,
+  } = useTranscriptReview()
+
+  // Internal-only state (not shared with PropertiesPanel)
   const [transcript, setTranscript] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [viewMode, setViewMode] = useState('speakers')
-  const [speakerNames, setSpeakerNames] = useState({})
-  const [voiceLibrary, setVoiceLibrary] = useState([])
-  const [characters, setCharacters] = useState([])
-  const [chapterTypes, setChapterTypes] = useState([])
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [saving, setSaving] = useState(false)
   const [reprocessing, setReprocessing] = useState(false)
   const [diarizationLocked, setDiarizationLocked] = useState(false)
-
-  // Local state for segment data
-  const [flaggedSegments, setFlaggedSegments] = useState({})
-  const [characterAppearances, setCharacterAppearances] = useState([])
-  const [episodeChapters, setEpisodeChapters] = useState([])
-  const [markedSamples, setMarkedSamples] = useState({})
-
-  // Audio drops state
-  const [audioDrops, setAudioDrops] = useState([])
-  const [audioDropInstances, setAudioDropInstances] = useState([])
+  const [autoLabeling, setAutoLabeling] = useState(false)
 
   // Episode speaker assignments (authoritative speaker/sound bite mappings from DB)
   const [episodeSpeakerAssignments, setEpisodeSpeakerAssignments] = useState([])
@@ -111,6 +117,15 @@ export default function TranscriptEditor({
     }
   }, [episode?.id])
 
+  // Refresh voice library when tab becomes visible (catches speakers added via Audio ID tab)
+  const prevVisibleRef = useRef(false)
+  useEffect(() => {
+    if (isVisible && !prevVisibleRef.current && episode?.id) {
+      speakersAPI.getVoiceLibrary().then(voices => setVoiceLibrary(voices)).catch(() => {})
+    }
+    prevVisibleRef.current = isVisible
+  }, [isVisible])
+
   // Unlock when this episode's diarization completes
   useEffect(() => {
     if (!diarizationLocked || !isTauri) return
@@ -120,6 +135,7 @@ export default function TranscriptEditor({
         if (event.payload === episode?.id) {
           setDiarizationLocked(false)
           setReprocessing(false)
+          loadTranscript() // Reload so new speaker names are visible immediately
         }
       }).then(fn => { unlisten = fn })
     })
@@ -150,19 +166,14 @@ export default function TranscriptEditor({
       setChapterTypes(types)
       setCharacters(allCharacters)
       setAudioDrops(drops)
-      onAudioDropsChange?.(drops)
       setAudioDropInstances(dropInstances)
-      onAudioDropInstancesChange?.(dropInstances)
 
       setEpisodeChapters(chapters)
       setCharacterAppearances(charAppearances)
-      onChaptersChange?.(chapters)
-      onCharacterAppearancesChange?.(charAppearances)
 
       const flagsMap = {}
-      flags.forEach(flag => { flagsMap[flag.segment_idx] = flag })
+      flags.forEach(flag => { if (!flag.resolved) flagsMap[flag.segment_idx] = flag })
       setFlaggedSegments(flagsMap)
-      onFlaggedSegmentsChange?.(flagsMap)
 
       setEpisodeSpeakerAssignments(speakerAssignments)
 
@@ -171,7 +182,6 @@ export default function TranscriptEditor({
         const samplesMap = {}
         data.marked_samples.forEach(idx => { samplesMap[idx] = true })
         setMarkedSamples(samplesMap)
-        onMarkedSamplesChange?.(samplesMap)
       }
 
       // Build speaker names: start from JSON, then overlay DB assignments
@@ -180,7 +190,6 @@ export default function TranscriptEditor({
         if (assignment.speaker_name) {
           names[assignment.diarization_label] = assignment.speaker_name
         } else if (assignment.audio_drop_name) {
-          // Use the drop name directly (no 🔊 prefix — visual indicator handled in render)
           names[assignment.diarization_label] = assignment.audio_drop_name
         }
       }
@@ -205,7 +214,7 @@ export default function TranscriptEditor({
     }
   }
 
-  // Parse segments
+  // Parse segments (local derived value; synced to context for PropertiesPanel)
   const segments = useMemo(() => {
     if (!transcript?.segments_json) return null
     try {
@@ -217,7 +226,7 @@ export default function TranscriptEditor({
   }, [transcript?.segments_json])
 
   useEffect(() => {
-    onSegmentsChange?.(segments)
+    setCtxSegments(segments)
   }, [segments])
 
   const uniqueSpeakers = useMemo(() => {
@@ -230,16 +239,8 @@ export default function TranscriptEditor({
   }, [segments])
 
   useEffect(() => {
-    onSpeakersChange?.(uniqueSpeakers)
+    setSpeakers(uniqueSpeakers)
   }, [uniqueSpeakers])
-
-  useEffect(() => {
-    onSpeakerNamesChange?.(speakerNames)
-  }, [speakerNames])
-
-  useEffect(() => {
-    onVoiceLibraryChange?.(voiceLibrary)
-  }, [voiceLibrary])
 
   const hasSpeakerLabels = useMemo(() => {
     return segments?.some(seg => seg.speaker && seg.speaker !== 'UNKNOWN') ?? false
@@ -297,7 +298,6 @@ export default function TranscriptEditor({
   }, [currentSegmentIdx, autoScroll])
 
   // Audio controls — re-attach when audioPath changes OR when loading finishes
-  // (the <audio> element only exists in the DOM after loading completes)
   useEffect(() => {
     const audio = audioRef.current
     if (!audio) return
@@ -314,7 +314,6 @@ export default function TranscriptEditor({
     audio.addEventListener('pause', handlePause)
     audio.addEventListener('ended', handleEnded)
 
-    // If audio already has duration (cached/preloaded), sync it
     if (audio.duration && !isNaN(audio.duration)) {
       setDuration(audio.duration)
     }
@@ -376,12 +375,22 @@ export default function TranscriptEditor({
         [idx]: { id, episode_id: episode.id, segment_idx: idx, flag_type: flagType, corrected_speaker: correctedSpeaker, character_id: characterId, notes, speaker_ids: speakerIdsJson, resolved: false }
       }
       setFlaggedSegments(newFlags)
-      onFlaggedSegmentsChange?.(newFlags)
       setActivePicker(null)
       setSpeakerPickerIdx(null)
       setSpeakerPickerSelected([])
     } catch (err) {
       onNotification?.(`Failed to create flag: ${err.message}`, 'error')
+    }
+  }
+
+  const createCharacterAndFlagIt = async (idx, name) => {
+    try {
+      const characterId = await contentAPI.createCharacter(name.trim(), null, null, null)
+      setCharacters(prev => [...prev, { id: characterId, name: name.trim() }])
+      setNewCharacterName('')
+      await createFlag(idx, 'character_voice', null, characterId)
+    } catch (err) {
+      onNotification?.(`Failed to create character: ${err.message}`, 'error')
     }
   }
 
@@ -393,7 +402,6 @@ export default function TranscriptEditor({
       const newFlags = { ...flaggedSegments }
       delete newFlags[idx]
       setFlaggedSegments(newFlags)
-      onFlaggedSegmentsChange?.(newFlags)
     } catch (err) {
       onNotification?.(`Failed to delete flag: ${err.message}`, 'error')
     }
@@ -407,7 +415,6 @@ export default function TranscriptEditor({
       await contentAPI.addCharacterAppearance(characterId, episode.id, parseTimestampToSeconds(segment), getSegmentEndTime(segment), idx)
       const appearances = await contentAPI.getCharacterAppearancesForEpisode(episode.id)
       setCharacterAppearances(appearances)
-      onCharacterAppearancesChange?.(appearances)
       setActivePicker(null)
     } catch (err) {
       onNotification?.(`Failed to add character: ${err.message}`, 'error')
@@ -432,7 +439,6 @@ export default function TranscriptEditor({
       await contentAPI.deleteCharacterAppearance(appearanceId)
       const appearances = await contentAPI.getCharacterAppearancesForEpisode(episode.id)
       setCharacterAppearances(appearances)
-      onCharacterAppearancesChange?.(appearances)
     } catch (err) {
       onNotification?.(`Failed to remove character: ${err.message}`, 'error')
     }
@@ -448,7 +454,6 @@ export default function TranscriptEditor({
       await contentAPI.createEpisodeChapter(episode.id, chapterTypeId, null, startTime, endTime, segmentIdx, segmentIdx)
       const chapters = await contentAPI.getEpisodeChapters(episode.id)
       setEpisodeChapters(chapters)
-      onChaptersChange?.(chapters)
       setActivePicker(null)
     } catch (err) {
       onNotification?.(`Failed to create chapter: ${err.message}`, 'error')
@@ -460,7 +465,6 @@ export default function TranscriptEditor({
       await contentAPI.deleteEpisodeChapter(chapterId)
       const chapters = await contentAPI.getEpisodeChapters(episode.id)
       setEpisodeChapters(chapters)
-      onChaptersChange?.(chapters)
     } catch (err) {
       onNotification?.(`Failed to delete chapter: ${err.message}`, 'error')
     }
@@ -474,7 +478,6 @@ export default function TranscriptEditor({
       await contentAPI.addAudioDropInstance(audioDropId, episode.id, idx, parseTimestampToSeconds(segment), getSegmentEndTime(segment))
       const instances = await contentAPI.getAudioDropInstances(episode.id)
       setAudioDropInstances(instances)
-      onAudioDropInstancesChange?.(instances)
       setActivePicker(null)
     } catch (err) {
       onNotification?.(`Failed to add sound bite: ${err.message}`, 'error')
@@ -494,6 +497,20 @@ export default function TranscriptEditor({
     }
   }
 
+  // Create a new audio drop and assign it to a diarization speaker label
+  const createDropAndAssign = async (originalLabel, name) => {
+    if (!name.trim()) return
+    try {
+      const dropId = await contentAPI.createAudioDrop(name.trim())
+      const allDrops = await contentAPI.getAudioDrops()
+      setAudioDrops(allDrops)
+      setNewDropName('')
+      await handleAssignAudioDrop(originalLabel, { id: dropId, name: name.trim() })
+    } catch (err) {
+      onNotification?.(`Failed to create sound bite: ${err.message}`, 'error')
+    }
+  }
+
   // Create a new speaker in the DB and assign to the diarization label
   const createSpeakerAndAssign = async (originalLabel, name) => {
     if (!name.trim()) return
@@ -503,7 +520,6 @@ export default function TranscriptEditor({
       setNewSpeakerName('')
       const voices = await speakersAPI.getVoiceLibrary()
       setVoiceLibrary(voices)
-      onVoiceLibraryChange?.(voices)
     } catch (err) {
       onNotification?.(`Failed to create speaker: ${err.message}`, 'error')
     }
@@ -514,7 +530,6 @@ export default function TranscriptEditor({
       await contentAPI.deleteAudioDropInstance(instanceId)
       const instances = await contentAPI.getAudioDropInstances(episode.id)
       setAudioDropInstances(instances)
-      onAudioDropInstancesChange?.(instances)
     } catch (err) {
       onNotification?.(`Failed to remove sound bite: ${err.message}`, 'error')
     }
@@ -529,24 +544,22 @@ export default function TranscriptEditor({
       newSamples[idx] = true
     }
     setMarkedSamples(newSamples)
-    onMarkedSamplesChange?.(newSamples)
     setHasUnsavedChanges(true)
   }
 
-  // Speaker name assignment
+  // Speaker name assignment (from TranscriptEditor's own picker)
   const handleAssignSpeakerName = (originalLabel, displayName) => {
     setSpeakerNames(prev => ({ ...prev, [originalLabel]: displayName }))
     setHasUnsavedChanges(true)
     setActivePicker(null)
   }
 
-  // Audio drop assignment to diarization label
+  // Audio drop assignment to diarization label (from TranscriptEditor's own picker)
   const handleAssignAudioDrop = async (originalLabel, drop) => {
     setSpeakerNames(prev => ({ ...prev, [originalLabel]: drop.name }))
     setActivePicker(null)
     try {
       await speakersAPI.linkEpisodeAudioDrop(episode.id, originalLabel, drop.id)
-      // Update local assignments so isSoundBite() works immediately
       setEpisodeSpeakerAssignments(prev => [
         ...prev.filter(a => a.diarization_label !== originalLabel),
         { diarization_label: originalLabel, audio_drop_id: drop.id, audio_drop_name: drop.name, speaker_id: null, speaker_name: null }
@@ -565,7 +578,6 @@ export default function TranscriptEditor({
     })
     setActivePicker(null)
     setHasUnsavedChanges(true)
-    // Clear from local assignments
     setEpisodeSpeakerAssignments(prev => prev.filter(a => a.diarization_label !== originalLabel))
     try {
       await speakersAPI.unlinkEpisodeSpeaker(episode.id, originalLabel)
@@ -648,7 +660,7 @@ export default function TranscriptEditor({
         case 'J': {
           e.preventDefault()
           const nextIdx = selectedSegmentIdx != null ? Math.min(selectedSegmentIdx + 1, segments.length - 1) : 0
-          onSelectedSegmentChange?.(nextIdx)
+          setSelectedSegmentIdx(nextIdx)
           segmentRefs.current[nextIdx]?.scrollIntoView({ behavior: 'smooth', block: 'center' })
           break
         }
@@ -656,7 +668,7 @@ export default function TranscriptEditor({
         case 'K': {
           e.preventDefault()
           const prevIdx = selectedSegmentIdx != null ? Math.max(selectedSegmentIdx - 1, 0) : 0
-          onSelectedSegmentChange?.(prevIdx)
+          setSelectedSegmentIdx(prevIdx)
           segmentRefs.current[prevIdx]?.scrollIntoView({ behavior: 'smooth', block: 'center' })
           break
         }
@@ -694,7 +706,7 @@ export default function TranscriptEditor({
           if (activePicker) {
             setActivePicker(null)
           } else {
-            onSelectedSegmentChange?.(null)
+            setSelectedSegmentIdx(null)
           }
           break
         }
@@ -704,40 +716,32 @@ export default function TranscriptEditor({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [segments, selectedSegmentIdx, activePicker])
 
-  // Expose global functions for parent
+  // Register handlers with context so PropertiesPanel can call them without window globals
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      window.__transcriptEditorSeekToSegment = seekToSegmentIdx
-      window.__transcriptEditorSeekToSpeaker = seekToSpeaker
-      window.__transcriptEditorAssignSpeakerName = handleAssignSpeakerName
-      window.__transcriptEditorAddAudioDrop = addAudioDropToSegment
-      window.__transcriptEditorCreateFlag = createFlag
-      window.__transcriptEditorAddCharacter = addCharacterToSegment
-      window.__transcriptEditorCreateChapter = createChapter
-      window.__transcriptEditorDeleteFlag = deleteFlag
-      window.__transcriptEditorRemoveCharacter = removeCharacterFromSegment
-      window.__transcriptEditorDeleteChapter = deleteChapter
-      window.__transcriptEditorToggleVoiceSample = toggleVoiceSample
-      window.__transcriptEditorRemoveAudioDrop = removeAudioDropInstance
-      window.__transcriptEditorAssignAudioDrop = handleAssignAudioDrop
-    }
-    return () => {
-      if (typeof window !== 'undefined') {
-        delete window.__transcriptEditorSeekToSegment
-        delete window.__transcriptEditorSeekToSpeaker
-        delete window.__transcriptEditorAssignSpeakerName
-        delete window.__transcriptEditorAddAudioDrop
-        delete window.__transcriptEditorCreateFlag
-        delete window.__transcriptEditorAddCharacter
-        delete window.__transcriptEditorCreateChapter
-        delete window.__transcriptEditorDeleteFlag
-        delete window.__transcriptEditorRemoveCharacter
-        delete window.__transcriptEditorDeleteChapter
-        delete window.__transcriptEditorToggleVoiceSample
-        delete window.__transcriptEditorRemoveAudioDrop
-        delete window.__transcriptEditorAssignAudioDrop
-      }
-    }
+    registerHandlers({
+      deleteFlag,
+      removeCharacter: removeCharacterFromSegment,
+      deleteChapter,
+      toggleVoiceSample,
+      seekToSegment: seekToSegmentIdx,
+      seekToSpeaker,
+      removeAudioDropInstance,
+      // Called by context.assignSpeakerName (from PropertiesPanel) — just mark unsaved;
+      // speakerNames already updated in context by the time this runs
+      assignSpeakerName: (_label, _name) => { setHasUnsavedChanges(true) },
+      // Called by context.assignAudioDrop (from PropertiesPanel) — persist immediately
+      assignAudioDrop: async (label, drop) => {
+        try {
+          await speakersAPI.linkEpisodeAudioDrop(episode.id, label, drop.id)
+          setEpisodeSpeakerAssignments(prev => [
+            ...prev.filter(a => a.diarization_label !== label),
+            { diarization_label: label, audio_drop_id: drop.id, audio_drop_name: drop.name, speaker_id: null, speaker_name: null }
+          ])
+        } catch (err) {
+          console.error('Failed to link audio drop from PropertiesPanel:', err)
+        }
+      },
+    })
   })
 
   // ---- Inline Picker Component ----
@@ -747,7 +751,11 @@ export default function TranscriptEditor({
       if (speakerPickerIdx === idx) {
         return (
           <div className="mt-2 p-2 bg-white rounded-lg border border-gray-200 shadow-sm">
-            <div className="text-[10px] text-gray-400 uppercase tracking-wide mb-1 px-1">Select speakers present</div>
+            <div className="flex items-center justify-between mb-1 px-1">
+              <span className="text-[10px] text-gray-400 uppercase tracking-wide">Select speakers present</span>
+              <button onClick={(e) => { e.stopPropagation(); setSpeakerPickerIdx(null); setActivePicker('flag') }} className="text-xs text-gray-400 hover:text-gray-600">← Back</button>
+            </div>
+            <div className="max-h-48 overflow-y-auto">
             {uniqueSpeakers.map(spk => {
               const displayName = speakerNames[spk] || spk
               const isSelected = speakerPickerSelected.includes(spk)
@@ -770,7 +778,44 @@ export default function TranscriptEditor({
                 </label>
               )
             })}
-            <div className="flex gap-2 mt-2 pt-2 border-t border-gray-100">
+            </div>
+            <div className="flex gap-1 mt-2 pt-2 border-t border-gray-100">
+              <input
+                type="text"
+                placeholder="Add unlisted speaker..."
+                value={flagInlineInput}
+                onChange={(e) => { e.stopPropagation(); setFlagInlineInput(e.target.value) }}
+                onKeyDown={(e) => {
+                  e.stopPropagation()
+                  if (e.key === 'Enter' && flagInlineInput.trim()) {
+                    const name = flagInlineInput.trim()
+                    if (!speakerPickerSelected.includes(name)) setSpeakerPickerSelected(prev => [...prev, name])
+                    setFlagInlineInput('')
+                  }
+                }}
+                className="flex-1 px-2 py-1 text-xs border border-gray-200 rounded"
+                onClick={(e) => e.stopPropagation()}
+              />
+              <button onClick={(e) => {
+                e.stopPropagation()
+                const name = flagInlineInput.trim()
+                if (name && !speakerPickerSelected.includes(name)) setSpeakerPickerSelected(prev => [...prev, name])
+                setFlagInlineInput('')
+              }} className="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded hover:bg-gray-200 flex-shrink-0">
+                Add
+              </button>
+            </div>
+            {speakerPickerSelected.filter(s => !uniqueSpeakers.includes(s)).length > 0 && (
+              <div className="mt-1 flex flex-wrap gap-1">
+                {speakerPickerSelected.filter(s => !uniqueSpeakers.includes(s)).map(name => (
+                  <span key={name} className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-xs flex items-center gap-1">
+                    {name}
+                    <button onClick={(e) => { e.stopPropagation(); setSpeakerPickerSelected(prev => prev.filter(s => s !== name)) }} className="hover:text-red-600">×</button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-2 mt-2">
               <button onClick={(e) => {
                 e.stopPropagation()
                 if (speakerPickerSelected.length >= 2) {
@@ -783,6 +828,7 @@ export default function TranscriptEditor({
                 e.stopPropagation()
                 setSpeakerPickerIdx(null)
                 setSpeakerPickerSelected([])
+                setActivePicker('flag')
               }} className="px-3 py-1 text-xs bg-gray-100 text-gray-600 rounded hover:bg-gray-200">
                 Cancel
               </button>
@@ -800,9 +846,13 @@ export default function TranscriptEditor({
               if (ft.needsSpeaker) {
                 setFlagInlineInput('')
                 setActivePicker('flag-wrong-speaker')
+              } else if (ft.needsCharacter) {
+                setNewCharacterName('')
+                setActivePicker('flag-character')
               } else if (ft.needsSpeakers) {
                 setSpeakerPickerIdx(idx)
                 setSpeakerPickerSelected([])
+                setFlagInlineInput('')
               } else if (ft.needsNotes) {
                 setFlagInlineInput('')
                 setActivePicker('flag-other')
@@ -821,7 +871,7 @@ export default function TranscriptEditor({
       return (
         <div className="mt-2 p-2 bg-white rounded-lg border border-red-200 shadow-sm">
           <div className="text-[10px] text-gray-400 uppercase tracking-wide mb-1 px-1">
-            Who should this be? (current: {segment?.speaker})
+            Who should this be? (current: {speakerNames[segment?.speaker] || segment?.speaker})
           </div>
           {voiceLibrary.map(v => (
             <button key={v.name} onClick={(e) => {
@@ -832,21 +882,85 @@ export default function TranscriptEditor({
               <span>🎤</span> {v.short_name || v.name}
             </button>
           ))}
-          <input
-            type="text"
-            placeholder="Or type a name..."
-            value={flagInlineInput}
-            onChange={(e) => setFlagInlineInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && flagInlineInput.trim()) {
+          {audioDrops.length > 0 && (
+            <>
+              <div className="text-[10px] text-gray-400 uppercase tracking-wide mt-2 mb-1 px-1 border-t border-gray-100 pt-2">Sound Bites</div>
+              {audioDrops.map(d => (
+                <button key={d.id} onClick={(e) => {
+                  e.stopPropagation()
+                  createFlag(idx, 'wrong_speaker', d.name)
+                  setActivePicker(null)
+                }} className="w-full px-2 py-1.5 text-sm text-left rounded hover:bg-red-50 text-red-800 flex items-center gap-2">
+                  <span>🔊</span> {d.name}
+                </button>
+              ))}
+            </>
+          )}
+          <div className="flex gap-1 mt-1">
+            <input
+              type="text"
+              placeholder="Or type a name..."
+              value={flagInlineInput}
+              onChange={(e) => setFlagInlineInput(e.target.value)}
+              onKeyDown={(e) => {
+                e.stopPropagation()
+                if (e.key === 'Enter' && flagInlineInput.trim()) {
+                  createFlag(idx, 'wrong_speaker', flagInlineInput.trim())
+                  setActivePicker(null)
+                }
+              }}
+              className="flex-1 px-2 py-1.5 text-sm border border-red-200 rounded"
+              onClick={(e) => e.stopPropagation()}
+              autoFocus
+            />
+            <button onClick={(e) => {
+              e.stopPropagation()
+              if (flagInlineInput.trim()) {
                 createFlag(idx, 'wrong_speaker', flagInlineInput.trim())
                 setActivePicker(null)
               }
-            }}
-            className="w-full mt-1 px-2 py-1.5 text-sm border border-red-200 rounded"
-            onClick={(e) => e.stopPropagation()}
-            autoFocus
-          />
+            }} className="px-3 py-1.5 text-xs bg-red-500 text-white rounded hover:bg-red-600">
+              Save
+            </button>
+          </div>
+          <button onClick={(e) => { e.stopPropagation(); setActivePicker('flag') }} className="mt-1 text-xs text-gray-400 hover:text-gray-600">← Back</button>
+        </div>
+      )
+    }
+    if (pickerType === 'flag-character') {
+      return (
+        <div className="mt-2 p-2 bg-white rounded-lg border border-pink-200 shadow-sm">
+          <div className="text-[10px] text-gray-400 uppercase tracking-wide mb-1 px-1">Which character is speaking?</div>
+          {characters.slice(0, 8).map(c => (
+            <button key={c.id} onClick={(e) => {
+              e.stopPropagation()
+              createFlag(idx, 'character_voice', null, c.id)
+              setActivePicker(null)
+            }} className="w-full px-2 py-1.5 text-sm text-left rounded hover:bg-pink-50 text-pink-800 flex items-center gap-2">
+              <span>🎭</span> {c.name}
+            </button>
+          ))}
+          <div className="flex gap-1 mt-1">
+            <input
+              type="text"
+              placeholder="Or type a character name..."
+              value={newCharacterName}
+              onChange={(e) => setNewCharacterName(e.target.value)}
+              onKeyDown={(e) => {
+                e.stopPropagation()
+                if (e.key === 'Enter' && newCharacterName.trim()) createCharacterAndFlagIt(idx, newCharacterName)
+              }}
+              className="flex-1 px-2 py-1.5 text-sm border border-pink-200 rounded"
+              onClick={(e) => e.stopPropagation()}
+              autoFocus
+            />
+            <button onClick={(e) => {
+              e.stopPropagation()
+              if (newCharacterName.trim()) createCharacterAndFlagIt(idx, newCharacterName)
+            }} className="px-3 py-1.5 text-xs bg-pink-500 text-white rounded hover:bg-pink-600">
+              Save
+            </button>
+          </div>
           <button onClick={(e) => { e.stopPropagation(); setActivePicker('flag') }} className="mt-1 text-xs text-gray-400 hover:text-gray-600">← Back</button>
         </div>
       )
@@ -857,10 +971,11 @@ export default function TranscriptEditor({
           <div className="text-[10px] text-gray-400 uppercase tracking-wide mb-1 px-1">Add a note about this segment</div>
           <input
             type="text"
-            placeholder="Describe the issue... (press Enter to save)"
+            placeholder="Describe the issue..."
             value={flagInlineInput}
             onChange={(e) => setFlagInlineInput(e.target.value)}
             onKeyDown={(e) => {
+              e.stopPropagation()
               if (e.key === 'Enter' && flagInlineInput.trim()) {
                 createFlag(idx, 'other', null, null, flagInlineInput.trim())
                 setActivePicker(null)
@@ -870,7 +985,18 @@ export default function TranscriptEditor({
             onClick={(e) => e.stopPropagation()}
             autoFocus
           />
-          <button onClick={(e) => { e.stopPropagation(); setActivePicker('flag') }} className="mt-1 text-xs text-gray-400 hover:text-gray-600">← Back</button>
+          <div className="flex gap-2 mt-1">
+            <button onClick={(e) => {
+              e.stopPropagation()
+              if (flagInlineInput.trim()) {
+                createFlag(idx, 'other', null, null, flagInlineInput.trim())
+                setActivePicker(null)
+              }
+            }} className="px-3 py-1 text-xs bg-yellow-500 text-white rounded hover:bg-yellow-600">
+              Save
+            </button>
+            <button onClick={(e) => { e.stopPropagation(); setActivePicker('flag') }} className="px-2 py-1 text-xs text-gray-400 hover:text-gray-600">← Back</button>
+          </div>
         </div>
       )
     }
@@ -923,16 +1049,26 @@ export default function TranscriptEditor({
             className="w-full mt-1 px-2 py-1.5 text-sm border rounded"
             onClick={(e) => e.stopPropagation()}
           />
-          {audioDrops.length > 0 && (
-            <>
-              <div className="text-[10px] text-gray-400 uppercase tracking-wide mb-1 mt-2 px-1 border-t border-gray-100 pt-2">Assign to sound bite</div>
-              {audioDrops.map(drop => (
-                <button key={drop.id} onClick={(e) => { e.stopPropagation(); handleAssignAudioDrop(segment.speaker, drop) }} className="w-full px-2 py-1.5 text-sm text-left rounded hover:bg-teal-50 text-teal-800 flex items-center gap-2">
-                  <span>🔊</span> {drop.name}
-                </button>
-              ))}
-            </>
-          )}
+          <div className="border-t border-gray-100 mt-2 pt-2">
+            <div className="text-[10px] text-gray-400 uppercase tracking-wide mb-1 px-1">Assign to sound bite</div>
+            {audioDrops.map(drop => (
+              <button key={drop.id} onClick={(e) => { e.stopPropagation(); handleAssignAudioDrop(segment.speaker, drop) }} className="w-full px-2 py-1.5 text-sm text-left rounded hover:bg-teal-50 text-teal-800 flex items-center gap-2">
+                <span>🔊</span> {drop.name}
+              </button>
+            ))}
+            <input
+              type="text"
+              placeholder="+ New sound bite..."
+              value={newDropName}
+              onChange={(e) => setNewDropName(e.target.value)}
+              onKeyDown={(e) => {
+                e.stopPropagation()
+                if (e.key === 'Enter' && newDropName.trim()) createDropAndAssign(segment.speaker, newDropName)
+              }}
+              className="w-full mt-1 px-2 py-1.5 text-sm border rounded"
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
           {speakerNames[segment.speaker] && (
             <>
               <div className="border-t border-gray-100 mt-2 pt-2">
@@ -1084,13 +1220,10 @@ export default function TranscriptEditor({
             .scoop-anim { animation: scoop-drop 2s ease-in-out infinite; }
           `}</style>
           <div className="relative mx-auto mb-6 w-20 h-28">
-            {/* Scoops dropping into cone - neapolitan */}
             <div className="absolute top-0 left-1/2 -translate-x-1/2 w-14 h-14 rounded-full bg-pink-400 shadow-md scoop-anim" style={{ animationDelay: '0s', zIndex: 3 }}></div>
             <div className="absolute top-0 left-1/2 -translate-x-1/2 w-14 h-14 rounded-full bg-amber-100 shadow-md scoop-anim" style={{ animationDelay: '0.6s', zIndex: 2 }}></div>
             <div className="absolute top-0 left-1/2 -translate-x-1/2 w-14 h-14 rounded-full bg-amber-800 shadow-md scoop-anim" style={{ animationDelay: '1.2s', zIndex: 1 }}></div>
-            {/* Cone */}
             <div className="absolute bottom-0 left-1/2 -translate-x-1/2" style={{ width: 0, height: 0, borderLeft: '24px solid transparent', borderRight: '24px solid transparent', borderTop: '40px solid #d97706', zIndex: 4 }}></div>
-            {/* Cone texture lines */}
             <div className="absolute bottom-0 left-1/2 -translate-x-1/2" style={{ width: 0, height: 0, borderLeft: '20px solid transparent', borderRight: '20px solid transparent', borderTop: '34px solid #b45309', zIndex: 4, opacity: 0.3 }}></div>
           </div>
           <div className="text-gray-500 text-sm font-medium">Scooping up transcript...</div>
@@ -1207,28 +1340,58 @@ export default function TranscriptEditor({
               🚩 {Object.keys(flaggedSegments).length} flags
             </span>
           )}
+          {episode.is_transcribed && (() => {
+            const hintCount = Object.values(flaggedSegments).filter(f =>
+              ['wrong_speaker', 'multiple_speakers', 'character_voice'].includes(f.flag_type) && !f.resolved
+            ).length
+            return (
+              <button
+                disabled={reprocessing || diarizationLocked}
+                onClick={async () => {
+                  setReprocessing(true)
+                  try {
+                    await episodesAPI.reprocessDiarization(episode.id)
+                    setDiarizationLocked(true)
+                    onNotification?.('Episode locked for re-diarization — editing disabled until complete', 'success')
+                  } catch (err) {
+                    onNotification?.(`Failed to queue re-diarization: ${err.message}`, 'error')
+                    setReprocessing(false)
+                  }
+                }}
+                className={`px-2.5 py-1 rounded text-xs font-medium transition-all duration-300 ${
+                  reprocessing
+                    ? 'bg-green-100 text-green-700 border border-green-300 cursor-not-allowed'
+                    : 'bg-orange-100 text-orange-700 border border-orange-300 hover:bg-orange-200 cursor-pointer'
+                }`}
+                title={hintCount > 0 ? `Reprocess with ${hintCount} speaker correction${hintCount > 1 ? 's' : ''} as hints` : 'Reprocess diarization (no corrections flagged)'}
+              >
+                {reprocessing ? '✓ Queued for Diarization' : hintCount > 0 ? `🔄 Reprocess (${hintCount} hints)` : '🔄 Reprocess Diarization'}
+              </button>
+            )
+          })()}
           {episode.is_transcribed && (
             <button
-              disabled={reprocessing || diarizationLocked}
+              disabled={autoLabeling || diarizationLocked}
               onClick={async () => {
-                setReprocessing(true)
+                setAutoLabeling(true)
                 try {
-                  await episodesAPI.reprocessDiarization(episode.id)
-                  setDiarizationLocked(true)
-                  onNotification?.('Episode locked for re-diarization — editing disabled until complete', 'success')
+                  const count = await contentAPI.autoLabelChapters(episode.id, false)
+                  if (count === 0) {
+                    onNotification?.('No new chapters found — check your rules in Settings or enable "overwrite" if chapters already exist', 'info')
+                  } else {
+                    onNotification?.(`Auto-labeled ${count} chapter${count > 1 ? 's' : ''}`, 'success')
+                    await loadTranscript()
+                  }
                 } catch (err) {
-                  onNotification?.(`Failed to queue re-diarization: ${err.message}`, 'error')
-                  setReprocessing(false)
+                  onNotification?.(`Auto-label failed: ${err.message}`, 'error')
+                } finally {
+                  setAutoLabeling(false)
                 }
               }}
-              className={`px-2.5 py-1 rounded text-xs font-medium transition-all duration-300 ${
-                reprocessing
-                  ? 'bg-green-100 text-green-700 border border-green-300 cursor-not-allowed'
-                  : 'bg-orange-100 text-orange-700 border border-orange-300 hover:bg-orange-200 cursor-pointer'
-              }`}
-              title="Reprocess diarization using speaker correction flags as hints"
+              className="px-2.5 py-1 rounded text-xs font-medium bg-indigo-100 text-indigo-700 border border-indigo-300 hover:bg-indigo-200 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed transition-colors"
+              title="Auto-label chapters using rules from Settings → Chapter Label Rules"
             >
-              {reprocessing ? '✓ Queued for Diarization' : '🔄 Reprocess Diarization'}
+              {autoLabeling ? '⏳ Labeling…' : '📑 Auto-Label Chapters'}
             </button>
           )}
           {hasUnsavedChanges && (
@@ -1353,7 +1516,7 @@ export default function TranscriptEditor({
                     'border-gray-200 hover:border-gray-300 hover:shadow-sm'
                   }`}
                   onClick={() => {
-                    onSelectedSegmentChange?.(isSelected ? null : idx)
+                    setSelectedSegmentIdx(isSelected ? null : idx)
                     setActivePicker(null)
                   }}
                 >
@@ -1364,7 +1527,7 @@ export default function TranscriptEditor({
                       style={{ backgroundColor: colors.hex }}
                       onClick={(e) => {
                         e.stopPropagation()
-                        onSelectedSegmentChange?.(idx)
+                        setSelectedSegmentIdx(idx)
                         setActivePicker('speaker')
                       }}
                     >

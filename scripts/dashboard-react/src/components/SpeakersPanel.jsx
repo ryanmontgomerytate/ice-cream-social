@@ -418,9 +418,9 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
                 {hasEmbedding && (
                   <span
                     className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-xs font-medium flex-shrink-0"
-                    title={`Voice print trained from ${embeddingCount} clip${embeddingCount !== 1 ? 's' : ''}${sourceFile ? ` (last: ${sourceFile})` : ''}`}
+                    title={`Identified in ${voiceInfo?.episode_count || 0} episode(s) — voice print trained from ${embeddingCount} clip${embeddingCount !== 1 ? 's' : ''}${sourceFile ? ` (last: ${sourceFile})` : ''}`}
                   >
-                    Voice ID ({embeddingCount}x)
+                    Voice ID ({voiceInfo?.episode_count || 0} ep)
                   </span>
                 )}
                 {fileCount > 0 && (
@@ -725,7 +725,7 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
                             <div className="flex items-center gap-2">
                               <span className="font-medium text-gray-800">{v.name}</span>
                               <span className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-xs font-medium">
-                                Voice ID ({v.sample_count}x)
+                                Voice ID ({v.episode_count || 0} ep)
                               </span>
                             </div>
                             {v.sample_file && (

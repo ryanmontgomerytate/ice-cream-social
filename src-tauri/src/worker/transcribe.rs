@@ -104,7 +104,7 @@ async fn transcribe_with_progress(
     let model = db
         .get_setting("transcription_model")
         .unwrap_or(None)
-        .unwrap_or_else(|| "large-v3".to_string());
+        .unwrap_or_else(|| "medium".to_string());
 
     let model_path = models_path.join(format!("ggml-{}.bin", model));
 
