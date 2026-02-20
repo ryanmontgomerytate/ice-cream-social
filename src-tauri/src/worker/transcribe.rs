@@ -11,6 +11,7 @@ use tokio_util::sync::CancellationToken;
 use super::ProgressUpdate;
 
 /// Message sent to the transcribe task
+#[allow(dead_code)]
 pub struct TranscribeJob {
     pub episode_id: i64,
     pub episode_summary: EpisodeSummary,

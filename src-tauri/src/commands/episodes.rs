@@ -783,28 +783,6 @@ pub async fn test_category_rule(
     }))
 }
 
-fn parse_duration(duration_str: &str) -> Option<f64> {
-    // Parse formats like "1:23:45" or "5432" (seconds)
-    if duration_str.contains(':') {
-        let parts: Vec<&str> = duration_str.split(':').collect();
-        match parts.len() {
-            2 => {
-                let mins: f64 = parts[0].parse().ok()?;
-                let secs: f64 = parts[1].parse().ok()?;
-                Some(mins * 60.0 + secs)
-            }
-            3 => {
-                let hours: f64 = parts[0].parse().ok()?;
-                let mins: f64 = parts[1].parse().ok()?;
-                let secs: f64 = parts[2].parse().ok()?;
-                Some(hours * 3600.0 + mins * 60.0 + secs)
-            }
-            _ => None,
-        }
-    } else {
-        duration_str.parse().ok()
-    }
-}
 
 /// Resolve feed URL: check .env first, then fall back to config.yaml
 fn resolve_feed_url(project_dir: &std::path::Path, source: &str) -> Option<String> {

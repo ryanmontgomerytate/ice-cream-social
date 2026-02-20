@@ -176,6 +176,23 @@ pub struct EpisodeChapter {
 }
 
 // ============================================================================
+// Chapter Label Rules
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChapterLabelRule {
+    pub id: i64,
+    pub chapter_type_id: i64,
+    pub chapter_type_name: Option<String>,
+    pub chapter_type_color: Option<String>,
+    pub chapter_type_icon: Option<String>,
+    pub pattern: String,
+    pub match_type: String, // "contains" | "starts_with" | "regex"
+    pub priority: i32,
+    pub enabled: bool,
+}
+
+// ============================================================================
 // ICS Characters
 // ============================================================================
 
@@ -269,6 +286,7 @@ pub struct AudioDropInstance {
 // ============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct WikiLore {
     pub id: i64,
     pub name: String,

@@ -145,6 +145,7 @@ struct WikiParseResponse {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct WikiParsedPage {
     title: String,
     #[serde(rename = "pageid")]
@@ -160,6 +161,7 @@ struct WikiTextContent {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct WikiCategory {
     #[serde(rename = "*")]
     name: String,

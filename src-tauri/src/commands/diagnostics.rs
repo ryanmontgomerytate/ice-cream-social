@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use tauri::State;
 
 /// Global error log - stores recent errors for diagnostics
+#[allow(dead_code)]
 pub struct ErrorLog {
     errors: Mutex<VecDeque<ErrorEntry>>,
     max_entries: usize,
@@ -26,6 +27,7 @@ impl ErrorLog {
         }
     }
 
+    #[allow(dead_code)]
     pub fn log_error(&self, command: &str, error: &str, context: Option<&str>) {
         let entry = ErrorEntry {
             timestamp: chrono::Utc::now().to_rfc3339(),
