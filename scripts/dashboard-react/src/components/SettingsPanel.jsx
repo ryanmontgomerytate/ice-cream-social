@@ -336,11 +336,11 @@ function CategoryRulesSection({ onNotification }) {
     } finally {
       setLoading(false)
     }
-  }, [onNotification])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     loadRules()
-  }, [loadRules])
+  }, [])
 
   const handleSave = async (draft) => {
     // Determine if this is a new rule (id <= 0 or doesn't exist in current list)
@@ -786,7 +786,7 @@ export default function SettingsPanel({ onNotification }) {
         <h2 className="text-xl font-bold text-white">Settings</h2>
       </div>
 
-      <div className="p-6 overflow-y-auto max-h-[calc(100vh-200px)]">
+      <div className="p-6">
         {loading ? (
           <div className="text-center py-12">
             <div className="w-10 h-10 border-4 border-gray-200 border-t-gray-500 rounded-full animate-spin mx-auto mb-4"></div>

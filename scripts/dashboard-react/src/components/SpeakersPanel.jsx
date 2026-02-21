@@ -418,9 +418,9 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
                 {hasEmbedding && (
                   <span
                     className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-xs font-medium flex-shrink-0"
-                    title={`Identified in ${voiceInfo?.episode_count || 0} episode(s) — voice print trained from ${embeddingCount} clip${embeddingCount !== 1 ? 's' : ''}${sourceFile ? ` (last: ${sourceFile})` : ''}`}
+                    title={`Trained from ${embeddingCount} clip${embeddingCount !== 1 ? 's' : ''}. Assigned in ${voiceInfo?.episode_count || 0} episode(s).${sourceFile ? ` Last: ${sourceFile}` : ''}`}
                   >
-                    Voice ID ({voiceInfo?.episode_count || 0} ep)
+                    Voice Print ({embeddingCount}x)
                   </span>
                 )}
                 {fileCount > 0 && (
@@ -516,7 +516,7 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
               <div className="space-y-1">
                 {(expandedSamples[item.name] || []).map((sample) => (
                   <div
-                    key={sample.file_path}
+                    key={sample.id ?? sample.file_path}
                     className="py-1.5 px-2 rounded hover:bg-white transition-colors"
                   >
                     <div className="flex items-center justify-between">
@@ -725,7 +725,7 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
                             <div className="flex items-center gap-2">
                               <span className="font-medium text-gray-800">{v.name}</span>
                               <span className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-xs font-medium">
-                                Voice ID ({v.episode_count || 0} ep)
+                                Voice Print ({v.sample_count || 0}x)
                               </span>
                             </div>
                             {v.sample_file && (

@@ -126,6 +126,13 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
     prevVisibleRef.current = isVisible
   }, [isVisible])
 
+  // Issue 9a: refresh voice library when speaker picker opens so newly added speakers appear
+  useEffect(() => {
+    if (activePicker === 'speaker' || activePicker === 'flag-wrong-speaker') {
+      speakersAPI.getVoiceLibrary().then(voices => setVoiceLibrary(voices)).catch(() => {})
+    }
+  }, [activePicker])
+
   // Unlock when this episode's diarization completes
   useEffect(() => {
     if (!diarizationLocked || !isTauri) return
@@ -622,7 +629,7 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
           const segment = segments[segIdx]
           return {
             speaker: segment.speaker,
-            speakerName: speakerNames[segment.speaker] || segment.speaker,
+            speakerName: flaggedSegments[segIdx]?.corrected_speaker || speakerNames[segment.speaker] || segment.speaker,
             startTime: parseTimestampToSeconds(segment),
             endTime: getSegmentEndTime(segment),
             text: segment.text,
@@ -1500,7 +1507,8 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
           <div className="space-y-3">
             {filteredSegments.map((segment, idx) => {
               const colors = getSpeakerColor(segment.speaker)
-              const displayName = speakerNames[segment.speaker] || segment.speaker
+              const displayName = flaggedSegments[idx]?.corrected_speaker
+                || speakerNames[segment.speaker] || segment.speaker
               const isCurrent = currentSegmentIdx === idx
               const isSelected = selectedSegmentIdx === idx
               const flag = flaggedSegments[idx]

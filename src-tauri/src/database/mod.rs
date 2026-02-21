@@ -2051,23 +2051,28 @@ Mark the start time of each segment.',
         Ok(items)
     }
 
-    /// Get pending episodes in each queue for display — (id, title, episode_number, added_date)
-    pub fn get_queue_episode_lists(&self) -> Result<(Vec<(i64, String, Option<i64>, String)>, Vec<(i64, String, Option<i64>, String)>)> {
+    /// Get episodes for queue display.
+    /// Transcribe list: ALL untranscribed non-canonical episodes (whether queued or not), with is_downloaded.
+    /// Diarize list: pending diarize_only queue items.
+    pub fn get_queue_episode_lists(&self) -> Result<(Vec<(i64, String, Option<i64>, String, bool)>, Vec<(i64, String, Option<i64>, String)>)> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT e.id, e.title, e.episode_number, q.added_to_queue_date
+            "SELECT e.id, e.title, CAST(e.episode_number AS INTEGER),
+                    COALESCE(q.added_to_queue_date, '') AS added_date,
+                    e.is_downloaded
              FROM transcription_queue q
-             JOIN episodes e ON q.episode_id = e.id
+             JOIN episodes e ON e.id = q.episode_id
              WHERE q.status IN ('pending', 'processing')
-               AND (q.queue_type IS NULL OR q.queue_type = 'full')
-             ORDER BY q.priority DESC, q.added_to_queue_date ASC"
+               AND COALESCE(q.queue_type, 'full') != 'diarize_only'
+             ORDER BY q.priority DESC, q.added_to_queue_date ASC
+             LIMIT 1000"
         )?;
         let transcribe_queue = stmt.query_map([], |row| {
-            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?, row.get::<_, Option<i64>>(2)?, row.get::<_, String>(3)?))
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?, row.get::<_, Option<i64>>(2)?, row.get::<_, String>(3)?, row.get::<_, bool>(4)?))
         })?.filter_map(|r| r.ok()).collect();
 
         let mut stmt2 = conn.prepare(
-            "SELECT e.id, e.title, e.episode_number, q.added_to_queue_date
+            "SELECT e.id, e.title, CAST(e.episode_number AS INTEGER), q.added_to_queue_date
              FROM transcription_queue q
              JOIN episodes e ON q.episode_id = e.id
              WHERE q.status IN ('pending', 'processing')

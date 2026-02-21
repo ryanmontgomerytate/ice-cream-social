@@ -128,8 +128,8 @@ function PipelineStats({ stats, currentActivity, onOpenEpisode }) {
         </div>
       )}
 
-      {/* Recent Pipeline Errors */}
-      {recentErrors.length > 0 && errorsVisible && (
+      {/* Recent Pipeline Errors — only show unresolved */}
+      {recentErrors.filter(e => !e.resolved).length > 0 && errorsVisible && (
         <div className="bg-white rounded-lg shadow-sm border border-red-200">
           <div className="px-4 py-3 border-b border-red-100 flex items-center justify-between">
             <h3 className="text-sm font-semibold text-red-800">Recent Pipeline Errors</h3>
@@ -147,7 +147,7 @@ function PipelineStats({ stats, currentActivity, onOpenEpisode }) {
             </div>
           </div>
           <div className="divide-y divide-red-50">
-            {recentErrors.map((err) => (
+            {recentErrors.filter(e => !e.resolved).map((err) => (
               <div key={err.id} className={`px-4 py-3 ${err.resolved ? 'opacity-50' : ''}`}>
                 <div className="flex items-start gap-2">
                   <span className={`text-xs font-medium px-1.5 py-0.5 rounded flex-shrink-0 ${CONTEXT_COLORS[err.context] || 'bg-gray-100 text-gray-600'}`}>

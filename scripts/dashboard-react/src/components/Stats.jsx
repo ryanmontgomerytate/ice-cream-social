@@ -16,6 +16,7 @@ export default function Stats({ stats, onOpenEpisode }) {
   const inQueue = stats.in_transcription_queue || 0
   const inDiarizationQueue = stats.in_diarization_queue || 0
   const failed = stats.failed || 0
+  const notTranscribed = total - transcribed
 
   const transcribedPercent = total > 0 ? ((transcribed / total) * 100).toFixed(1) : 0
   const diarizedPercent = transcribed > 0 ? ((diarized / transcribed) * 100).toFixed(1) : 0
@@ -30,7 +31,7 @@ export default function Stats({ stats, onOpenEpisode }) {
         setQueuesLoaded(true)
       }).catch(() => setQueuesLoaded(true))
     }
-  }, [queuesCollapsed, inQueue, inDiarizationQueue])
+  }, [queuesCollapsed, inQueue, inDiarizationQueue, transcribed])
 
   return (
     <div className="space-y-4 mb-4">
@@ -153,13 +154,13 @@ export default function Stats({ stats, onOpenEpisode }) {
 
           {!queuesCollapsed && (
             <div className="divide-y divide-cream-100">
-              {/* Transcribe Queue */}
+              {/* Transcribe Queue — shows ALL untranscribed episodes */}
               <div>
                 <button
                   className="w-full flex items-center justify-between px-4 py-2.5 text-sm font-medium text-amber-800 bg-amber-50 hover:bg-amber-100 transition-colors text-left"
                   onClick={() => setTranscribeOpen(o => !o)}
                 >
-                  <span>Transcribe Queue ({inQueue})</span>
+                  <span>Transcription Queue ({inQueue})</span>
                   <svg className={`w-4 h-4 transition-transform ${transcribeOpen ? '' : '-rotate-90'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
                   </svg>
@@ -168,8 +169,8 @@ export default function Stats({ stats, onOpenEpisode }) {
                   <div className="max-h-72 overflow-y-auto">
                     {!queuesLoaded ? (
                       <div className="px-4 py-2 text-xs text-gray-400">Loading...</div>
-                    ) : inQueue === 0 ? (
-                      <div className="px-4 py-2 text-xs text-gray-400">Nothing in transcription queue</div>
+                    ) : queueLists.transcribe.length === 0 ? (
+                      <div className="px-4 py-2 text-xs text-gray-400">All episodes transcribed!</div>
                     ) : (
                       <table className="min-w-full text-xs">
                         <tbody className="divide-y divide-cream-50">
@@ -178,11 +179,9 @@ export default function Stats({ stats, onOpenEpisode }) {
                               <td className="px-4 py-1.5 text-gray-400 w-6 tabular-nums">{i + 1}</td>
                               <td className="px-2 py-1.5 text-gray-500 whitespace-nowrap w-12">{ep.episode_number ? `#${ep.episode_number}` : '—'}</td>
                               <td className="px-2 py-1.5 text-gray-800 truncate max-w-xs">{ep.title}</td>
-                              {onOpenEpisode && (
-                                <td className="px-2 py-1.5 w-8">
-                                  <button onClick={() => onOpenEpisode(ep.id)} className="text-amber-500 hover:text-amber-700 text-xs" title="Open episode">→</button>
-                                </td>
-                              )}
+                              <td className="px-2 py-1.5 w-6 text-center" title={ep.is_downloaded ? 'Downloaded' : 'Not downloaded'}>
+                                <span className={ep.is_downloaded ? 'text-green-500' : 'text-gray-300'}>●</span>
+                              </td>
                             </tr>
                           ))}
                         </tbody>
