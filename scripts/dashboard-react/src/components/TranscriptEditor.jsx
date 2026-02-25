@@ -1091,9 +1091,12 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
     }
     if (pickerType === 'flag-wrong-speaker') {
       const segment = segments?.[idx]
-      // Filter out audio-drop entries from the speaker list (fix 3b)
       const audioDropNames = new Set(audioDrops.map(d => d.name))
-      const speakerOnlyLibrary = voiceLibrary.filter(v => !audioDropNames.has(v.name) && !v.name.startsWith('🔊'))
+      // Only show speakers whose names are actually assigned in this episode
+      const episodeAssignedNames = new Set(Object.values(speakerNames).filter(Boolean))
+      const episodeSpeakerLibrary = voiceLibrary.filter(v =>
+        !audioDropNames.has(v.name) && episodeAssignedNames.has(v.name)
+      )
       const unassignedLabels = uniqueSpeakers.filter(label => !speakerNames[label])
       return (
         <div className="mt-2 p-2 bg-white rounded-lg border border-red-200 shadow-sm">
@@ -1118,7 +1121,7 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
             </>
           )}
           <div className="max-h-48 overflow-y-auto">
-          {speakerOnlyLibrary.map(v => (
+          {episodeSpeakerLibrary.map(v => (
             <button key={v.name} onClick={(e) => {
               e.stopPropagation()
               createFlag(idx, 'wrong_speaker', v.name)
