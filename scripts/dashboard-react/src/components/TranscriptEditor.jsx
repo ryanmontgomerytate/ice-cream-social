@@ -1422,7 +1422,7 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
     const chapter = getChapterForSegment(idx)
     const hasSample = markedSamples[idx]
 
-    if (!flag && !character && !chapter && drops.length === 0 && !hasSample) return null
+    if (!flag && !character && !chapter && !hasSample) return null
 
     return (
       <div className="flex flex-wrap gap-1.5 mt-2 pt-2 border-t border-gray-200/50">
