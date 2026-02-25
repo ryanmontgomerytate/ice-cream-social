@@ -1376,6 +1376,12 @@ pub struct VoiceSample {
     pub text: String,
     #[serde(rename = "segmentIdx")]
     pub segment_idx: Option<i64>,
+    /// Precomputed from the frontend's audio_drop_instances for this segment.
+    /// When set, skips the episode_speakers diarization-label lookup so sound
+    /// bites tagged at segment level (not via a full-episode speaker assignment)
+    /// are correctly routed to the sound-bite save path.
+    #[serde(rename = "audioDropId", default)]
+    pub audio_drop_id: Option<i64>,
 }
 
 /// Save voice samples to the voice library
@@ -1416,9 +1422,16 @@ pub async fn save_voice_samples(
         .unwrap_or_else(|| "pyannote".to_string());
 
     for sample in samples {
-        // Check if this diarization label is assigned to a sound bite
-        let audio_drop_id = db.get_audio_drop_for_label(episode_id, &sample.speaker)
-            .map_err(AppError::from)?;
+        // Determine if this is a sound bite. Prefer the explicit id sent by the
+        // frontend (from audio_drop_instances for this segment) over the
+        // episode-wide diarization-label lookup — the segment may be tagged as a
+        // drop at the clip level without having a full-episode speaker assignment.
+        let audio_drop_id: Option<i64> = if sample.audio_drop_id.is_some() {
+            sample.audio_drop_id
+        } else {
+            db.get_audio_drop_for_label(episode_id, &sample.speaker)
+                .map_err(AppError::from)?
+        };
 
         // Common: build sample filename and extract audio via ffmpeg
         let display_ep = episode
