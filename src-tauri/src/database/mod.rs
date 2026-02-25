@@ -2822,6 +2822,21 @@ Mark the start time of each segment.',
         Ok(conn.last_insert_rowid())
     }
 
+    pub fn update_chapter_type(&self, id: i64, name: &str, description: Option<&str>, color: &str, icon: Option<&str>, sort_order: i32) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE chapter_types SET name = ?1, description = ?2, color = ?3, icon = ?4, sort_order = ?5 WHERE id = ?6",
+            params![name, description, color, icon, sort_order, id]
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_chapter_type(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM chapter_types WHERE id = ?1", [id])?;
+        Ok(())
+    }
+
     // =========================================================================
     // Episode Chapters
     // =========================================================================
@@ -3975,6 +3990,65 @@ Mark the start time of each segment.',
         Ok(flags)
     }
 
+    /// Get ALL speaker-related flags for an episode (resolved and unresolved) for reprocess hints
+    pub fn get_all_speaker_flags(&self, episode_id: i64) -> Result<Vec<models::FlaggedSegment>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            r#"SELECT fs.id, fs.episode_id, fs.segment_idx, fs.flag_type,
+                      fs.corrected_speaker, fs.character_id, c.name, fs.notes, fs.speaker_ids, fs.resolved, fs.created_at
+               FROM flagged_segments fs
+               LEFT JOIN characters c ON fs.character_id = c.id
+               WHERE fs.episode_id = ?1 AND fs.flag_type IN ('wrong_speaker', 'multiple_speakers', 'character_voice')
+               ORDER BY fs.segment_idx"#
+        )?;
+        let flags = stmt.query_map([episode_id], |row| {
+            Ok(models::FlaggedSegment {
+                id: row.get(0)?,
+                episode_id: row.get(1)?,
+                segment_idx: row.get(2)?,
+                flag_type: row.get(3)?,
+                corrected_speaker: row.get(4)?,
+                character_id: row.get(5)?,
+                character_name: row.get(6)?,
+                notes: row.get(7)?,
+                speaker_ids: row.get(8)?,
+                resolved: row.get::<_, i32>(9)? != 0,
+                created_at: row.get(10)?,
+            })
+        })?.filter_map(|r| r.ok()).collect();
+        Ok(flags)
+    }
+
+    /// Get approved performance-bit segment classifications for an episode.
+    /// Returns (segment_idx, character_name) for segments approved as character voices.
+    pub fn get_approved_performance_segments(&self, episode_id: i64) -> Result<Vec<(i32, Option<String>)>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT segment_idx, character_name FROM segment_classifications \
+             WHERE episode_id = ?1 AND approved = 1 AND is_performance_bit = 1 \
+             ORDER BY segment_idx"
+        )?;
+        let rows = stmt.query_map([episode_id], |row| {
+            Ok((row.get::<_, i32>(0)?, row.get::<_, Option<String>>(1)?))
+        })?.filter_map(|r| r.ok()).collect();
+        Ok(rows)
+    }
+
+    /// Get approved transcript corrections that note multiple speakers.
+    /// Returns segment indices where the AI or human noted multiple speakers in one clip.
+    pub fn get_approved_multispeaker_corrections(&self, episode_id: i64) -> Result<Vec<i32>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT segment_idx FROM transcript_corrections \
+             WHERE episode_id = ?1 AND approved = 1 AND has_multiple_speakers = 1 \
+             ORDER BY segment_idx"
+        )?;
+        let rows = stmt.query_map([episode_id], |row| {
+            row.get::<_, i32>(0)
+        })?.filter_map(|r| r.ok()).collect();
+        Ok(rows)
+    }
+
     // =========================================================================
     // Character Appearances (additional queries)
     // =========================================================================
@@ -4502,6 +4576,62 @@ Mark the start time of each segment.',
         )?;
         Ok(())
     }
+
+    /// Get all pending transcript corrections across all episodes, enriched with episode metadata.
+    pub fn get_all_pending_corrections(&self) -> Result<Vec<models::TranscriptCorrectionWithEpisode>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT tc.id, tc.episode_id, e.title, e.episode_number,
+                    tc.segment_idx, tc.original_text, tc.corrected_text,
+                    tc.has_multiple_speakers, tc.speaker_change_note,
+                    tc.confidence, tc.approved, tc.created_at
+             FROM transcript_corrections tc
+             JOIN episodes e ON tc.episode_id = e.id
+             WHERE tc.approved = 0
+             ORDER BY e.episode_number ASC, tc.segment_idx ASC"
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(models::TranscriptCorrectionWithEpisode {
+                id: row.get(0)?,
+                episode_id: row.get(1)?,
+                episode_title: row.get(2)?,
+                episode_number: row.get(3)?,
+                segment_idx: row.get(4)?,
+                original_text: row.get(5)?,
+                corrected_text: row.get(6)?,
+                has_multiple_speakers: {
+                    let v: i32 = row.get(7)?;
+                    v != 0
+                },
+                speaker_change_note: row.get(8)?,
+                confidence: row.get(9)?,
+                approved: row.get(10)?,
+                created_at: row.get(11)?,
+            })
+        })?.filter_map(|r| r.ok()).collect();
+        Ok(rows)
+    }
+
+    /// Approve all pending corrections for a specific episode.
+    pub fn approve_all_pending_corrections_for_episode(&self, episode_id: i64) -> Result<usize> {
+        let conn = self.conn.lock().unwrap();
+        let n = conn.execute(
+            "UPDATE transcript_corrections SET approved = 1 WHERE episode_id = ?1 AND approved = 0",
+            [episode_id],
+        )?;
+        Ok(n)
+    }
+
+    /// Reject all pending corrections for a specific episode.
+    pub fn reject_all_pending_corrections_for_episode(&self, episode_id: i64) -> Result<usize> {
+        let conn = self.conn.lock().unwrap();
+        let n = conn.execute(
+            "UPDATE transcript_corrections SET approved = -1 WHERE episode_id = ?1 AND approved = 0",
+            [episode_id],
+        )?;
+        Ok(n)
+    }
+
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

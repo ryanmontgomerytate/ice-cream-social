@@ -475,6 +475,216 @@ function CategoryRulesSection({ onNotification }) {
 // ============================================================================
 
 // ============================================================================
+// Chapter Types Section
+// ============================================================================
+
+const DEFAULT_COLORS = ['#22c55e', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#14b8a6', '#f97316', '#64748b']
+
+function ChapterTypeRow({ type, onSave, onDelete }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState({ ...type })
+  const [saving, setSaving] = useState(false)
+  const [confirming, setConfirming] = useState(false)
+
+  const handleSave = async () => {
+    setSaving(true)
+    try {
+      await onSave(draft)
+      setEditing(false)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDelete = () => {
+    if (!confirming) { setConfirming(true); return }
+    onDelete(type.id)
+    setConfirming(false)
+  }
+
+  if (!editing) {
+    return (
+      <div className="flex items-center gap-3 px-3 py-2 rounded border bg-white border-gray-200">
+        <span className="text-base w-6 text-center">{type.icon || '📑'}</span>
+        <div className="flex items-center gap-1.5">
+          <span className="inline-block w-3 h-3 rounded-full flex-shrink-0" style={{ background: type.color }} />
+          <span className="text-xs font-medium text-gray-800">{type.name}</span>
+        </div>
+        {type.description && <span className="text-xs text-gray-400 flex-1 truncate">{type.description}</span>}
+        {!type.description && <div className="flex-1" />}
+        <span className="text-xs text-gray-400 flex-shrink-0">#{type.sort_order}</span>
+        <button onClick={() => setEditing(true)} className="text-xs text-blue-500 hover:text-blue-700 flex-shrink-0">Edit</button>
+        {confirming
+          ? <button onClick={handleDelete} className="text-xs text-red-600 font-medium flex-shrink-0">Confirm?</button>
+          : <button onClick={handleDelete} className="text-xs text-red-400 hover:text-red-600 flex-shrink-0">✕</button>
+        }
+      </div>
+    )
+  }
+
+  return (
+    <div className="p-3 rounded border border-blue-200 bg-blue-50 space-y-2">
+      <div className="flex gap-2 flex-wrap">
+        <input
+          value={draft.icon || ''}
+          onChange={e => setDraft(d => ({ ...d, icon: e.target.value }))}
+          placeholder="🎬"
+          className="text-sm border border-gray-300 rounded px-2 py-1 w-14 text-center"
+          title="Emoji icon"
+        />
+        <input
+          value={draft.name}
+          onChange={e => setDraft(d => ({ ...d, name: e.target.value }))}
+          placeholder="Chapter name"
+          className="text-xs border border-gray-300 rounded px-2 py-1 flex-1 min-w-[120px]"
+        />
+        <input
+          value={draft.color}
+          onChange={e => setDraft(d => ({ ...d, color: e.target.value }))}
+          type="color"
+          className="h-8 w-10 rounded border border-gray-300 cursor-pointer p-0.5"
+          title="Color"
+        />
+        <input
+          type="number"
+          value={draft.sort_order}
+          onChange={e => setDraft(d => ({ ...d, sort_order: parseInt(e.target.value) || 0 }))}
+          className="text-xs border border-gray-300 rounded px-2 py-1 w-16"
+          title="Sort order (lower = first)"
+        />
+      </div>
+      <div className="flex gap-1 flex-wrap">
+        {DEFAULT_COLORS.map(c => (
+          <button key={c} onClick={() => setDraft(d => ({ ...d, color: c }))}
+            className={`w-5 h-5 rounded-full border-2 ${draft.color === c ? 'border-blue-500' : 'border-transparent'}`}
+            style={{ background: c }} />
+        ))}
+      </div>
+      <input
+        value={draft.description || ''}
+        onChange={e => setDraft(d => ({ ...d, description: e.target.value }))}
+        placeholder="Description (optional)"
+        className="text-xs border border-gray-300 rounded px-2 py-1 w-full"
+      />
+      <div className="flex items-center gap-2 justify-end">
+        <button onClick={() => setEditing(false)} className="text-xs text-gray-500 hover:text-gray-700">Cancel</button>
+        <button onClick={handleSave} disabled={saving || !draft.name} className="text-xs bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 disabled:opacity-50">
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function ChapterTypesSection({ onNotification }) {
+  const [types, setTypes] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [adding, setAdding] = useState(false)
+  const [newType, setNewType] = useState({ name: '', description: '', color: '#3b82f6', icon: '', sort_order: 99 })
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => { load() }, [])
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      setTypes(await contentAPI.getChapterTypes())
+    } catch (e) {
+      onNotification?.(`Error loading chapter types: ${e.message}`, 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleSave = async (type) => {
+    try {
+      await contentAPI.updateChapterType(type.id, type.name, type.description || null, type.color, type.icon || null, type.sort_order)
+      await load()
+      onNotification?.('Chapter type saved', 'success')
+    } catch (e) {
+      onNotification?.(`Save failed: ${e.message}`, 'error')
+      throw e
+    }
+  }
+
+  const handleDelete = async (id) => {
+    try {
+      await contentAPI.deleteChapterType(id)
+      setTypes(t => t.filter(x => x.id !== id))
+      onNotification?.('Chapter type deleted', 'success')
+    } catch (e) {
+      onNotification?.(`Delete failed: ${e.message}`, 'error')
+    }
+  }
+
+  const handleAdd = async () => {
+    if (!newType.name.trim()) return
+    setSaving(true)
+    try {
+      await contentAPI.createChapterType(newType.name.trim(), newType.description || null, newType.color, newType.icon || null)
+      await load()
+      setNewType({ name: '', description: '', color: '#3b82f6', icon: '', sort_order: 99 })
+      setAdding(false)
+      onNotification?.('Chapter type created', 'success')
+    } catch (e) {
+      onNotification?.(`Create failed: ${e.message}`, 'error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="p-4 bg-white rounded-lg border border-gray-200">
+      <div className="flex items-center justify-between mb-3">
+        <div>
+          <h3 className="font-medium text-gray-800 text-sm">Chapter Types</h3>
+          <p className="text-xs text-gray-500 mt-0.5">Define the kinds of chapters used across episodes (Scoop Mail, Jock vs Nerd, etc.)</p>
+        </div>
+        <button onClick={() => setAdding(a => !a)} className="text-xs bg-indigo-500 text-white px-3 py-1.5 rounded hover:bg-indigo-600">+ Add Type</button>
+      </div>
+
+      {adding && (
+        <div className="p-3 rounded border border-indigo-200 bg-indigo-50 space-y-2 mb-3">
+          <div className="flex gap-2 flex-wrap">
+            <input value={newType.icon} onChange={e => setNewType(d => ({ ...d, icon: e.target.value }))}
+              placeholder="🎬" className="text-sm border border-gray-300 rounded px-2 py-1 w-14 text-center" title="Emoji icon" />
+            <input value={newType.name} onChange={e => setNewType(d => ({ ...d, name: e.target.value }))}
+              onKeyDown={e => e.key === 'Enter' && handleAdd()}
+              placeholder="Chapter type name" className="text-xs border border-gray-300 rounded px-2 py-1 flex-1 min-w-[140px]" />
+            <input value={newType.color} onChange={e => setNewType(d => ({ ...d, color: e.target.value }))}
+              type="color" className="h-8 w-10 rounded border border-gray-300 cursor-pointer p-0.5" />
+          </div>
+          <div className="flex gap-1 flex-wrap">
+            {DEFAULT_COLORS.map(c => (
+              <button key={c} onClick={() => setNewType(d => ({ ...d, color: c }))}
+                className={`w-5 h-5 rounded-full border-2 ${newType.color === c ? 'border-indigo-500' : 'border-transparent'}`}
+                style={{ background: c }} />
+            ))}
+          </div>
+          <input value={newType.description} onChange={e => setNewType(d => ({ ...d, description: e.target.value }))}
+            placeholder="Description (optional)" className="text-xs border border-gray-300 rounded px-2 py-1 w-full" />
+          <div className="flex items-center gap-2 justify-end">
+            <button onClick={() => setAdding(false)} className="text-xs text-gray-500 hover:text-gray-700">Cancel</button>
+            <button onClick={handleAdd} disabled={saving || !newType.name.trim()} className="text-xs bg-indigo-500 text-white px-3 py-1 rounded hover:bg-indigo-600 disabled:opacity-50">
+              {saving ? 'Creating…' : 'Create'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {loading ? (
+        <p className="text-xs text-gray-400 py-2">Loading…</p>
+      ) : types.length === 0 ? (
+        <p className="text-xs text-gray-400 py-2">No chapter types. Add one above.</p>
+      ) : (
+        <div className="space-y-1.5">
+          {types.map(t => <ChapterTypeRow key={t.id} type={t} onSave={handleSave} onDelete={handleDelete} />)}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // Chapter Label Rules Section
 // ============================================================================
 
@@ -695,6 +905,189 @@ function ChapterLabelRulesSection({ onNotification }) {
               chapterTypes={chapterTypes}
               onSave={handleSave}
               onDelete={handleDelete}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ============================================================================
+// Corrections Review Section (Scoop Polish — cross-episode bulk review)
+// ============================================================================
+
+function CorrectionRow({ correction, onApprove, onReject }) {
+  const hasDiff = correction.original_text !== correction.corrected_text
+  const conf = correction.confidence != null ? Math.round(correction.confidence * 100) : null
+
+  return (
+    <div className="text-xs border border-gray-100 rounded p-2 space-y-1 bg-white">
+      <div className="flex items-start gap-2">
+        {correction.has_multiple_speakers && (
+          <span className="flex-shrink-0 px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-medium">multi-spkr</span>
+        )}
+        {conf != null && (
+          <span className={`flex-shrink-0 px-1.5 py-0.5 rounded font-medium ${conf >= 90 ? 'bg-green-100 text-green-700' : conf >= 70 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>
+            {conf}%
+          </span>
+        )}
+        <span className="text-gray-400 flex-shrink-0">#{correction.segment_idx}</span>
+        {correction.speaker_change_note && (
+          <span className="text-purple-600 italic flex-1 truncate">{correction.speaker_change_note}</span>
+        )}
+        <div className="flex gap-1 ml-auto flex-shrink-0">
+          <button onClick={() => onApprove(correction.id)} className="px-2 py-0.5 rounded bg-green-500 text-white hover:bg-green-600 text-xs">✓</button>
+          <button onClick={() => onReject(correction.id)} className="px-2 py-0.5 rounded bg-red-400 text-white hover:bg-red-500 text-xs">✗</button>
+        </div>
+      </div>
+      {hasDiff && (
+        <div className="space-y-0.5 pl-2 border-l-2 border-gray-200">
+          <div className="text-red-600 line-through opacity-70 break-words">{correction.original_text}</div>
+          <div className="text-green-700 break-words">{correction.corrected_text}</div>
+        </div>
+      )}
+      {!hasDiff && correction.has_multiple_speakers && (
+        <div className="pl-2 border-l-2 border-amber-200 text-gray-500 break-words">{correction.original_text}</div>
+      )}
+    </div>
+  )
+}
+
+function EpisodeCorrectionsGroup({ episodeId, episodeTitle, episodeNumber, corrections, onApproveAll, onRejectAll, onApprove, onReject }) {
+  const [expanded, setExpanded] = useState(false)
+  const multiCount = corrections.filter(c => c.has_multiple_speakers).length
+
+  return (
+    <div className="border border-gray-200 rounded-lg overflow-hidden">
+      <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 cursor-pointer select-none" onClick={() => setExpanded(e => !e)}>
+        <span className="text-gray-400 text-xs w-3">{expanded ? '▼' : '▶'}</span>
+        <span className="text-xs font-medium text-gray-700 flex-1">
+          Ep {episodeNumber || episodeId} — {episodeTitle || 'Untitled'}
+        </span>
+        <span className="text-xs text-gray-500">{corrections.length} correction{corrections.length !== 1 ? 's' : ''}</span>
+        {multiCount > 0 && <span className="text-xs px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">{multiCount} multi-spkr</span>}
+        <button onClick={e => { e.stopPropagation(); onApproveAll(episodeId) }}
+          className="text-xs px-2 py-0.5 rounded bg-green-500 text-white hover:bg-green-600 ml-1">✓ All</button>
+        <button onClick={e => { e.stopPropagation(); onRejectAll(episodeId) }}
+          className="text-xs px-2 py-0.5 rounded bg-gray-300 text-gray-700 hover:bg-gray-400">✗ All</button>
+      </div>
+      {expanded && (
+        <div className="p-2 space-y-1.5 bg-gray-50">
+          {corrections.map(c => (
+            <CorrectionRow key={c.id} correction={c} onApprove={onApprove} onReject={onReject} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CorrectionsReviewSection({ onNotification }) {
+  const [corrections, setCorrections] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [filter, setFilter] = useState('all') // all | multi_speaker | text_only
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      setCorrections(await contentAPI.getAllPendingCorrections())
+    } catch (e) {
+      onNotification?.(`Error loading corrections: ${e.message}`, 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Group by episode
+  const byEpisode = corrections
+    .filter(c => filter === 'all' || (filter === 'multi_speaker' ? c.has_multiple_speakers : !c.has_multiple_speakers))
+    .reduce((acc, c) => {
+      if (!acc[c.episode_id]) acc[c.episode_id] = { episodeId: c.episode_id, episodeTitle: c.episode_title, episodeNumber: c.episode_number, corrections: [] }
+      acc[c.episode_id].corrections.push(c)
+      return acc
+    }, {})
+  const groups = Object.values(byEpisode)
+
+  const handleApprove = async (id) => {
+    try {
+      await contentAPI.approveTranscriptCorrection(id)
+      setCorrections(cs => cs.filter(c => c.id !== id))
+    } catch (e) {
+      onNotification?.(`Failed: ${e.message}`, 'error')
+    }
+  }
+
+  const handleReject = async (id) => {
+    try {
+      await contentAPI.rejectTranscriptCorrection(id)
+      setCorrections(cs => cs.filter(c => c.id !== id))
+    } catch (e) {
+      onNotification?.(`Failed: ${e.message}`, 'error')
+    }
+  }
+
+  const handleApproveAll = async (episodeId) => {
+    try {
+      const count = await contentAPI.approveAllCorrectionsForEpisode(episodeId)
+      setCorrections(cs => cs.filter(c => c.episode_id !== episodeId))
+      onNotification?.(`Approved ${count} corrections`, 'success')
+    } catch (e) {
+      onNotification?.(`Failed: ${e.message}`, 'error')
+    }
+  }
+
+  const handleRejectAll = async (episodeId) => {
+    try {
+      const count = await contentAPI.rejectAllCorrectionsForEpisode(episodeId)
+      setCorrections(cs => cs.filter(c => c.episode_id !== episodeId))
+      onNotification?.(`Rejected ${count} corrections`, 'success')
+    } catch (e) {
+      onNotification?.(`Failed: ${e.message}`, 'error')
+    }
+  }
+
+  const multiCount = corrections.filter(c => c.has_multiple_speakers).length
+
+  return (
+    <div className="p-4 bg-white rounded-lg border border-gray-200">
+      <div className="flex items-center justify-between mb-3">
+        <div>
+          <h3 className="font-medium text-gray-800 text-sm">Scoop Polish Corrections</h3>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Review AI-suggested transcript corrections across all episodes.
+            {corrections.length > 0 && ` ${corrections.length} pending${multiCount > 0 ? `, ${multiCount} with multi-speaker notes` : ''}.`}
+          </p>
+        </div>
+        <button onClick={load} disabled={loading} className="text-xs bg-indigo-500 text-white px-3 py-1.5 rounded hover:bg-indigo-600 disabled:opacity-50">
+          {loading ? 'Loading…' : corrections.length === 0 ? 'Load' : 'Refresh'}
+        </button>
+      </div>
+
+      {corrections.length > 0 && (
+        <div className="flex gap-2 mb-3">
+          {['all', 'multi_speaker', 'text_only'].map(f => (
+            <button key={f} onClick={() => setFilter(f)}
+              className={`text-xs px-2.5 py-1 rounded-full border ${filter === f ? 'bg-indigo-500 text-white border-indigo-500' : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400'}`}>
+              {f === 'all' ? `All (${corrections.length})` : f === 'multi_speaker' ? `Multi-speaker (${multiCount})` : `Text only (${corrections.length - multiCount})`}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {!loading && corrections.length === 0 && (
+        <p className="text-xs text-gray-400 py-2">Click Load to fetch pending corrections.</p>
+      )}
+
+      {groups.length > 0 && (
+        <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
+          {groups.map(g => (
+            <EpisodeCorrectionsGroup key={g.episodeId}
+              {...g}
+              onApproveAll={handleApproveAll}
+              onRejectAll={handleRejectAll}
+              onApprove={handleApprove}
+              onReject={handleReject}
             />
           ))}
         </div>
@@ -1144,8 +1537,14 @@ export default function SettingsPanel({ onNotification }) {
             {/* Category Rules Section */}
             <CategoryRulesSection onNotification={onNotification} />
 
+            {/* Chapter Types Section */}
+            <ChapterTypesSection onNotification={onNotification} />
+
             {/* Chapter Label Rules Section */}
             <ChapterLabelRulesSection onNotification={onNotification} />
+
+            {/* Scoop Polish Corrections Bulk Review */}
+            <CorrectionsReviewSection onNotification={onNotification} />
 
             {/* Current Settings Debug */}
             <div className="p-4 bg-gray-100 rounded-lg border border-gray-200">

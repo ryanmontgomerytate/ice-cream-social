@@ -446,3 +446,20 @@ pub struct TranscriptCorrection {
     // Joined field
     pub segment_start_time: Option<f64>,
 }
+
+/// TranscriptCorrection enriched with episode metadata for cross-episode review
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TranscriptCorrectionWithEpisode {
+    pub id: i64,
+    pub episode_id: i64,
+    pub episode_title: Option<String>,
+    pub episode_number: Option<String>,
+    pub segment_idx: i32,
+    pub original_text: String,
+    pub corrected_text: String,
+    pub has_multiple_speakers: bool,
+    pub speaker_change_note: Option<String>,
+    pub confidence: Option<f64>,
+    pub approved: i32,
+    pub created_at: Option<String>,
+}

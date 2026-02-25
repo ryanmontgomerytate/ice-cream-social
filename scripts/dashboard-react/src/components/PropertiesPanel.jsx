@@ -86,7 +86,7 @@ function QwenClassificationCard({ classification: c, onApprove, onReject, onSeek
           className="text-xs font-medium text-violet-700 hover:underline truncate flex-1 text-left"
           title="Jump to segment"
         >
-          Seg {c.segment_idx}
+          Clip {c.segment_idx}
           {c.segment_start_time != null && (
             <span className="ml-1 text-violet-400 font-normal">
               {Math.floor(c.segment_start_time / 60)}:{String(Math.floor(c.segment_start_time % 60)).padStart(2, '0')}
@@ -1374,6 +1374,26 @@ export default function PropertiesPanel() {
                         ? `${Math.floor(r.segment_start_time / 60)}:${String(Math.floor(r.segment_start_time % 60)).padStart(2, '0')}`
                         : null
                       const textChanged = r.corrected_text !== r.original_text
+                      const flag = flaggedSegments[r.segment_idx]
+                      const flagLabel = flag?.flag_type === 'wrong_speaker' ? 'flagged: wrong speaker'
+                        : flag?.flag_type === 'multiple_speakers' ? 'flagged: multiple speakers'
+                        : flag?.flag_type === 'character_voice' ? 'flagged: character voice'
+                        : null
+
+                      // What Qwen found
+                      const findingParts = []
+                      if (textChanged) findingParts.push('transcription error')
+                      if (r.has_multiple_speakers) findingParts.push('second voice detected')
+                      const finding = findingParts.length > 0
+                        ? `Qwen found: ${findingParts.join(' + ')}`
+                        : 'Qwen confirmed: transcription looks accurate'
+
+                      // What approving feeds into downstream
+                      const downstreamParts = []
+                      if (textChanged) downstreamParts.push('fixes transcript text')
+                      if (textChanged) downstreamParts.push('records voice sample')
+                      if (r.has_multiple_speakers) downstreamParts.push('adds multi-speaker hint to reprocess')
+
                       return (
                         <div key={r.id} className="rounded border border-teal-200 bg-teal-50 p-2 space-y-1.5">
                           <div className="flex items-center justify-between gap-1">
@@ -1381,15 +1401,25 @@ export default function PropertiesPanel() {
                               onClick={() => seekToSegment?.(r.segment_idx)}
                               className="text-xs font-medium text-teal-700 hover:underline truncate flex-1 text-left"
                             >
-                              Seg {r.segment_idx}
+                              Clip {r.segment_idx}
                               {timeStr && <span className="ml-1 text-teal-400 font-normal">{timeStr}</span>}
                             </button>
                             <div className="flex items-center gap-1 flex-shrink-0">
                               {r.has_multiple_speakers && (
                                 <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-orange-100 text-orange-700">👥 2 speakers</span>
                               )}
-                              <span className="text-[10px] text-gray-400">{pct}%</span>
+                              <span className={`text-[10px] font-medium ${pct >= 90 ? 'text-green-600' : pct >= 70 ? 'text-yellow-600' : 'text-red-500'}`}>{pct}%</span>
                             </div>
+                          </div>
+
+                          {/* Context: why this clip was polished + what Qwen found */}
+                          <div className="flex flex-wrap gap-1">
+                            {flagLabel && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">{flagLabel}</span>
+                            )}
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${findingParts.length > 0 ? 'bg-teal-100 text-teal-700' : 'bg-gray-100 text-gray-500'}`}>
+                              {finding}
+                            </span>
                           </div>
 
                           {/* Text diff */}
@@ -1399,7 +1429,7 @@ export default function PropertiesPanel() {
                               <p className="text-[11px] text-green-700 line-clamp-2">"{r.corrected_text}"</p>
                             </div>
                           ) : (
-                            <p className="text-[11px] text-gray-400 italic">No text changes detected</p>
+                            <p className="text-[11px] text-gray-400 italic">No text changes — original is accurate</p>
                           )}
 
                           {/* Speaker change note */}
@@ -1409,13 +1439,20 @@ export default function PropertiesPanel() {
                             </p>
                           )}
 
+                          {/* Downstream hint */}
+                          {downstreamParts.length > 0 && (
+                            <p className="text-[10px] text-teal-500 italic">
+                              Approving → {downstreamParts.join(', ')}
+                            </p>
+                          )}
+
                           {/* Actions */}
                           <div className="flex gap-1.5 pt-0.5">
                             <button
                               onClick={() => handleApproveCorrection(r)}
                               className="flex-1 py-1 text-[11px] rounded bg-green-100 hover:bg-green-200 text-green-700 font-medium transition-colors"
                             >
-                              ✓ {r.has_multiple_speakers ? 'Note speaker' : 'Apply fix'}
+                              ✓ {r.has_multiple_speakers && !textChanged ? 'Note speaker' : 'Apply fix'}
                             </button>
                             <button
                               onClick={() => handleRejectCorrection(r.id)}
@@ -1436,14 +1473,28 @@ export default function PropertiesPanel() {
                     <span className="text-[10px] font-medium text-gray-400 uppercase tracking-wider">
                       Approved ({polishResults.filter(r => r.approved === 1).length})
                     </span>
-                    {polishResults.filter(r => r.approved === 1).map(r => (
-                      <div key={r.id} className="px-2 py-1 rounded bg-green-50 border border-green-100 flex items-center gap-1.5">
-                        <span className="text-green-500 text-xs">✓</span>
-                        <span className="text-xs text-green-700 truncate flex-1">
-                          {r.has_multiple_speakers ? '👥 Speaker noted' : 'Text fixed'} @ seg {r.segment_idx}
-                        </span>
-                      </div>
-                    ))}
+                    {polishResults.filter(r => r.approved === 1).map(r => {
+                      const textChanged = r.corrected_text !== r.original_text
+                      const hints = []
+                      if (textChanged) hints.push('📝 transcript')
+                      if (r.has_multiple_speakers) hints.push('🔄 reprocess hint')
+                      return (
+                        <div key={r.id} className="px-2 py-1 rounded bg-green-50 border border-green-100 flex items-center gap-1.5">
+                          <span className="text-green-500 text-xs flex-shrink-0">✓</span>
+                          <button
+                            onClick={() => seekToSegment?.(r.segment_idx)}
+                            className="text-xs text-green-700 hover:underline truncate flex-1 text-left"
+                          >
+                            {textChanged && r.has_multiple_speakers ? 'Text + speaker'
+                              : r.has_multiple_speakers ? '👥 Speaker noted'
+                              : 'Text fixed'} @ clip {r.segment_idx}
+                          </button>
+                          {hints.length > 0 && (
+                            <span className="text-[10px] text-gray-400 flex-shrink-0">{hints.join(' · ')}</span>
+                          )}
+                        </div>
+                      )
+                    })}
                   </div>
                 )}
 

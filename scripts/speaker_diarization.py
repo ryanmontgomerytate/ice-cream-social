@@ -412,7 +412,8 @@ def apply_hints_to_transcript(transcript: Dict, hints: Dict) -> Dict:
 
     Args:
         transcript: Enhanced transcript with speaker labels
-        hints: Hints dict with corrections and multiple_speakers_segments
+        hints: Hints dict with corrections, multiple_speakers_segments,
+               exclude_from_voiceprint, and num_speakers_hint
 
     Returns:
         Transcript with corrections applied
@@ -422,6 +423,9 @@ def apply_hints_to_transcript(transcript: Dict, hints: Dict) -> Dict:
 
     corrections_applied = 0
 
+    # Build set of segment indices to exclude from voiceprint (character voices / performance bits)
+    exclude_set = set(hints.get('exclude_from_voiceprint', []))
+
     # Apply wrong_speaker corrections
     for correction in hints.get('corrections', []):
         idx = correction.get('segment_idx')
@@ -429,8 +433,17 @@ def apply_hints_to_transcript(transcript: Dict, hints: Dict) -> Dict:
         if idx is not None and corrected_speaker and idx < len(segments):
             old_speaker = segments[idx].get('speaker', 'UNKNOWN')
             segments[idx]['speaker'] = corrected_speaker
+            if correction.get('is_character'):
+                segments[idx]['is_character_voice'] = True
+            if correction.get('exclude_from_voiceprint') or idx in exclude_set:
+                segments[idx]['exclude_from_voiceprint'] = True
             logger.info(f"Applied correction: segment {idx} speaker {old_speaker} -> {corrected_speaker}")
             corrections_applied += 1
+
+    # Mark any remaining exclude_from_voiceprint segments not covered by corrections
+    for idx in exclude_set:
+        if idx < len(segments) and not segments[idx].get('exclude_from_voiceprint'):
+            segments[idx]['exclude_from_voiceprint'] = True
 
     # Mark multiple_speakers segments
     for multi in hints.get('multiple_speakers_segments', []):
@@ -441,7 +454,8 @@ def apply_hints_to_transcript(transcript: Dict, hints: Dict) -> Dict:
             segments[idx]['possible_speakers'] = speaker_ids
             logger.info(f"Marked segment {idx} as multiple speakers: {speaker_ids}")
 
-    logger.info(f"Applied {corrections_applied} speaker corrections from hints")
+    logger.info(f"Applied {corrections_applied} speaker corrections from hints, "
+                f"{len(exclude_set)} segments excluded from voiceprint")
     return transcript
 
 

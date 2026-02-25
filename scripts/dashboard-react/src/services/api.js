@@ -786,6 +786,16 @@ export const contentAPI = {
     throw new Error('Content only available in Tauri mode');
   },
 
+  async updateChapterType(id, name, description, color, icon, sortOrder) {
+    if (isTauri) return await tauriAPI.contentAPI.updateChapterType(id, name, description, color, icon, sortOrder);
+    throw new Error('Content only available in Tauri mode');
+  },
+
+  async deleteChapterType(id) {
+    if (isTauri) return await tauriAPI.contentAPI.deleteChapterType(id);
+    throw new Error('Content only available in Tauri mode');
+  },
+
   // Episode Chapters
   async getEpisodeChapters(episodeId) {
     if (isTauri) {
@@ -1124,6 +1134,21 @@ export const contentAPI = {
     if (isTauri) {
       return await tauriAPI.contentAPI.rejectTranscriptCorrection(id);
     }
+    throw new Error('Scoop Polish only available in Tauri mode');
+  },
+
+  async getAllPendingCorrections() {
+    if (isTauri) return await tauriAPI.contentAPI.getAllPendingCorrections();
+    return [];
+  },
+
+  async approveAllCorrectionsForEpisode(episodeId) {
+    if (isTauri) return await tauriAPI.contentAPI.approveAllCorrectionsForEpisode(episodeId);
+    throw new Error('Scoop Polish only available in Tauri mode');
+  },
+
+  async rejectAllCorrectionsForEpisode(episodeId) {
+    if (isTauri) return await tauriAPI.contentAPI.rejectAllCorrectionsForEpisode(episodeId);
     throw new Error('Scoop Polish only available in Tauri mode');
   },
 };

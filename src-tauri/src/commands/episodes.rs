@@ -1219,14 +1219,25 @@ pub async fn reprocess_diarization(
 
     let transcript_path = episode.transcript_path.ok_or("No transcript for this episode")?;
 
-    // Get all unresolved speaker-related flags
-    let flags = db.get_unresolved_speaker_flags(episode_id)
+    // Get ALL speaker-related flags (resolved + unresolved) for comprehensive hints
+    let flags = db.get_all_speaker_flags(episode_id)
+        .map_err(AppError::from)?;
+
+    // Get approved Qwen performance-bit classifications (character voices to exclude from voiceprint)
+    let performance_segments = db.get_approved_performance_segments(episode_id)
+        .map_err(AppError::from)?;
+
+    // Get approved transcript corrections that note multiple speakers
+    let multispeaker_correction_indices = db.get_approved_multispeaker_corrections(episode_id)
         .map_err(AppError::from)?;
 
     // Build hints JSON
     let mut corrections = Vec::new();
     let mut multiple_speakers_segments = Vec::new();
+    let mut exclude_from_voiceprint: Vec<i32> = Vec::new();
     let mut all_speakers = std::collections::HashSet::new();
+    // Track segment indices that already have a multiple_speakers entry
+    let mut multi_speaker_idx_set: std::collections::HashSet<i32> = std::collections::HashSet::new();
 
     for flag in &flags {
         match flag.flag_type.as_str() {
@@ -1250,6 +1261,7 @@ pub async fn reprocess_diarization(
                     "segment_idx": flag.segment_idx,
                     "speaker_ids": speaker_ids_parsed,
                 }));
+                multi_speaker_idx_set.insert(flag.segment_idx);
             }
             "character_voice" => {
                 // Use the character name as the corrected speaker hint
@@ -1264,11 +1276,45 @@ pub async fn reprocess_diarization(
                         "segment_idx": flag.segment_idx,
                         "corrected_speaker": name,
                         "is_character": true,
+                        "exclude_from_voiceprint": true,
                     }));
                     all_speakers.insert(name.clone());
+                    exclude_from_voiceprint.push(flag.segment_idx);
                 }
             }
             _ => {}
+        }
+    }
+
+    // Add approved Qwen performance bits: character voices that should be excluded from voiceprint
+    for (seg_idx, char_name) in &performance_segments {
+        let already_in_corrections = corrections.iter().any(|c| {
+            c.get("segment_idx").and_then(|v| v.as_i64()).map(|v| v as i32) == Some(*seg_idx)
+        });
+        if !already_in_corrections {
+            let name = char_name.as_deref().unwrap_or("CHARACTER");
+            corrections.push(serde_json::json!({
+                "segment_idx": seg_idx,
+                "corrected_speaker": name,
+                "is_character": true,
+                "exclude_from_voiceprint": true,
+            }));
+            all_speakers.insert(name.to_string());
+        }
+        if !exclude_from_voiceprint.contains(seg_idx) {
+            exclude_from_voiceprint.push(*seg_idx);
+        }
+    }
+
+    // Add approved multi-speaker corrections that aren't already in multi_speakers_segments
+    for seg_idx in &multispeaker_correction_indices {
+        if !multi_speaker_idx_set.contains(seg_idx) {
+            multiple_speakers_segments.push(serde_json::json!({
+                "segment_idx": seg_idx,
+                "speaker_ids": [],
+                "source": "transcript_correction",
+            }));
+            multi_speaker_idx_set.insert(*seg_idx);
         }
     }
 
@@ -1281,9 +1327,13 @@ pub async fn reprocess_diarization(
 
     let num_speakers_hint = if all_speakers.len() > 1 { Some(all_speakers.len()) } else { None };
 
+    exclude_from_voiceprint.sort();
+    exclude_from_voiceprint.dedup();
+
     let hints = serde_json::json!({
         "corrections": corrections,
         "multiple_speakers_segments": multiple_speakers_segments,
+        "exclude_from_voiceprint": exclude_from_voiceprint,
         "num_speakers_hint": num_speakers_hint,
     });
 
@@ -1294,8 +1344,8 @@ pub async fn reprocess_diarization(
     std::fs::write(&hints_path, serde_json::to_string_pretty(&hints).unwrap())
         .map_err(|e| format!("Failed to write hints file: {}", e))?;
 
-    log::info!("Wrote diarization hints to: {:?} ({} corrections, {} multi-speaker segments)",
-        hints_path, corrections.len(), multiple_speakers_segments.len());
+    log::info!("Wrote diarization hints to: {:?} ({} corrections, {} multi-speaker segments, {} exclude-from-voiceprint)",
+        hints_path, corrections.len(), multiple_speakers_segments.len(), exclude_from_voiceprint.len());
 
     // Reset diarization status
     db.update_diarization(episode_id, 0)

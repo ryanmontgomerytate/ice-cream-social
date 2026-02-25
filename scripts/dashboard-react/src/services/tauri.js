@@ -458,6 +458,14 @@ export const contentAPI = {
     return tauriInvoke('create_chapter_type', { name, description, color, icon });
   },
 
+  async updateChapterType(id, name, description, color, icon, sortOrder) {
+    return tauriInvoke('update_chapter_type', { id, name, description, color, icon, sortOrder });
+  },
+
+  async deleteChapterType(id) {
+    return tauriInvoke('delete_chapter_type', { id });
+  },
+
   // Episode Chapters
   async getEpisodeChapters(episodeId) {
     return tauriInvoke('get_episode_chapters', { episodeId });
@@ -632,6 +640,18 @@ export const contentAPI = {
 
   async rejectTranscriptCorrection(id) {
     return tauriInvoke('reject_transcript_correction', { id });
+  },
+
+  async getAllPendingCorrections() {
+    return tauriInvoke('get_all_pending_corrections');
+  },
+
+  async approveAllCorrectionsForEpisode(episodeId) {
+    return tauriInvoke('approve_all_corrections_for_episode', { episodeId });
+  },
+
+  async rejectAllCorrectionsForEpisode(episodeId) {
+    return tauriInvoke('reject_all_corrections_for_episode', { episodeId });
   },
 };
 

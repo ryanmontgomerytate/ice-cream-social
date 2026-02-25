@@ -232,6 +232,8 @@ pub fn run() {
             // Content commands (chapters, characters, sponsors)
             commands::get_chapter_types,
             commands::create_chapter_type,
+            commands::update_chapter_type,
+            commands::delete_chapter_type,
             commands::get_episode_chapters,
             commands::create_episode_chapter,
             commands::delete_episode_chapter,
@@ -302,6 +304,9 @@ pub fn run() {
             commands::get_transcript_corrections,
             commands::approve_transcript_correction,
             commands::reject_transcript_correction,
+            commands::get_all_pending_corrections,
+            commands::approve_all_corrections_for_episode,
+            commands::reject_all_corrections_for_episode,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

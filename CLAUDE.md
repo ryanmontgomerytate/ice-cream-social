@@ -35,7 +35,7 @@ To prevent memory drift, you must strictly maintain three files:
 
 * `CLAUDE.md`: (This file) Core architecture, tech stack, and "personality"
 * `SESSIONS.md`: A chronological log of what was done today. Every task ends with a "Current State" update here
-* `ARCHITECTURE.md`: Detailed specs of the database schema and transcription pipelines
+
 
 **Instruction**: Before starting any code change, Claude must read these three files to verify the current "Source of Truth."
 

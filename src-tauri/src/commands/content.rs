@@ -1,4 +1,4 @@
-use crate::database::{Database, models::{ChapterType, EpisodeChapter, ChapterLabelRule, Character, Sponsor, FlaggedSegment, CharacterAppearance, AudioDrop, AudioDropInstance, SegmentClassification, TranscriptCorrection}, SearchResult, TranscriptSegment, DetectedContent, DetectedContentWithEpisode};
+use crate::database::{Database, models::{ChapterType, EpisodeChapter, ChapterLabelRule, Character, Sponsor, FlaggedSegment, CharacterAppearance, AudioDrop, AudioDropInstance, SegmentClassification, TranscriptCorrection, TranscriptCorrectionWithEpisode}, SearchResult, TranscriptSegment, DetectedContent, DetectedContentWithEpisode};
 use crate::error::AppError;
 use crate::ollama::OllamaClient;
 use std::sync::Arc;
@@ -27,6 +27,30 @@ pub async fn create_chapter_type(
     log::info!("Creating chapter type: {}", name);
     db.create_chapter_type(&name, description.as_deref(), &color, icon.as_deref())
         .map_err(AppError::from)
+}
+
+#[tauri::command]
+pub async fn update_chapter_type(
+    db: State<'_, Arc<Database>>,
+    id: i64,
+    name: String,
+    description: Option<String>,
+    color: String,
+    icon: Option<String>,
+    sort_order: i32,
+) -> Result<(), AppError> {
+    log::info!("Updating chapter type {}: {}", id, name);
+    db.update_chapter_type(id, &name, description.as_deref(), &color, icon.as_deref(), sort_order)
+        .map_err(AppError::from)
+}
+
+#[tauri::command]
+pub async fn delete_chapter_type(
+    db: State<'_, Arc<Database>>,
+    id: i64,
+) -> Result<(), AppError> {
+    log::info!("Deleting chapter type {}", id);
+    db.delete_chapter_type(id).map_err(AppError::from)
 }
 
 // ============================================================================
@@ -1546,4 +1570,32 @@ pub async fn reject_transcript_correction(
 ) -> Result<(), AppError> {
     log::info!("Rejecting transcript correction {}", id);
     db.reject_transcript_correction(id).map_err(AppError::from)
+}
+
+/// Get all pending transcript corrections across all episodes (for cross-episode bulk review).
+#[tauri::command]
+pub async fn get_all_pending_corrections(
+    db: State<'_, Arc<Database>>,
+) -> Result<Vec<TranscriptCorrectionWithEpisode>, AppError> {
+    db.get_all_pending_corrections().map_err(AppError::from)
+}
+
+/// Approve all pending corrections for a specific episode.
+#[tauri::command]
+pub async fn approve_all_corrections_for_episode(
+    db: State<'_, Arc<Database>>,
+    episode_id: i64,
+) -> Result<usize, AppError> {
+    log::info!("Approving all pending corrections for episode {}", episode_id);
+    db.approve_all_pending_corrections_for_episode(episode_id).map_err(AppError::from)
+}
+
+/// Reject all pending corrections for a specific episode.
+#[tauri::command]
+pub async fn reject_all_corrections_for_episode(
+    db: State<'_, Arc<Database>>,
+    episode_id: i64,
+) -> Result<usize, AppError> {
+    log::info!("Rejecting all pending corrections for episode {}", episode_id);
+    db.reject_all_pending_corrections_for_episode(episode_id).map_err(AppError::from)
 }
