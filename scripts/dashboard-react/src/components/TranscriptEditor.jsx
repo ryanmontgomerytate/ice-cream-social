@@ -797,12 +797,18 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
   const getChapterForSegment = (idx) => episodeChapters.find(ch => ch.start_segment_idx <= idx && ch.end_segment_idx >= idx)
   const getDropsForSegment = (idx) => audioDropInstances.filter(adi => adi.segment_idx === idx)
 
-  // Filter segments by search
-  const filteredSegments = useMemo(() => {
-    if (!segments) return null
-    if (!searchQuery) return segments
+  // Filter segments by search — also track real indices so Clip # never changes
+  const { filteredSegments, filteredIndices } = useMemo(() => {
+    if (!segments) return { filteredSegments: null, filteredIndices: null }
+    if (!searchQuery) {
+      return { filteredSegments: segments, filteredIndices: segments.map((_, i) => i) }
+    }
     const query = searchQuery.toLowerCase()
-    return segments.filter(seg => seg.text?.toLowerCase().includes(query))
+    const segs = [], indices = []
+    segments.forEach((seg, i) => {
+      if (seg.text?.toLowerCase().includes(query)) { segs.push(seg); indices.push(i) }
+    })
+    return { filteredSegments: segs, filteredIndices: indices }
   }, [segments, searchQuery])
 
   // Save changes
@@ -2075,7 +2081,8 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
       <div ref={transcriptContainerRef} className="p-4">
         {hasSpeakerLabels && viewMode === 'speakers' && filteredSegments ? (
           <div className="space-y-3">
-            {filteredSegments.map((segment, idx) => {
+            {filteredSegments.map((segment, filteredIdx) => {
+              const idx = filteredIndices[filteredIdx] // real segment index — never changes with search
               const colors = getSpeakerColor(segment.speaker)
               const displayName = flaggedSegments[idx]?.corrected_speaker
                 || speakerNames[segment.speaker] || segment.speaker
