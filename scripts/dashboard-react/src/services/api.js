@@ -935,6 +935,13 @@ export const contentAPI = {
     throw new Error('Content only available in Tauri mode');
   },
 
+  async getAudioDropStats(dropId) {
+    if (isTauri) {
+      return await tauriAPI.contentAPI.getAudioDropStats(dropId);
+    }
+    throw new Error('Content only available in Tauri mode');
+  },
+
   async deleteAudioDrop(id) {
     if (isTauri) {
       return await tauriAPI.contentAPI.deleteAudioDrop(id);

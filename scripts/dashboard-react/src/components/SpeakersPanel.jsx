@@ -96,6 +96,9 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
   const [harvestRunning, setHarvestRunning] = useState(false)
   const [signatureDrafts, setSignatureDrafts] = useState({}) // { [dropId]: text }
   const [signatureSaving, setSignatureSaving] = useState({}) // { [dropId]: bool }
+  const [windowDrafts, setWindowDrafts] = useState({}) // { [dropId]: { min, max } }
+  const [windowSaving, setWindowSaving] = useState({}) // { [dropId]: bool }
+  const [dropStats, setDropStats] = useState({}) // { [dropId]: { total_instances, episode_count, max_per_episode } }
   const [harvestProgress, setHarvestProgress] = useState(null)
   const [rebuildingSpeaker, setRebuildingSpeaker] = useState(null)
   const editFormRef = useRef(null)
@@ -144,12 +147,18 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
     }
   }
 
-  const toggleRow = (name) => {
+  const toggleRow = (name, item) => {
     if (expandedRow === name) {
       setExpandedRow(null)
     } else {
       setExpandedRow(name)
       loadSamplesForRow(name)
+      // Load drop stats for sound bites
+      if (item?.type === 'sound_bite' && item?.drop?.id && !dropStats[item.drop.id]) {
+        contentAPI.getAudioDropStats(item.drop.id)
+          .then(stats => setDropStats(prev => ({ ...prev, [item.drop.id]: stats })))
+          .catch(() => {})
+      }
     }
   }
 
@@ -523,7 +532,7 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
       <div key={item.name} className="border border-gray-200 rounded-lg overflow-hidden">
         {/* Collapsed row header */}
         <div
-          onClick={() => toggleRow(item.name)}
+          onClick={() => toggleRow(item.name, item)}
           className={`flex items-center justify-between px-4 py-3 cursor-pointer transition-colors ${
             isExpanded ? 'bg-gray-100' : 'hover:bg-gray-50'
           }`}
@@ -653,41 +662,71 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
             )}
             {!isSpeaker && item.drop && (
               <>
-                {/* Signature phrase editor */}
+                {/* Drop usage stats */}
+                {(() => {
+                  const stats = dropStats[item.drop.id]
+                  if (!stats) return null
+                  return (
+                    <div className="mb-3 flex gap-4 text-[11px] text-gray-600">
+                      <span><strong className="text-gray-800">{stats.total_instances}</strong> total uses</span>
+                      <span><strong className="text-gray-800">{stats.episode_count}</strong> episodes</span>
+                      <span>max <strong className="text-gray-800">{stats.max_per_episode}×</strong> in one ep</span>
+                    </div>
+                  )
+                })()}
+
+                {/* Signature phrase + window settings editor */}
                 {(() => {
                   const drop = item.drop
                   const draft = signatureDrafts[drop.id] ?? drop.transcript_text ?? ''
                   const isDirty = draft !== (drop.transcript_text ?? '')
-                  const isSavingSig = signatureSaving[drop.id]
+                  const winMin = windowDrafts[drop.id]?.min ?? drop.min_window ?? 1
+                  const winMax = windowDrafts[drop.id]?.max ?? drop.max_window ?? 4
+                  const winDirty = winMin !== (drop.min_window ?? 1) || winMax !== (drop.max_window ?? 4)
+                  const anySaving = signatureSaving[drop.id] || windowSaving[drop.id]
+                  const anyDirty = isDirty || winDirty
                   return (
                     <div className="mb-3 p-2 bg-teal-50 border border-teal-200 rounded">
                       <div className="flex items-center justify-between mb-1">
-                        <span className="text-[11px] font-medium text-teal-700">Signature phrase — words used for drop detection</span>
-                        {isDirty && (
+                        <span className="text-[11px] font-medium text-teal-700">Signature phrase</span>
+                        {anyDirty && (
                           <button
-                            disabled={isSavingSig}
+                            disabled={anySaving}
                             onClick={async (e) => {
                               e.stopPropagation()
-                              setSignatureSaving(prev => ({ ...prev, [drop.id]: true }))
+                              const saves = []
+                              if (isDirty) {
+                                setSignatureSaving(prev => ({ ...prev, [drop.id]: true }))
+                                saves.push(
+                                  contentAPI.updateAudioDropTranscript(drop.id, draft)
+                                    .then(() => setSignatureDrafts(prev => { const n = { ...prev }; delete n[drop.id]; return n }))
+                                )
+                              }
+                              if (winDirty) {
+                                setWindowSaving(prev => ({ ...prev, [drop.id]: true }))
+                                saves.push(
+                                  contentAPI.updateAudioDropWindow(drop.id, winMin, winMax)
+                                    .then(() => setWindowDrafts(prev => { const n = { ...prev }; delete n[drop.id]; return n }))
+                                )
+                              }
                               try {
-                                await contentAPI.updateAudioDropTranscript(drop.id, draft)
-                                // Refresh audioDrops so updated text is reflected everywhere
+                                await Promise.all(saves)
                                 const refreshed = await contentAPI.getAudioDrops()
                                 setAudioDrops(refreshed)
-                                setSignatureDrafts(prev => { const n = { ...prev }; delete n[drop.id]; return n })
-                                onNotification?.(`✓ Saved phrase for "${drop.name}"`, 'success')
+                                onNotification?.(`✓ Saved "${drop.name}"`, 'success')
                               } catch (err) {
                                 onNotification?.(`Failed to save: ${err.message}`, 'error')
                               } finally {
                                 setSignatureSaving(prev => ({ ...prev, [drop.id]: false }))
+                                setWindowSaving(prev => ({ ...prev, [drop.id]: false }))
                               }
                             }}
                             className="text-[10px] px-2 py-0.5 bg-teal-600 hover:bg-teal-700 text-white rounded disabled:opacity-50"
                           >
-                            {isSavingSig ? 'Saving…' : 'Save'}
+                            {anySaving ? 'Saving…' : 'Save'}
                           </button>
                         )}
-                        {!isDirty && drop.transcript_text && (
+                        {!anyDirty && drop.transcript_text && (
                           <span className="text-[10px] text-teal-500">✓ Saved</span>
                         )}
                       </div>
@@ -699,6 +738,35 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
                         rows={2}
                         className="w-full text-[11px] border border-teal-200 rounded px-2 py-1.5 bg-white resize-y focus:outline-none focus:ring-1 focus:ring-teal-400 placeholder-gray-300"
                       />
+                      {/* Window matching */}
+                      <div className="mt-2 flex items-center gap-4">
+                        <span className="text-[10px] text-teal-700 font-medium">Scan window:</span>
+                        <label className="flex items-center gap-1 text-[10px] text-teal-800">
+                          Min
+                          <input
+                            type="number" min={1} max={winMax} value={winMin}
+                            onClick={e => e.stopPropagation()}
+                            onChange={e => {
+                              const v = Math.max(1, Math.min(parseInt(e.target.value) || 1, winMax))
+                              setWindowDrafts(prev => ({ ...prev, [drop.id]: { min: v, max: winMax } }))
+                            }}
+                            className="w-10 border border-teal-300 rounded px-1 py-0.5 text-[11px] text-center bg-white focus:outline-none focus:ring-1 focus:ring-teal-400"
+                          />
+                        </label>
+                        <label className="flex items-center gap-1 text-[10px] text-teal-800">
+                          Max
+                          <input
+                            type="number" min={winMin} max={10} value={winMax}
+                            onClick={e => e.stopPropagation()}
+                            onChange={e => {
+                              const v = Math.max(winMin, Math.min(parseInt(e.target.value) || 4, 10))
+                              setWindowDrafts(prev => ({ ...prev, [drop.id]: { min: winMin, max: v } }))
+                            }}
+                            className="w-10 border border-teal-300 rounded px-1 py-0.5 text-[11px] text-center bg-white focus:outline-none focus:ring-1 focus:ring-teal-400"
+                          />
+                        </label>
+                        <span className="text-[10px] text-teal-400">clips combined when scanning</span>
+                      </div>
                     </div>
                   )
                 })()}

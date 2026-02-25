@@ -168,7 +168,7 @@ export default function PropertiesPanel() {
     speakers,
     speakerNames,
     audioDropInstances,
-    audioDrops, setAudioDrops,
+    audioDrops,
     segments,
     selectedSegmentIdx,
     polishRunning, setPolishRunning,
@@ -200,12 +200,6 @@ export default function PropertiesPanel() {
   const [sponsorClipNames, setSponsorClipNames] = useState({})
   const [sponsors, setSponsors] = useState([])
 
-  // Sound bite signature phrase editing
-  const [signatureDrafts, setSignatureDrafts] = useState({}) // { [dropId]: text }
-  const [signatureSaving, setSignatureSaving] = useState({}) // { [dropId]: bool }
-  const [showSignatures, setShowSignatures] = useState(false)
-  const [windowDrafts, setWindowDrafts] = useState({}) // { [dropId]: { min, max } }
-  const [windowSaving, setWindowSaving] = useState({})
 
   // Qwen classification state
   const [qwenClassifications, setQwenClassifications] = useState([])
@@ -1072,128 +1066,6 @@ export default function PropertiesPanel() {
               )}
             </div>
 
-            {/* Signature Phrases — words used by 🔍 Scan for Drops */}
-            <div className="border-t border-teal-100">
-              <button
-                onClick={() => setShowSignatures(v => !v)}
-                className="w-full px-3 py-1.5 flex items-center justify-between text-[11px] font-medium text-teal-700 bg-teal-50 hover:bg-teal-100 transition-colors"
-              >
-                <span>✏️ Signature Phrases ({audioDrops?.length ?? 0} drops)</span>
-                <svg className={`w-3 h-3 transition-transform ${showSignatures ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-              {showSignatures && (
-                <div className="p-3 space-y-4 bg-teal-50/40">
-                  <p className="text-[10px] text-teal-600">
-                    These words are what <strong>🔍 Scan for Drops</strong> matches against the transcript. Add the exact phrase each drop says — even if spoken across multiple clips.
-                  </p>
-                  {(audioDrops ?? []).map(drop => {
-                    const draft = signatureDrafts[drop.id] ?? drop.transcript_text ?? ''
-                    const isDirty = draft !== (drop.transcript_text ?? '')
-                    const isSaving = signatureSaving[drop.id]
-                    const winMin = windowDrafts[drop.id]?.min ?? drop.min_window ?? 1
-                    const winMax = windowDrafts[drop.id]?.max ?? drop.max_window ?? 4
-                    const winDirty = winMin !== (drop.min_window ?? 1) || winMax !== (drop.max_window ?? 4)
-                    const winSaving = windowSaving[drop.id]
-                    const anySaving = isSaving || winSaving
-                    const anyDirty = isDirty || winDirty
-                    return (
-                      <div key={drop.id}>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-[11px] font-semibold text-teal-900">🔊 {drop.name}</span>
-                          {anyDirty && (
-                            <button
-                              disabled={anySaving}
-                              onClick={async () => {
-                                const saves = []
-                                if (isDirty) {
-                                  saves.push(
-                                    contentAPI.updateAudioDropTranscript(drop.id, draft)
-                                      .then(() => setSignatureDrafts(prev => { const n = { ...prev }; delete n[drop.id]; return n }))
-                                  )
-                                }
-                                if (winDirty) {
-                                  saves.push(
-                                    contentAPI.updateAudioDropWindow(drop.id, winMin, winMax)
-                                      .then(() => setWindowDrafts(prev => { const n = { ...prev }; delete n[drop.id]; return n }))
-                                  )
-                                }
-                                if (isDirty) setSignatureSaving(prev => ({ ...prev, [drop.id]: true }))
-                                if (winDirty) setWindowSaving(prev => ({ ...prev, [drop.id]: true }))
-                                try {
-                                  await Promise.all(saves)
-                                  const refreshed = await contentAPI.getAudioDrops()
-                                  setAudioDrops(refreshed)
-                                  onNotification?.(`✓ Saved "${drop.name}"`, 'success')
-                                } catch (err) {
-                                  onNotification?.(`Failed to save: ${err.message}`, 'error')
-                                } finally {
-                                  setSignatureSaving(prev => ({ ...prev, [drop.id]: false }))
-                                  setWindowSaving(prev => ({ ...prev, [drop.id]: false }))
-                                }
-                              }}
-                              className="text-[10px] px-2 py-0.5 bg-teal-600 hover:bg-teal-700 text-white rounded disabled:opacity-50"
-                            >
-                              {anySaving ? 'Saving…' : 'Save'}
-                            </button>
-                          )}
-                        </div>
-                        <textarea
-                          value={draft}
-                          onChange={e => setSignatureDrafts(prev => ({ ...prev, [drop.id]: e.target.value }))}
-                          placeholder={`Type the exact words "${drop.name}" says…`}
-                          rows={3}
-                          className="w-full text-[11px] border border-teal-200 rounded px-2 py-1.5 bg-white resize-y focus:outline-none focus:ring-1 focus:ring-teal-400 placeholder-gray-300"
-                        />
-                        {/* Window matching settings */}
-                        <div className="mt-2 p-2 bg-teal-50 border border-teal-100 rounded">
-                          <div className="text-[10px] text-teal-700 font-medium mb-1.5">Clip window range</div>
-                          <div className="flex items-center gap-3">
-                            <label className="flex items-center gap-1.5 text-[10px] text-teal-800">
-                              Min clips
-                              <input
-                                type="number"
-                                min={1}
-                                max={winMax}
-                                value={winMin}
-                                onChange={e => {
-                                  const v = Math.max(1, Math.min(parseInt(e.target.value) || 1, winMax))
-                                  setWindowDrafts(prev => ({ ...prev, [drop.id]: { min: v, max: winMax } }))
-                                }}
-                                className="w-12 border border-teal-300 rounded px-1.5 py-0.5 text-[11px] text-center bg-white focus:outline-none focus:ring-1 focus:ring-teal-400"
-                              />
-                            </label>
-                            <label className="flex items-center gap-1.5 text-[10px] text-teal-800">
-                              Max clips
-                              <input
-                                type="number"
-                                min={winMin}
-                                max={10}
-                                value={winMax}
-                                onChange={e => {
-                                  const v = Math.max(winMin, Math.min(parseInt(e.target.value) || 4, 10))
-                                  setWindowDrafts(prev => ({ ...prev, [drop.id]: { min: winMin, max: v } }))
-                                }}
-                                className="w-12 border border-teal-300 rounded px-1.5 py-0.5 text-[11px] text-center bg-white focus:outline-none focus:ring-1 focus:ring-teal-400"
-                              />
-                            </label>
-                          </div>
-                          <div className="text-[10px] text-teal-500 mt-1.5 leading-relaxed">
-                            How many consecutive diarized clips to combine when scanning.
-                            Use <strong>1</strong> for a single-voice drop; increase for phrases
-                            spoken across multiple voices or with crosstalk (e.g. the Intro is 2–3 clips).
-                          </div>
-                        </div>
-                        {!anyDirty && (drop.transcript_text || drop.min_window) && (
-                          <div className="text-[10px] text-teal-500 mt-0.5">✓ Saved</div>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
           </div>
         )}
 
