@@ -283,7 +283,36 @@ pub async fn get_voice_library(
                 let path = entry.path();
                 if !path.is_dir() { continue; }
                 let dir_name = entry.file_name().to_string_lossy().to_string();
-                // Skip hidden dirs and non-speaker dirs
+                if dir_name.starts_with('.') { continue; }
+                let speaker_name = dir_name.replace('_', " ");
+                if embedded_names.contains(&speaker_name) { continue; }
+
+                let file_count = count_audio_files_for(&speaker_name, &samples_dir, &sound_bites_dir);
+                if file_count == 0 { continue; }
+
+                let short_name = speaker_name.split_whitespace().next().unwrap_or(&speaker_name).to_string();
+                let episode_count = *episode_counts.get(&speaker_name).unwrap_or(&0);
+                speakers.push(VoiceLibrarySpeaker {
+                    name: speaker_name,
+                    short_name,
+                    sample_count: 0,
+                    sample_file: None,
+                    file_count,
+                    episode_count,
+                    has_embedding: false,
+                });
+            }
+        }
+    }
+
+    // Step 3: scan voice_library/sound_bites/ for sound bite subdirs not yet in embeddings.json
+    // Mirrors Step 2 so saved-but-not-yet-trained sound bites surface correctly.
+    if sound_bites_dir.exists() {
+        if let Ok(entries) = std::fs::read_dir(&sound_bites_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if !path.is_dir() { continue; }
+                let dir_name = entry.file_name().to_string_lossy().to_string();
                 if dir_name.starts_with('.') { continue; }
                 let speaker_name = dir_name.replace('_', " ");
                 if embedded_names.contains(&speaker_name) { continue; }

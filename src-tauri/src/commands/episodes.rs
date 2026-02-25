@@ -1491,6 +1491,32 @@ pub async fn save_voice_samples(
                     &path_str,
                     Some("manual"),
                 );
+
+                // Train the voice embedding immediately from the extracted WAV so the
+                // user doesn't have to manually hit "Recalibrate All".
+                // Pass the already-extracted WAV as the audio source (no timestamps needed).
+                let embed_result = std::process::Command::new(&venv_python)
+                    .args([
+                        voice_library_script.to_str().unwrap(),
+                        "add",
+                        &sample.speaker_name,
+                        sample_path.to_str().unwrap(),
+                        "--backend",
+                        &embedding_backend,
+                    ])
+                    .output();
+                match embed_result {
+                    Ok(o) if o.status.success() => {
+                        log::info!("Trained sound bite embedding for '{}'", sample.speaker_name);
+                    }
+                    Ok(o) => {
+                        let stderr = String::from_utf8_lossy(&o.stderr);
+                        log::warn!("Sound bite embedding training failed for '{}': {}", sample.speaker_name, stderr);
+                    }
+                    Err(e) => {
+                        log::warn!("Could not run voice_library.py for sound bite '{}': {}", sample.speaker_name, e);
+                    }
+                }
             } else {
                 let stderr = String::from_utf8_lossy(&output.stderr);
                 log::error!("Failed to extract sound bite for '{}': {}", sample.speaker_name, stderr);

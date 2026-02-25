@@ -94,6 +94,8 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
   const audioRef = useRef(null)
   const [rebuildRunning, setRebuildRunning] = useState(false)
   const [harvestRunning, setHarvestRunning] = useState(false)
+  const [signatureDrafts, setSignatureDrafts] = useState({}) // { [dropId]: text }
+  const [signatureSaving, setSignatureSaving] = useState({}) // { [dropId]: bool }
   const [harvestProgress, setHarvestProgress] = useState(null)
   const [rebuildingSpeaker, setRebuildingSpeaker] = useState(null)
   const editFormRef = useRef(null)
@@ -128,9 +130,8 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
   const errText = (error) => error?.message || String(error)
 
 
-  // Lazy-load samples when a row is expanded
+  // Load samples when a row is expanded — always fetches fresh from DB
   const loadSamplesForRow = async (name) => {
-    if (expandedSamples[name]) return
     setLoadingSamples(prev => ({ ...prev, [name]: true }))
     try {
       const samples = await speakersAPI.getVoiceSamples(name)
@@ -651,14 +652,65 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
               </div>
             )}
             {!isSpeaker && item.drop && (
-              <div className="flex gap-2 mb-3">
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleDeleteSoundBite(item); }}
-                  className="px-3 py-1 text-xs text-red-600 hover:bg-red-100 rounded border border-red-200 transition-colors"
-                >
-                  Delete Sound Bite
-                </button>
-              </div>
+              <>
+                {/* Signature phrase editor */}
+                {(() => {
+                  const drop = item.drop
+                  const draft = signatureDrafts[drop.id] ?? drop.transcript_text ?? ''
+                  const isDirty = draft !== (drop.transcript_text ?? '')
+                  const isSavingSig = signatureSaving[drop.id]
+                  return (
+                    <div className="mb-3 p-2 bg-teal-50 border border-teal-200 rounded">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[11px] font-medium text-teal-700">Signature phrase — words used for drop detection</span>
+                        {isDirty && (
+                          <button
+                            disabled={isSavingSig}
+                            onClick={async (e) => {
+                              e.stopPropagation()
+                              setSignatureSaving(prev => ({ ...prev, [drop.id]: true }))
+                              try {
+                                await contentAPI.updateAudioDropTranscript(drop.id, draft)
+                                // Refresh audioDrops so updated text is reflected everywhere
+                                const refreshed = await contentAPI.getAudioDrops()
+                                setAudioDrops(refreshed)
+                                setSignatureDrafts(prev => { const n = { ...prev }; delete n[drop.id]; return n })
+                                onNotification?.(`✓ Saved phrase for "${drop.name}"`, 'success')
+                              } catch (err) {
+                                onNotification?.(`Failed to save: ${err.message}`, 'error')
+                              } finally {
+                                setSignatureSaving(prev => ({ ...prev, [drop.id]: false }))
+                              }
+                            }}
+                            className="text-[10px] px-2 py-0.5 bg-teal-600 hover:bg-teal-700 text-white rounded disabled:opacity-50"
+                          >
+                            {isSavingSig ? 'Saving…' : 'Save'}
+                          </button>
+                        )}
+                        {!isDirty && drop.transcript_text && (
+                          <span className="text-[10px] text-teal-500">✓ Saved</span>
+                        )}
+                      </div>
+                      <textarea
+                        value={draft}
+                        onChange={e => setSignatureDrafts(prev => ({ ...prev, [drop.id]: e.target.value }))}
+                        onClick={e => e.stopPropagation()}
+                        placeholder={`Type the exact words "${drop.name}" says…`}
+                        rows={2}
+                        className="w-full text-[11px] border border-teal-200 rounded px-2 py-1.5 bg-white resize-y focus:outline-none focus:ring-1 focus:ring-teal-400 placeholder-gray-300"
+                      />
+                    </div>
+                  )
+                })()}
+                <div className="flex gap-2 mb-3">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleDeleteSoundBite(item); }}
+                    className="px-3 py-1 text-xs text-red-600 hover:bg-red-100 rounded border border-red-200 transition-colors"
+                  >
+                    Delete Sound Bite
+                  </button>
+                </div>
+              </>
             )}
             {isUnlinked && inlineAddSpeaker === item.name && (
               <div className="mb-3 p-3 bg-purple-50 rounded-lg border border-purple-200">
