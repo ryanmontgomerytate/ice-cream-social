@@ -733,26 +733,6 @@ pub async fn update_audio_drop_window(
     db.update_audio_drop_window(drop_id, min_window, max_window).map_err(AppError::from)
 }
 
-#[derive(serde::Serialize)]
-pub struct AudioDropStats {
-    pub total_instances: i64,
-    pub episode_count: i64,
-    pub max_per_episode: i64,
-}
-
-#[tauri::command]
-pub async fn get_audio_drop_stats(
-    db: State<'_, Arc<Database>>,
-    drop_id: i64,
-) -> Result<AudioDropStats, AppError> {
-    let (total, episodes, max_ep) = db.get_audio_drop_stats(drop_id).map_err(AppError::from)?;
-    Ok(AudioDropStats {
-        total_instances: total,
-        episode_count: episodes,
-        max_per_episode: max_ep,
-    })
-}
-
 #[tauri::command]
 pub async fn delete_audio_drop(
     db: State<'_, Arc<Database>>,

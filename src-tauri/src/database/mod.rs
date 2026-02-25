@@ -4100,28 +4100,6 @@ Mark the start time of each segment.',
         Ok(())
     }
 
-    /// Usage stats for a single audio drop across the whole catalog.
-    pub fn get_audio_drop_stats(&self, drop_id: i64) -> Result<(i64, i64, i64)> {
-        // Returns (total_instances, episode_count, max_per_episode)
-        let conn = self.conn.lock().unwrap();
-        let total: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM audio_drop_instances WHERE audio_drop_id = ?1",
-            [drop_id],
-            |r| r.get(0),
-        ).unwrap_or(0);
-        let episode_count: i64 = conn.query_row(
-            "SELECT COUNT(DISTINCT episode_id) FROM audio_drop_instances WHERE audio_drop_id = ?1",
-            [drop_id],
-            |r| r.get(0),
-        ).unwrap_or(0);
-        let max_per_episode: i64 = conn.query_row(
-            "SELECT COALESCE(MAX(c),0) FROM (SELECT COUNT(*) as c FROM audio_drop_instances WHERE audio_drop_id = ?1 GROUP BY episode_id)",
-            [drop_id],
-            |r| r.get(0),
-        ).unwrap_or(0);
-        Ok((total, episode_count, max_per_episode))
-    }
-
     pub fn update_audio_drop_reference(&self, drop_id: i64, path: &str) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(

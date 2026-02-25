@@ -167,7 +167,6 @@ export default function PropertiesPanel() {
     markedSamples,
     speakers,
     speakerNames,
-    audioDropInstances,
     audioDrops,
     segments,
     selectedSegmentIdx,
@@ -182,7 +181,6 @@ export default function PropertiesPanel() {
     assignSpeakerName,
     assignAudioDrop,
     seekToSpeaker,
-    removeAudioDropInstance,
   } = useTranscriptReview()
 
   const [openSections, setOpenSections] = useState({ flags: true })
@@ -601,7 +599,6 @@ export default function PropertiesPanel() {
     return speakers.findIndex(s => speakerNames[s] === displayName) === idx
   })
   const speakerCount = deduplicatedSpeakers.length
-  const dropCount = audioDropInstances.length
 
   const getSegmentTime = (idx) => {
     if (!segments?.[idx]) return null
@@ -642,11 +639,6 @@ export default function PropertiesPanel() {
           {chapterCount > 0 && (
             <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-xs font-medium">
               {chapterCount}
-            </div>
-          )}
-          {dropCount > 0 && (
-            <div className="w-8 h-8 rounded-full bg-teal-100 text-teal-600 flex items-center justify-center text-xs font-medium">
-              {dropCount}
             </div>
           )}
         </div>
@@ -1017,55 +1009,6 @@ export default function PropertiesPanel() {
                 ))}
               </div>
             )}
-          </div>
-        )}
-
-        {/* Drops Section */}
-        <SectionHeader open={openSections.drops} onClick={() => toggleSection('drops')} icon="🔊" label="Sound Bites" count={dropCount} color="teal" />
-        {openSections.drops && (
-          <div className="border-b border-gray-100">
-            {/* Episode instances */}
-            <div className="p-3 space-y-2">
-              {dropCount === 0 ? (
-                <p className="text-xs text-gray-500 text-center py-2">
-                  No sound bites tagged.<br/>
-                  Select a clip and use the Sound Bite action.
-                </p>
-              ) : (
-                audioDropInstances.map(instance => {
-                  const sameDropInEpisode = audioDropInstances.filter(adi => adi.audio_drop_id === instance.audio_drop_id)
-                  const occPosition = sameDropInEpisode.findIndex(adi => adi.id === instance.id) + 1
-                  const occTotal = sameDropInEpisode.length
-                  return (
-                    <div
-                      key={instance.id}
-                      className="p-2 rounded-lg bg-teal-50 border border-teal-200 cursor-pointer hover:shadow-sm transition-shadow"
-                      onClick={() => seekToSegment?.(instance.segment_idx)}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span>🔊</span>
-                          <span className="text-xs font-medium text-teal-800">
-                            {instance.audio_drop_name}
-                            {occTotal > 1 && <span className="text-[10px] text-teal-500 ml-1">({occPosition}/{occTotal})</span>}
-                          </span>
-                        </div>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); removeAudioDropInstance?.(instance.id) }}
-                          className="p-1 text-gray-400 hover:text-red-500 transition-colors"
-                        >
-                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                          </svg>
-                        </button>
-                      </div>
-                      <div className="text-[10px] text-gray-500 mt-1">Clip #{instance.segment_idx}</div>
-                    </div>
-                  )
-                })
-              )}
-            </div>
-
           </div>
         )}
 

@@ -98,7 +98,6 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
   const [signatureSaving, setSignatureSaving] = useState({}) // { [dropId]: bool }
   const [windowDrafts, setWindowDrafts] = useState({}) // { [dropId]: { min, max } }
   const [windowSaving, setWindowSaving] = useState({}) // { [dropId]: bool }
-  const [dropStats, setDropStats] = useState({}) // { [dropId]: { total_instances, episode_count, max_per_episode } }
   const [harvestProgress, setHarvestProgress] = useState(null)
   const [rebuildingSpeaker, setRebuildingSpeaker] = useState(null)
   const editFormRef = useRef(null)
@@ -153,12 +152,6 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
     } else {
       setExpandedRow(name)
       loadSamplesForRow(name)
-      // Load drop stats for sound bites
-      if (item?.type === 'sound_bite' && item?.drop?.id && !dropStats[item.drop.id]) {
-        contentAPI.getAudioDropStats(item.drop.id)
-          .then(stats => setDropStats(prev => ({ ...prev, [item.drop.id]: stats })))
-          .catch(() => {})
-      }
     }
   }
 
@@ -662,19 +655,6 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
             )}
             {!isSpeaker && item.drop && (
               <>
-                {/* Drop usage stats */}
-                {(() => {
-                  const stats = dropStats[item.drop.id]
-                  if (!stats) return null
-                  return (
-                    <div className="mb-3 flex gap-4 text-[11px] text-gray-600">
-                      <span><strong className="text-gray-800">{stats.total_instances}</strong> total uses</span>
-                      <span><strong className="text-gray-800">{stats.episode_count}</strong> episodes</span>
-                      <span>max <strong className="text-gray-800">{stats.max_per_episode}×</strong> in one ep</span>
-                    </div>
-                  )
-                })()}
-
                 {/* Signature phrase + window settings editor */}
                 {(() => {
                   const drop = item.drop

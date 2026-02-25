@@ -271,7 +271,6 @@ pub fn run() {
             commands::create_audio_drop,
             commands::update_audio_drop_transcript,
             commands::update_audio_drop_window,
-            commands::get_audio_drop_stats,
             commands::delete_audio_drop,
             commands::add_audio_drop_instance,
             commands::get_audio_drop_instances,
