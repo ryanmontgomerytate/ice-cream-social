@@ -120,8 +120,6 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
   const [playbackRate, setPlaybackRate] = useState(1)
   const [playingClipIdx, setPlayingClipIdx] = useState(null)
   const [sampleTrimmer, setSampleTrimmer] = useState(null) // { idx, inPoint, outPoint }
-  const [dropSuggestions, setDropSuggestions] = useState([]) // [{ dropId, dropName, segmentIdx, windowSize, confidence }]
-  const [dropScanRunning, setDropScanRunning] = useState(false)
 
   const audioRef = useRef(null)
   const transcriptContainerRef = useRef(null)
@@ -163,7 +161,6 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
       setCompareExpanded(true)
       setRebuildingBackend(null)
       setDiarizationLocked(false)
-      setDropSuggestions([])
       speakersAPI.getEmbeddingModel().then((backend) => {
         setCurrentEmbeddingBackend(backend || 'pyannote')
       }).catch(() => {
@@ -643,34 +640,6 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
     }
   }
 
-  // Audio drop operations
-  const addAudioDropToSegment = async (idx, audioDropId) => {
-    const segment = segments[idx]
-    if (!segment) return
-    try {
-      await contentAPI.addAudioDropInstance(audioDropId, episode.id, idx, parseTimestampToSeconds(segment), getSegmentEndTime(segment))
-      const instances = await contentAPI.getAudioDropInstances(episode.id)
-      setAudioDropInstances(instances)
-      setActivePicker(null)
-      flashSavedToast('✓ Sound bite saved')
-    } catch (err) {
-      onNotification?.(`Failed to add sound bite: ${err.message}`, 'error')
-    }
-  }
-
-  const createDropAndAdd = async (idx, name) => {
-    if (!name.trim()) return
-    try {
-      const dropId = await contentAPI.createAudioDrop(name.trim())
-      await addAudioDropToSegment(idx, dropId)
-      const allDrops = await contentAPI.getAudioDrops()
-      setAudioDrops(allDrops)
-      setNewDropName('')
-    } catch (err) {
-      onNotification?.(`Failed to create sound bite: ${err.message}`, 'error')
-    }
-  }
-
   // Create a new audio drop and assign it to a diarization speaker label
   const createDropAndAssign = async (originalLabel, name) => {
     if (!name.trim()) return
@@ -696,17 +665,6 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
       setVoiceLibrary(voices)
     } catch (err) {
       onNotification?.(`Failed to create speaker: ${err.message}`, 'error')
-    }
-  }
-
-  const removeAudioDropInstance = async (instanceId) => {
-    try {
-      await contentAPI.deleteAudioDropInstance(instanceId)
-      const instances = await contentAPI.getAudioDropInstances(episode.id)
-      setAudioDropInstances(instances)
-      flashSavedToast('✓ Sound bite removed')
-    } catch (err) {
-      onNotification?.(`Failed to remove sound bite: ${err.message}`, 'error')
     }
   }
 
@@ -829,78 +787,6 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
   const getCharacterForSegment = (idx) => characterAppearances.find(ca => ca.segment_idx === idx)
   const getChapterForSegment = (idx) => episodeChapters.find(ch => ch.start_segment_idx <= idx && ch.end_segment_idx >= idx)
   const getDropsForSegment = (idx) => audioDropInstances.filter(adi => adi.segment_idx === idx)
-
-  // Fuzzy text scan: compare windows of 1-4 consecutive segments against each
-  // drop's transcript_text signature using word-level Jaccard similarity.
-  const scanForDrops = useCallback(async () => {
-    if (!segments || !audioDrops) return
-    setDropScanRunning(true)
-    const normalize = (t) => (t || '').toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(Boolean)
-    const jaccard = (a, b) => {
-      if (!a.length || !b.length) return 0
-      const setA = new Set(a), setB = new Set(b)
-      const inter = a.filter(w => setB.has(w)).length
-      const union = new Set([...a, ...b]).size
-      return inter / union
-    }
-    const results = []
-    for (const drop of audioDrops) {
-      if (!drop.transcript_text) continue
-      const sigWords = normalize(drop.transcript_text)
-      for (let i = 0; i < segments.length; i++) {
-        // Skip positions already tagged with this drop
-        if (audioDropInstances.some(adi => adi.audio_drop_id === drop.id && adi.segment_idx === i)) continue
-        let best = { score: 0, window: 1 }
-        const wMin = drop.min_window ?? 1
-        const wMax = drop.max_window ?? 4
-        for (let w = wMin; w <= wMax && i + w <= segments.length; w++) {
-          const windowWords = normalize(segments.slice(i, i + w).map(s => s.text || '').join(' '))
-          const score = jaccard(windowWords, sigWords)
-          if (score > best.score) best = { score, window: w }
-        }
-        if (best.score >= 0.45) {
-          results.push({ dropId: drop.id, dropName: drop.name, segmentIdx: i, windowSize: best.window, confidence: best.score })
-        }
-      }
-    }
-    // Sort by position, deduplicate overlapping windows (keep highest confidence per region)
-    results.sort((a, b) => a.segmentIdx - b.segmentIdx)
-    const deduplicated = []
-    let lastAccepted = -1
-    for (const r of results) {
-      if (r.segmentIdx > lastAccepted) {
-        deduplicated.push(r)
-        lastAccepted = r.segmentIdx + r.windowSize - 1
-      }
-    }
-    setDropSuggestions(deduplicated)
-    setDropScanRunning(false)
-    if (deduplicated.length === 0) onNotification?.('No new drop matches found', 'info')
-  }, [segments, audioDrops, audioDropInstances, onNotification])
-  const acceptDropSuggestion = async (suggestion) => {
-    const seg = segments?.[suggestion.segmentIdx]
-    const startTime = seg ? parseTimestampToSeconds(seg) : null
-    const endTime = seg ? getSegmentEndTime(seg) : null
-    try {
-      await contentAPI.addAudioDropInstance(suggestion.dropId, episode.id, suggestion.segmentIdx, startTime, endTime)
-      const instances = await contentAPI.getAudioDropInstances(episode.id)
-      setAudioDropInstances(instances)
-      setDropSuggestions(prev => prev.filter(s => s.segmentIdx !== suggestion.segmentIdx || s.dropId !== suggestion.dropId))
-      flashSavedToast(`✓ 🔊 ${suggestion.dropName} added`)
-    } catch (err) {
-      onNotification?.(`Failed to add drop: ${err.message}`, 'error')
-    }
-  }
-
-  const dismissDropSuggestion = (suggestion) => {
-    setDropSuggestions(prev => prev.filter(s => s.segmentIdx !== suggestion.segmentIdx || s.dropId !== suggestion.dropId))
-  }
-
-  const getDropOccurrence = (instance) => {
-    const sameDropInEpisode = audioDropInstances.filter(adi => adi.audio_drop_id === instance.audio_drop_id)
-    const position = sameDropInEpisode.findIndex(adi => adi.id === instance.id) + 1
-    return { position, total: sameDropInEpisode.length }
-  }
 
   // Filter segments by search
   const filteredSegments = useMemo(() => {
@@ -1049,7 +935,6 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
       toggleVoiceSample,
       seekToSegment: seekToSegmentIdx,
       seekToSpeaker,
-      removeAudioDropInstance,
       // Called by context.assignSpeakerName (from PropertiesPanel) — just mark unsaved;
       // speakerNames already updated in context by the time this runs
       assignSpeakerName: (_label, _name) => { setHasUnsavedChanges(true) },
@@ -1527,21 +1412,6 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
         </div>
       )
     }
-    if (pickerType === 'audiodrop') {
-      return (
-        <div className="mt-2 p-2 bg-white rounded-lg border border-gray-200 shadow-sm">
-          <div className="text-[10px] text-gray-400 uppercase tracking-wide mb-1 px-1">Sound bite</div>
-          {audioDrops.map(drop => (
-            <button key={drop.id} onClick={(e) => { e.stopPropagation(); addAudioDropToSegment(idx, drop.id) }} className="w-full px-2 py-1.5 text-sm text-left rounded hover:bg-teal-50 text-teal-800 flex items-center gap-2">
-              <span>🔊</span> {drop.name}
-            </button>
-          ))}
-          <input type="text" placeholder="+ New sound bite..." value={newDropName} onChange={(e) => setNewDropName(e.target.value)} onKeyDown={(e) => {
-            if (e.key === 'Enter' && newDropName.trim()) createDropAndAdd(idx, newDropName)
-          }} className="w-full mt-1 px-2 py-1.5 text-sm border rounded" onClick={(e) => e.stopPropagation()} />
-        </div>
-      )
-    }
     return null
   }
 
@@ -1550,7 +1420,6 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
     const flag = flaggedSegments[idx]
     const character = getCharacterForSegment(idx)
     const chapter = getChapterForSegment(idx)
-    const drops = getDropsForSegment(idx)
     const hasSample = markedSamples[idx]
 
     if (!flag && !character && !chapter && drops.length === 0 && !hasSample) return null
@@ -1593,14 +1462,6 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
             {chapter.chapter_type_icon} {chapter.chapter_type_name}
           </span>
         )}
-        {drops.map(dropInst => {
-          const occ = getDropOccurrence(dropInst)
-          return (
-            <span key={dropInst.id} className="px-2 py-1 rounded text-xs font-medium bg-teal-100 text-teal-700 cursor-pointer" onClick={(e) => { e.stopPropagation(); removeAudioDropInstance(dropInst.id) }} title={`${dropInst.audio_drop_name}${occ.total > 1 ? ` (${occ.position} of ${occ.total})` : ''} — click to remove`}>
-              🔊 {dropInst.audio_drop_name}
-            </span>
-          )
-        })}
         {hasSample && (
           <span className="px-2 py-1 bg-yellow-400 text-yellow-900 rounded text-xs font-medium cursor-pointer" onClick={(e) => { e.stopPropagation(); toggleVoiceSample(idx) }}>
             ⭐ Sample
@@ -1628,10 +1489,6 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
             <button onClick={(e) => { e.stopPropagation(); setActivePicker(activePicker === 'chapter' ? null : 'chapter') }}
               className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${activePicker === 'chapter' ? 'bg-indigo-100 text-indigo-700 ring-1 ring-indigo-300' : 'bg-white text-gray-600 hover:bg-indigo-50 border border-gray-200'}`}>
               📑 Chapter
-            </button>
-            <button onClick={(e) => { e.stopPropagation(); setActivePicker(activePicker === 'audiodrop' ? null : 'audiodrop') }}
-              className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${activePicker === 'audiodrop' ? 'bg-teal-100 text-teal-700 ring-1 ring-teal-300' : 'bg-white text-gray-600 hover:bg-teal-50 border border-gray-200'}`}>
-              🔊 Drop
             </button>
             <button onClick={(e) => { e.stopPropagation(); toggleVoiceSample(idx) }}
               className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${markedSamples[idx] ? 'bg-yellow-300 text-yellow-900 ring-1 ring-yellow-400' : sampleTrimmer?.idx === idx ? 'bg-yellow-100 text-yellow-800 ring-1 ring-yellow-300' : 'bg-white text-gray-600 hover:bg-yellow-50 border border-gray-200'}`}>
@@ -1871,21 +1728,6 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
             <span className="px-2 py-0.5 bg-pink-100 text-pink-700 rounded text-xs">
               🎭 {characterAppearances.length} characters
             </span>
-          )}
-          {audioDropInstances.length > 0 && (
-            <span className="px-2 py-0.5 bg-teal-100 text-teal-700 rounded text-xs">
-              🔊 {audioDropInstances.length} drops
-            </span>
-          )}
-          {segments && audioDrops?.some(d => d.transcript_text) && (
-            <button
-              onClick={scanForDrops}
-              disabled={dropScanRunning}
-              className="px-2 py-0.5 bg-teal-50 hover:bg-teal-100 text-teal-700 border border-teal-200 rounded text-xs disabled:opacity-50"
-              title="Scan transcript text for audio drop signatures"
-            >
-              {dropScanRunning ? '⏳ Scanning…' : '🔍 Scan for Drops'}
-            </button>
           )}
           {Object.keys(flaggedSegments).length > 0 && (
             <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded text-xs">
@@ -2210,36 +2052,6 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
           </span>
         </div>
       </div>
-
-      {/* Drop Suggestions Banner */}
-      {dropSuggestions.length > 0 && (
-        <div className="mx-4 mt-3 p-3 bg-teal-50 border border-teal-200 rounded-lg">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-semibold text-teal-800">🔍 {dropSuggestions.length} possible drop{dropSuggestions.length !== 1 ? 's' : ''} detected — review below</span>
-            <button onClick={() => setDropSuggestions([])} className="text-teal-400 hover:text-teal-700 text-xs">✕ dismiss all</button>
-          </div>
-          <div className="space-y-1.5">
-            {dropSuggestions.map((s, i) => {
-              const seg = segments?.[s.segmentIdx]
-              const preview = segments?.slice(s.segmentIdx, s.segmentIdx + s.windowSize).map(sg => sg.text).join(' ')
-              return (
-                <div key={i} className="flex items-start gap-2 text-xs">
-                  <div className="flex-1 min-w-0">
-                    <span className="font-medium text-teal-900">🔊 {s.dropName}</span>
-                    <span className="text-teal-600 ml-1">Clip #{s.segmentIdx}{s.windowSize > 1 ? `–${s.segmentIdx + s.windowSize - 1}` : ''}</span>
-                    <span className="text-teal-400 ml-1">({Math.round(s.confidence * 100)}% match)</span>
-                    <div className="text-gray-500 truncate mt-0.5 italic">"{preview}"</div>
-                  </div>
-                  <div className="flex gap-1 flex-shrink-0">
-                    <button onClick={() => acceptDropSuggestion(s)} className="px-2 py-0.5 bg-teal-500 hover:bg-teal-600 text-white rounded font-medium">✓ Add</button>
-                    <button onClick={() => dismissDropSuggestion(s)} className="px-2 py-0.5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded">✕</button>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
 
       {/* Transcript Content */}
       <div ref={transcriptContainerRef} className="p-4">

@@ -557,16 +557,8 @@ export const contentAPI = {
     return tauriInvoke('delete_audio_drop', { id });
   },
 
-  async addAudioDropInstance(audioDropId, episodeId, segmentIdx = null, startTime = null, endTime = null, notes = null) {
-    return tauriInvoke('add_audio_drop_instance', { audioDropId, episodeId, segmentIdx, startTime, endTime, notes });
-  },
-
   async getAudioDropInstances(episodeId) {
     return tauriInvoke('get_audio_drop_instances', { episodeId });
-  },
-
-  async deleteAudioDropInstance(id) {
-    return tauriInvoke('delete_audio_drop_instance', { id });
   },
 
   // Chapter Label Rules

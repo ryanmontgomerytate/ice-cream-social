@@ -942,13 +942,6 @@ export const contentAPI = {
     throw new Error('Content only available in Tauri mode');
   },
 
-  async addAudioDropInstance(audioDropId, episodeId, segmentIdx = null, startTime = null, endTime = null, notes = null) {
-    if (isTauri) {
-      return await tauriAPI.contentAPI.addAudioDropInstance(audioDropId, episodeId, segmentIdx, startTime, endTime, notes);
-    }
-    throw new Error('Content only available in Tauri mode');
-  },
-
   async getAudioDropInstances(episodeId) {
     if (isTauri) {
       try {
@@ -959,13 +952,6 @@ export const contentAPI = {
       }
     }
     return [];
-  },
-
-  async deleteAudioDropInstance(id) {
-    if (isTauri) {
-      return await tauriAPI.contentAPI.deleteAudioDropInstance(id);
-    }
-    throw new Error('Content only available in Tauri mode');
   },
 
   // Chapter Label Rules

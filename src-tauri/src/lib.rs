@@ -272,9 +272,7 @@ pub fn run() {
             commands::update_audio_drop_transcript,
             commands::update_audio_drop_window,
             commands::delete_audio_drop,
-            commands::add_audio_drop_instance,
             commands::get_audio_drop_instances,
-            commands::delete_audio_drop_instance,
             // Chapter label rules commands
             commands::get_chapter_label_rules,
             commands::save_chapter_label_rule,

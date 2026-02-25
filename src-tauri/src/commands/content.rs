@@ -743,35 +743,11 @@ pub async fn delete_audio_drop(
 }
 
 #[tauri::command]
-pub async fn add_audio_drop_instance(
-    db: State<'_, Arc<Database>>,
-    audio_drop_id: i64,
-    episode_id: i64,
-    segment_idx: Option<i32>,
-    start_time: Option<f64>,
-    end_time: Option<f64>,
-    notes: Option<String>,
-) -> Result<i64, AppError> {
-    log::info!("Adding audio drop {} instance in episode {}", audio_drop_id, episode_id);
-    db.add_audio_drop_instance(audio_drop_id, episode_id, segment_idx, start_time, end_time, notes.as_deref())
-        .map_err(AppError::from)
-}
-
-#[tauri::command]
 pub async fn get_audio_drop_instances(
     db: State<'_, Arc<Database>>,
     episode_id: i64,
 ) -> Result<Vec<AudioDropInstance>, AppError> {
     db.get_audio_drop_instances_for_episode(episode_id).map_err(AppError::from)
-}
-
-#[tauri::command]
-pub async fn delete_audio_drop_instance(
-    db: State<'_, Arc<Database>>,
-    id: i64,
-) -> Result<(), AppError> {
-    log::info!("Deleting audio drop instance {}", id);
-    db.delete_audio_drop_instance(id).map_err(AppError::from)
 }
 
 // ============================================================================

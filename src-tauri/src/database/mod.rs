@@ -4109,15 +4109,6 @@ Mark the start time of each segment.',
         Ok(())
     }
 
-    pub fn add_audio_drop_instance(&self, audio_drop_id: i64, episode_id: i64, segment_idx: Option<i32>, start_time: Option<f64>, end_time: Option<f64>, notes: Option<&str>) -> Result<i64> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute(
-            "INSERT INTO audio_drop_instances (audio_drop_id, episode_id, segment_idx, start_time, end_time, notes) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![audio_drop_id, episode_id, segment_idx, start_time, end_time, notes]
-        )?;
-        Ok(conn.last_insert_rowid())
-    }
-
     pub fn get_audio_drop_instances_for_episode(&self, episode_id: i64) -> Result<Vec<models::AudioDropInstance>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
@@ -4142,12 +4133,6 @@ Mark the start time of each segment.',
             })
         })?.filter_map(|r| r.ok()).collect();
         Ok(instances)
-    }
-
-    pub fn delete_audio_drop_instance(&self, id: i64) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute("DELETE FROM audio_drop_instances WHERE id = ?1", [id])?;
-        Ok(())
     }
 
     // -------------------------------------------------------------------------
