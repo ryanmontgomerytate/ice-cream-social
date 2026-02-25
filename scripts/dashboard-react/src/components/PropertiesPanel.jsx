@@ -8,6 +8,7 @@ const FLAG_TYPES = [
   { id: 'character_voice', label: 'Character Voice', icon: '🎭', color: 'pink' },
   { id: 'multiple_speakers', label: 'Multiple Speakers', icon: '👥', color: 'orange' },
   { id: 'misspelling', label: 'Misspelling', icon: '✏️', color: 'amber' },
+  { id: 'missing_word', label: 'Missing Word', icon: '➕', color: 'violet' },
   { id: 'audio_issue', label: 'Audio Issue', icon: '🔇', color: 'gray' },
   { id: 'other', label: 'Other', icon: '📝', color: 'yellow' },
 ]
@@ -785,6 +786,7 @@ export default function PropertiesPanel() {
                       flag.flag_type === 'character_voice' ? 'bg-pink-50 border-pink-200' :
                       flag.flag_type === 'multiple_speakers' ? 'bg-orange-50 border-orange-200' :
                       flag.flag_type === 'misspelling' ? 'bg-amber-50 border-amber-200' :
+                      flag.flag_type === 'missing_word' ? 'bg-violet-50 border-violet-200' :
                       flag.flag_type === 'audio_issue' ? 'bg-gray-50 border-gray-200' :
                       'bg-yellow-50 border-yellow-200'
                     }`}
@@ -813,7 +815,7 @@ export default function PropertiesPanel() {
                     </div>
                     {flag.notes && (
                       <div className="text-xs text-gray-600 mt-1 italic">
-                        {flag.flag_type === 'misspelling' ? <span className="text-amber-700">was: </span> : null}
+                        {(flag.flag_type === 'misspelling' || flag.flag_type === 'missing_word') ? <span className="text-amber-700">was: </span> : null}
                         "{flag.notes}"
                       </div>
                     )}

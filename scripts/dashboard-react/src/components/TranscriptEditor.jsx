@@ -9,6 +9,7 @@ const FLAG_TYPES = [
   { id: 'character_voice', label: 'Character Voice', icon: '🎭', needsCharacter: true },
   { id: 'multiple_speakers', label: 'Multiple Speakers', icon: '👥', needsSpeakers: true },
   { id: 'misspelling', label: 'Misspelling', icon: '✏️', needsCorrection: true },
+  { id: 'missing_word', label: 'Missing Word', icon: '➕', needsCorrection: true },
   { id: 'audio_issue', label: 'Audio Issue', icon: '🔇' },
   { id: 'other', label: 'Other', icon: '📝', needsNotes: true },
 ]
@@ -1141,7 +1142,7 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
               } else if (ft.needsCorrection) {
                 const seg = segments?.[idx]
                 setFlagInlineInput(seg?.text?.trim() || '')
-                setActivePicker('flag-misspelling')
+                setActivePicker(`flag-correction-${ft.id}`)
                 if (seg) playClipOnly(seg, idx)
               } else if (ft.needsNotes) {
                 setFlagInlineInput('')
@@ -1278,12 +1279,19 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
         </div>
       )
     }
-    if (pickerType === 'flag-misspelling') {
+    if (pickerType?.startsWith('flag-correction-')) {
+      const flagTypeId = pickerType.replace('flag-correction-', '')
+      const isMissing = flagTypeId === 'missing_word'
       const seg = segments?.[idx]
       const originalText = seg?.text?.trim() || ''
       return (
         <div className="mt-2 p-2 bg-white rounded-lg border border-amber-200 shadow-sm">
-          <div className="text-[10px] text-gray-400 uppercase tracking-wide mb-1 px-1">What should this say?</div>
+          <div className="flex items-center justify-between mb-1 px-1">
+            <span className="text-[10px] text-gray-400 uppercase tracking-wide">
+              {isMissing ? 'Add the missing word(s)' : 'What should this say?'}
+            </span>
+            <span className="text-[10px] font-medium text-gray-500">Clip #{idx}</span>
+          </div>
           <div className="text-[10px] text-amber-600 mb-2 px-1">▶ clip playing — listen and correct below</div>
           <textarea
             value={flagInlineInput}
@@ -1298,14 +1306,12 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
             <button onClick={async (e) => {
               e.stopPropagation()
               const corrected = flagInlineInput.trim()
-              // Save flag with original text as the note (audit trail)
-              await createFlag(idx, 'misspelling', null, null, originalText)
-              // Apply the correction if text actually changed
+              await createFlag(idx, flagTypeId, null, null, originalText)
               if (corrected && corrected !== originalText) {
                 try {
                   await episodesAPI.saveTranscriptEdits(episode.id, { [idx]: { text: corrected } })
                   await loadTranscript()
-                  onNotification?.('Spelling corrected', 'success')
+                  onNotification?.(isMissing ? 'Missing word added' : 'Spelling corrected', 'success')
                 } catch (err) {
                   onNotification?.(`Failed to save correction: ${err.message}`, 'error')
                 }
@@ -1518,6 +1524,7 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
             flag.flag_type === 'wrong_speaker' ? 'bg-red-100 text-red-700' :
             flag.flag_type === 'character_voice' ? 'bg-pink-100 text-pink-700' :
             flag.flag_type === 'misspelling' ? 'bg-amber-100 text-amber-700' :
+            flag.flag_type === 'missing_word' ? 'bg-violet-100 text-violet-700' :
             'bg-yellow-100 text-yellow-700'
           }`} onClick={(e) => { e.stopPropagation(); deleteFlag(idx) }} title="Click to remove flag">
             {FLAG_TYPES.find(f => f.id === flag.flag_type)?.icon || '🚩'}{' '}
