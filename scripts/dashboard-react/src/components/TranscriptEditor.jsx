@@ -677,6 +677,38 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
     } catch {}
   }
 
+  // Flag a segment as wrong-speaker AND create the speaker in DB if it's new
+  const flagAndCreateSpeaker = async (segIdx, name) => {
+    const trimmed = name.trim()
+    if (!trimmed) return
+    createFlag(segIdx, 'wrong_speaker', trimmed)
+    setActivePicker(null)
+    setFlagInlineInput('')
+    if (!voiceLibrary.some(v => v.name === trimmed)) {
+      try {
+        await speakersAPI.createSpeaker(trimmed, null, false)
+        const voices = await speakersAPI.getVoiceLibrary()
+        setVoiceLibrary(voices)
+      } catch {}
+    }
+  }
+
+  // Flag a segment as wrong-speaker AND create a new audio drop
+  const flagAndCreateDrop = async (segIdx, name) => {
+    const trimmed = name.trim()
+    if (!trimmed) return
+    try {
+      await contentAPI.createAudioDrop(trimmed)
+      const allDrops = await contentAPI.getAudioDrops()
+      setAudioDrops(allDrops)
+      createFlag(segIdx, 'wrong_speaker', trimmed)
+      setActivePicker(null)
+      setNewDropName('')
+    } catch (err) {
+      onNotification?.(`Failed to create sound bite: ${err?.message || err}`, 'error')
+    }
+  }
+
   // Voice sample operations
   const toggleVoiceSample = (idx) => {
     if (markedSamples[idx]) {
@@ -1141,46 +1173,52 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
                 ))}
               </>
             )}
-            {audioDrops.length > 0 && (
-              <>
-                <div className="border-t border-gray-100 my-1" />
-                {audioDrops.map(d => (
-                  <button key={d.id} onClick={(e) => {
-                    e.stopPropagation()
-                    createFlag(idx, 'wrong_speaker', d.name)
-                    setActivePicker(null)
-                  }} className="w-full px-2 py-1 text-sm text-left rounded hover:bg-red-50 text-red-800 flex items-center gap-2">
-                    <span>🔊</span> {d.name}
-                  </button>
-                ))}
-              </>
-            )}
+            <div className="border-t border-gray-100 my-1" />
+            {audioDrops.map(d => (
+              <button key={d.id} onClick={(e) => {
+                e.stopPropagation()
+                createFlag(idx, 'wrong_speaker', d.name)
+                setActivePicker(null)
+              }} className="w-full px-2 py-1 text-sm text-left rounded hover:bg-red-50 text-red-800 flex items-center gap-2">
+                <span>🔊</span> {d.name}
+              </button>
+            ))}
+            <div className="flex gap-1 mt-1">
+              <input
+                type="text"
+                placeholder="+ New sound bite…"
+                value={newDropName}
+                onChange={(e) => setNewDropName(e.target.value)}
+                onKeyDown={(e) => {
+                  e.stopPropagation()
+                  if (e.key === 'Enter' && newDropName.trim()) flagAndCreateDrop(idx, newDropName)
+                }}
+                className="flex-1 px-2 py-1 text-xs border border-gray-200 rounded"
+                onClick={(e) => e.stopPropagation()}
+              />
+              {newDropName.trim() && (
+                <button onClick={(e) => { e.stopPropagation(); flagAndCreateDrop(idx, newDropName) }}
+                  className="px-2 py-1 text-xs bg-teal-500 text-white rounded hover:bg-teal-600">Add</button>
+              )}
+            </div>
           </div>
           <div className="flex gap-1 mt-1.5 pt-1.5 border-t border-gray-100">
             <input
               type="text"
-              placeholder="Or type a name…"
+              placeholder="+ New speaker…"
               value={flagInlineInput}
               onChange={(e) => setFlagInlineInput(e.target.value)}
               onKeyDown={(e) => {
                 e.stopPropagation()
-                if (e.key === 'Enter' && flagInlineInput.trim()) {
-                  createFlag(idx, 'wrong_speaker', flagInlineInput.trim())
-                  setActivePicker(null)
-                }
+                if (e.key === 'Enter' && flagInlineInput.trim()) flagAndCreateSpeaker(idx, flagInlineInput)
               }}
               className="flex-1 px-2 py-1 text-sm border border-red-200 rounded"
               onClick={(e) => e.stopPropagation()}
               autoFocus
             />
             {flagInlineInput.trim() && (
-              <button onClick={(e) => {
-                e.stopPropagation()
-                createFlag(idx, 'wrong_speaker', flagInlineInput.trim())
-                setActivePicker(null)
-              }} className="px-3 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600">
-                Save
-              </button>
+              <button onClick={(e) => { e.stopPropagation(); flagAndCreateSpeaker(idx, flagInlineInput) }}
+                className="px-3 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600">Add</button>
             )}
           </div>
         </div>
