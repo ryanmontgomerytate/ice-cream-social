@@ -119,18 +119,12 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
   const [autoScroll, setAutoScroll] = useState(true)
   const [playbackRate, setPlaybackRate] = useState(1)
   const [playingClipIdx, setPlayingClipIdx] = useState(null)
+  const [sampleTrimmer, setSampleTrimmer] = useState(null) // { idx, inPoint, outPoint }
 
   const audioRef = useRef(null)
   const transcriptContainerRef = useRef(null)
   const segmentRefs = useRef({})
   const clipEndRef = useRef(null)
-  // Web Audio API refs for onset detection
-  const onsetScanRafRef = useRef(null)
-  const audioCtxRef = useRef(null)
-  const gainRef = useRef(null)
-  const analyserRef = useRef(null)
-  const mediaSourceCreated = useRef(false)
-  // Clip-mode boundary tracking
   const clipStartRef = useRef(null)
 
   const episodeImageUrl = useMemo(() => {
@@ -147,7 +141,7 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
     if (savedToastTimerRef.current) clearTimeout(savedToastTimerRef.current)
     savedToastTimerRef.current = setTimeout(() => {
       setSavedToast(false)
-    }, 1500)
+    }, 4000)
   }, [])
 
   useEffect(() => {
@@ -254,10 +248,17 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
 
       setEpisodeSpeakerAssignments(speakerAssignments)
 
-      // Restore marked samples from transcript JSON
+      // Restore marked samples from transcript JSON (store {startTime,endTime} for trim support)
       if (data.marked_samples && Array.isArray(data.marked_samples)) {
+        let segsForRestore = []
+        try { segsForRestore = JSON.parse(data.segments_json || '[]') } catch (_) {}
         const samplesMap = {}
-        data.marked_samples.forEach(idx => { samplesMap[idx] = true })
+        data.marked_samples.forEach(idx => {
+          const seg = segsForRestore[idx]
+          samplesMap[idx] = seg
+            ? { startTime: parseTimestampToSeconds(seg), endTime: getSegmentEndTime(seg) }
+            : { startTime: 0, endTime: 0 }
+        })
         setMarkedSamples(samplesMap)
       }
 
@@ -333,6 +334,13 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
   useEffect(() => {
     setSpeakers(uniqueSpeakers)
   }, [uniqueSpeakers])
+
+  // Close trimmer when user selects a different segment
+  useEffect(() => {
+    if (sampleTrimmer !== null && sampleTrimmer.idx !== selectedSegmentIdx) {
+      setSampleTrimmer(null)
+    }
+  }, [selectedSegmentIdx])
 
   const hasSpeakerLabels = useMemo(() => {
     return segments?.some(seg => seg.speaker && seg.speaker !== 'UNKNOWN') ?? false
@@ -411,11 +419,6 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
     const handlePlay = () => setIsPlaying(true)
     const handlePause = () => {
       setIsPlaying(false)
-      if (onsetScanRafRef.current) {
-        cancelAnimationFrame(onsetScanRafRef.current)
-        onsetScanRafRef.current = null
-      }
-      if (gainRef.current) gainRef.current.gain.value = 1
       clipEndRef.current = null
       clipStartRef.current = null
       setPlayingClipIdx(null)
@@ -441,14 +444,6 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
     }
   }, [audioPath, loading])
 
-  // Cleanup Web Audio API on unmount
-  useEffect(() => {
-    return () => {
-      if (onsetScanRafRef.current) cancelAnimationFrame(onsetScanRafRef.current)
-      if (audioCtxRef.current) { audioCtxRef.current.close(); audioCtxRef.current = null }
-      mediaSourceCreated.current = false
-    }
-  }, [])
 
   const togglePlay = () => {
     if (!audioRef.current) return
@@ -468,37 +463,8 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
     setCurrentTime(time)
   }
 
-  const cancelOnsetScan = () => {
-    if (onsetScanRafRef.current) {
-      cancelAnimationFrame(onsetScanRafRef.current)
-      onsetScanRafRef.current = null
-    }
-    if (gainRef.current) gainRef.current.gain.value = 1
-  }
-
-  const initWebAudio = () => {
-    if (mediaSourceCreated.current || !audioRef.current) return
-    try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)()
-      const source = ctx.createMediaElementSource(audioRef.current)
-      const gain = ctx.createGain()
-      const analyser = ctx.createAnalyser()
-      analyser.fftSize = 512
-      source.connect(gain)
-      gain.connect(analyser)
-      analyser.connect(ctx.destination)
-      audioCtxRef.current = ctx
-      gainRef.current = gain
-      analyserRef.current = analyser
-      mediaSourceCreated.current = true
-    } catch (e) {
-      console.warn('Web Audio API init failed:', e)
-    }
-  }
-
   const seekToSegment = (segment) => {
     const time = parseTimestampToSeconds(segment)
-    cancelOnsetScan()
     clipEndRef.current = null
     clipStartRef.current = null
     setPlayingClipIdx(null)
@@ -511,81 +477,12 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
   const playClipOnly = (segment, idx) => {
     const startTime = parseTimestampToSeconds(segment)
     const endTime = getSegmentEndTime(segment)
-    // Don't scan for more than 1.5s or 40% of the clip — whichever is smaller
-    const maxScanSec = Math.min(1.5, (endTime - startTime) * 0.4)
-
-    cancelOnsetScan()
     clipStartRef.current = startTime
     clipEndRef.current = endTime
     setPlayingClipIdx(idx)
-
-    if (!audioRef.current) return
-
-    initWebAudio()
-    audioRef.current.currentTime = startTime
-    setCurrentTime(startTime)
-
-    if (audioCtxRef.current && gainRef.current && analyserRef.current) {
-      // Mute while we scan for speech onset so user doesn't hear leading silence
-      audioCtxRef.current.resume()
-      gainRef.current.gain.value = 0
-
-      const data = new Uint8Array(analyserRef.current.frequencyBinCount)
-      // RMS threshold: reflects sustained energy, not single-sample spikes.
-      // Brief background reactions (uh-huh, laugh) won't sustain; real speech will.
-      const RMS_THRESHOLD = 10   // out of ~128 max RMS
-      const FRAMES_NEEDED = 3    // ~48ms of sustained signal required before unmuting
-      const WARMUP = 4           // skip first N frames while audio buffer fills after seek
-      let frame = 0
-      let consecutiveFrames = 0
-
-      const scan = () => {
-        if (!audioRef.current || audioRef.current.paused) {
-          if (gainRef.current) gainRef.current.gain.value = 1
-          return
-        }
-        const elapsed = audioRef.current.currentTime - startTime
-        frame++
-
-        // Timeout: never stay muted past maxScanSec
-        if (elapsed >= maxScanSec) {
-          gainRef.current.gain.value = 1
-          return
-        }
-
-        // Skip warmup frames — analyser buffer may not reflect the seeked position yet
-        if (frame <= WARMUP) {
-          onsetScanRafRef.current = requestAnimationFrame(scan)
-          return
-        }
-
-        analyserRef.current.getByteTimeDomainData(data)
-        // RMS over the buffer: sqrt(mean(sample^2)) where sample = value - 128
-        const rms = Math.sqrt(data.reduce((sum, v) => sum + Math.pow(v - 128, 2), 0) / data.length)
-
-        if (rms > RMS_THRESHOLD) {
-          consecutiveFrames++
-          if (consecutiveFrames >= FRAMES_NEEDED) {
-            // Sustained speech confirmed — unmute
-            gainRef.current.gain.value = 1
-            return
-          }
-        } else {
-          // Signal dropped — reset the run; a brief noise won't accumulate across a gap
-          consecutiveFrames = 0
-        }
-
-        onsetScanRafRef.current = requestAnimationFrame(scan)
-      }
-
-      audioRef.current.play()
-        .then(() => { onsetScanRafRef.current = requestAnimationFrame(scan) })
-        .catch(err => {
-          if (gainRef.current) gainRef.current.gain.value = 1
-          console.error('Audio play failed:', err)
-        })
-    } else {
-      // Fallback: Web Audio API unavailable — play from startTime directly
+    if (audioRef.current) {
+      audioRef.current.currentTime = startTime
+      setCurrentTime(startTime)
       audioRef.current.play().catch(err => console.error('Audio play failed:', err))
     }
   }
@@ -603,7 +500,6 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
   }
 
   const pausePlaybackForReview = () => {
-    cancelOnsetScan()
     if (audioRef.current && !audioRef.current.paused) {
       audioRef.current.pause()
     }
@@ -813,18 +709,72 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
 
   // Voice sample operations
   const toggleVoiceSample = (idx) => {
-    const newSamples = { ...markedSamples }
-    if (newSamples[idx]) {
+    if (markedSamples[idx]) {
+      // Already marked — unmark it
+      const newSamples = { ...markedSamples }
       delete newSamples[idx]
+      setMarkedSamples(newSamples)
+      setHasUnsavedChanges(true)
+      if (sampleTrimmer?.idx === idx) setSampleTrimmer(null)
+    } else if (sampleTrimmer?.idx === idx) {
+      // Trimmer already open for this clip — close it (toggle off)
+      setSampleTrimmer(null)
     } else {
-      newSamples[idx] = true
-      if (segments?.[idx] && isSoundBite(segments[idx].speaker)) {
-        const label = speakerNames[segments[idx].speaker] || segments[idx].speaker
-        onNotification?.(`Sample marked for sound bite "${label}"`, 'info')
-      }
+      // Open trimmer so user can set in/out points before marking
+      const segment = segments?.[idx]
+      if (!segment) return
+      setSampleTrimmer({
+        idx,
+        inPoint: parseTimestampToSeconds(segment),
+        outPoint: getSegmentEndTime(segment),
+      })
     }
+  }
+
+  const markTrimmedSample = () => {
+    if (!sampleTrimmer) return
+    const { idx, inPoint, outPoint } = sampleTrimmer
+    const newSamples = { ...markedSamples }
+    newSamples[idx] = { startTime: inPoint, endTime: outPoint }
     setMarkedSamples(newSamples)
     setHasUnsavedChanges(true)
+    setSampleTrimmer(null)
+    const segment = segments?.[idx]
+    if (segment && isSoundBite(segment.speaker)) {
+      const label = speakerNames[segment.speaker] || segment.speaker
+      onNotification?.(`Sample trimmed for sound bite "${label}"`, 'info')
+    }
+  }
+
+  const previewTrim = () => {
+    if (!sampleTrimmer) return
+    const { idx, inPoint, outPoint } = sampleTrimmer
+    if (playingClipIdx === idx) {
+      audioRef.current?.pause()
+      return
+    }
+    clipStartRef.current = inPoint
+    clipEndRef.current = outPoint
+    setPlayingClipIdx(idx)
+    if (audioRef.current) {
+      audioRef.current.currentTime = inPoint
+      setCurrentTime(inPoint)
+      audioRef.current.play().catch(err => console.error('Audio play failed:', err))
+    }
+  }
+
+  const setTrimIn = () => {
+    if (!sampleTrimmer || !segments?.[sampleTrimmer.idx]) return
+    const clipStart = parseTimestampToSeconds(segments[sampleTrimmer.idx])
+    const newIn = Math.max(clipStart, Math.min(currentTime, sampleTrimmer.outPoint - 0.5))
+    setSampleTrimmer({ ...sampleTrimmer, inPoint: newIn })
+  }
+
+  const setTrimOut = () => {
+    if (!sampleTrimmer || !segments?.[sampleTrimmer.idx]) return
+    const clipEnd = getSegmentEndTime(segments[sampleTrimmer.idx])
+    const newOut = Math.min(clipEnd, Math.max(currentTime, sampleTrimmer.inPoint + 0.5))
+    setSampleTrimmer({ ...sampleTrimmer, outPoint: newOut })
   }
 
   // Speaker name assignment (from TranscriptEditor's own picker)
@@ -902,11 +852,12 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
         const samplesToSave = Object.keys(markedSamples).map(idx => {
           const segIdx = parseInt(idx)
           const segment = segments[segIdx]
+          const trim = markedSamples[idx] // { startTime, endTime } from trimmer
           return {
             speaker: segment.speaker,
             speakerName: flaggedSegments[segIdx]?.corrected_speaker || speakerNames[segment.speaker] || segment.speaker,
-            startTime: parseTimestampToSeconds(segment),
-            endTime: getSegmentEndTime(segment),
+            startTime: trim?.startTime ?? parseTimestampToSeconds(segment),
+            endTime: trim?.endTime ?? getSegmentEndTime(segment),
             text: segment.text,
             segmentIdx: segIdx,
           }
@@ -1607,8 +1558,8 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
               🔊 Drop
             </button>
             <button onClick={(e) => { e.stopPropagation(); toggleVoiceSample(idx) }}
-              className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${markedSamples[idx] ? 'bg-yellow-300 text-yellow-900 ring-1 ring-yellow-400' : 'bg-white text-gray-600 hover:bg-yellow-50 border border-gray-200'}`}>
-              {markedSamples[idx] ? '⭐ Unmark' : '☆ Sample'}
+              className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${markedSamples[idx] ? 'bg-yellow-300 text-yellow-900 ring-1 ring-yellow-400' : sampleTrimmer?.idx === idx ? 'bg-yellow-100 text-yellow-800 ring-1 ring-yellow-300' : 'bg-white text-gray-600 hover:bg-yellow-50 border border-gray-200'}`}>
+              {markedSamples[idx] ? '⭐ Unmark' : sampleTrimmer?.idx === idx ? '✂️ Trimming…' : '☆ Sample'}
             </button>
             <button onClick={(e) => { e.stopPropagation(); setActivePicker(activePicker === 'speaker' ? null : 'speaker') }}
               className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${activePicker === 'speaker' ? 'bg-purple-100 text-purple-700 ring-1 ring-purple-300' : 'bg-white text-gray-600 hover:bg-purple-50 border border-gray-200'}`}>
@@ -1626,6 +1577,77 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
             )}
           </div>
           {activePicker && renderActionPicker(activePicker, idx)}
+          {sampleTrimmer?.idx === idx && (() => {
+            const seg = segments[idx]
+            const clipStart = parseTimestampToSeconds(seg)
+            const clipEnd = getSegmentEndTime(seg)
+            const clipDuration = Math.max(0.01, clipEnd - clipStart)
+            const inPct = ((sampleTrimmer.inPoint - clipStart) / clipDuration) * 100
+            const outPct = ((sampleTrimmer.outPoint - clipStart) / clipDuration) * 100
+            const playPct = Math.max(0, Math.min(100, ((currentTime - clipStart) / clipDuration) * 100))
+            const isPreviewing = playingClipIdx === idx
+            const trimDuration = (sampleTrimmer.outPoint - sampleTrimmer.inPoint).toFixed(1)
+            return (
+              <div className="mt-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-[11px]" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-semibold text-yellow-900">✂️ Sample Trimmer — seek to position, set in/out, then mark</span>
+                  <button onClick={() => setSampleTrimmer(null)} className="text-gray-400 hover:text-gray-600 leading-none px-1">✕</button>
+                </div>
+                {/* Seek strip — click to seek within clip */}
+                <div
+                  className="relative h-8 mb-2 cursor-pointer select-none"
+                  onClick={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect()
+                    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
+                    seekTo(clipStart + pct * clipDuration)
+                  }}
+                >
+                  <div className="absolute inset-x-0 top-3 h-2 bg-gray-200 rounded-full" />
+                  <div className="absolute top-3 h-2 bg-yellow-400 rounded-full" style={{ left: `${inPct}%`, right: `${100 - outPct}%` }} />
+                  <div className="absolute top-0.5 w-0.5 h-7 bg-purple-500 rounded-full pointer-events-none" style={{ left: `${playPct}%` }} />
+                  <div className="absolute top-0.5 w-[3px] h-7 bg-green-500 rounded pointer-events-none" style={{ left: `${inPct}%` }} title="In point" />
+                  <div className="absolute top-0.5 w-[3px] h-7 bg-red-500 rounded pointer-events-none" style={{ left: `${outPct}%` }} title="Out point" />
+                </div>
+                {/* Time labels */}
+                <div className="flex justify-between font-mono mb-2 px-0.5">
+                  <span className="text-green-700">In: {formatTime(sampleTrimmer.inPoint)}</span>
+                  <span className="text-gray-400">{trimDuration}s selected</span>
+                  <span className="text-red-700">Out: {formatTime(sampleTrimmer.outPoint)}</span>
+                </div>
+                {/* Controls */}
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={setTrimIn}
+                    className="flex-1 py-1.5 bg-green-100 hover:bg-green-200 text-green-800 rounded font-medium"
+                    title="Set in-point to current playhead position"
+                  >
+                    [ Set In
+                  </button>
+                  <button
+                    onClick={previewTrim}
+                    className={`flex-none px-3 py-1.5 rounded font-medium ${isPreviewing ? 'bg-purple-600 text-white' : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'}`}
+                    title={isPreviewing ? 'Stop preview' : 'Preview trimmed selection'}
+                  >
+                    {isPreviewing ? '⏹' : '▶'}
+                  </button>
+                  <button
+                    onClick={setTrimOut}
+                    className="flex-1 py-1.5 bg-red-100 hover:bg-red-200 text-red-800 rounded font-medium"
+                    title="Set out-point to current playhead position"
+                  >
+                    Set Out ]
+                  </button>
+                  <button
+                    onClick={markTrimmedSample}
+                    className="flex-none py-1.5 px-3 bg-yellow-500 hover:bg-yellow-600 text-white rounded font-medium"
+                    title="Mark this trimmed range as voice sample"
+                  >
+                    ⭐ Mark
+                  </button>
+                </div>
+              </div>
+            )
+          })()}
         </div>
       </div>
     )
@@ -2078,7 +2100,10 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
             </div>
           )}
           {savedToast && (
-            <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded text-xs">{savedToastMessage}</span>
+            <span className="flex items-center gap-1.5 px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded text-xs">
+              {savedToastMessage}
+              <button onClick={() => { setSavedToast(false); if (savedToastTimerRef.current) clearTimeout(savedToastTimerRef.current) }} className="ml-0.5 text-emerald-500 hover:text-emerald-800 leading-none font-bold">✕</button>
+            </span>
           )}
         </div>
 
@@ -2174,7 +2199,6 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
                       clipEndRef.current = null
                       clipStartRef.current = null
                       setPlayingClipIdx(null)
-                      cancelOnsetScan()
                       if (audioRef.current && !audioRef.current.paused) audioRef.current.pause()
                     } else {
                       playClipOnly(segment, idx)

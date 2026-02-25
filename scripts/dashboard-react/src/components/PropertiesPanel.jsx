@@ -1093,7 +1093,7 @@ export default function PropertiesPanel() {
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <span>⭐</span>
-                        <span className="text-xs font-medium text-yellow-800">Segment #{idx}</span>
+                        <span className="text-xs font-medium text-yellow-800">Clip #{idx}</span>
                       </div>
                       <button
                         onClick={(e) => {
