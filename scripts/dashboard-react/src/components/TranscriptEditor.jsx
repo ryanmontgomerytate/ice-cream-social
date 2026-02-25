@@ -2064,13 +2064,22 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
 
         {/* Search and View Mode */}
         <div className="bg-white px-4 py-3 border-b border-gray-200 flex gap-3 items-center">
-          <input
-            type="text"
-            placeholder="Search in transcript..."
-            className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
+          <div className="relative flex-1">
+            <input
+              type="text"
+              placeholder="Search in transcript..."
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-lg leading-none"
+                title="Clear search"
+              >×</button>
+            )}
+          </div>
           {hasSpeakerLabels && (
             <div className="flex rounded-lg border border-gray-200 overflow-hidden">
               <button onClick={() => setViewMode('speakers')} className={`px-3 py-2 text-sm ${viewMode === 'speakers' ? 'bg-purple-500 text-white' : 'bg-white text-gray-600'}`}>
