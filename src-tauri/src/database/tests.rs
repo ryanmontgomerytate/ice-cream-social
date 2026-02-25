@@ -20,7 +20,7 @@ mod character_tests {
     #[test]
     fn test_create_character_basic() {
         let (db, _temp) = setup_test_db();
-        let id = db.create_character("Sweet Bean", None, None, None).unwrap();
+        let id = db.create_character("Sweet Bean", None, None, None, None).unwrap();
         assert!(id > 0);
 
         let chars = db.get_characters().unwrap();
@@ -35,7 +35,8 @@ mod character_tests {
             "Count Absorbo",
             Some("Absorbo"),
             Some("A vampire who absorbs things"),
-            Some("I vant to absorb your blood!")
+            Some("I vant to absorb your blood!"),
+            None
         ).unwrap();
 
         let chars = db.get_characters().unwrap();
@@ -47,10 +48,10 @@ mod character_tests {
     #[test]
     fn test_create_character_duplicate_name_fails() {
         let (db, _temp) = setup_test_db();
-        db.create_character("Sweet Bean", None, None, None).unwrap();
+        db.create_character("Sweet Bean", None, None, None, None).unwrap();
 
         // Duplicate should fail due to UNIQUE constraint
-        let result = db.create_character("Sweet Bean", None, None, None);
+        let result = db.create_character("Sweet Bean", None, None, None, None);
         assert!(result.is_err());
     }
 
@@ -58,11 +59,11 @@ mod character_tests {
     fn test_create_character_case_sensitivity() {
         let (db, _temp) = setup_test_db();
         // SQLite is case-insensitive by default for UNIQUE
-        db.create_character("Sweet Bean", None, None, None).unwrap();
+        db.create_character("Sweet Bean", None, None, None, None).unwrap();
 
         // These might or might not fail depending on collation
         // Test documents current behavior
-        let result = db.create_character("sweet bean", None, None, None);
+        let result = db.create_character("sweet bean", None, None, None, None);
         // This tests the actual behavior - case sensitivity depends on SQLite config
         println!("Case different insert result: {:?}", result.is_ok());
     }
@@ -71,21 +72,21 @@ mod character_tests {
     fn test_create_character_empty_name() {
         let (db, _temp) = setup_test_db();
         // Empty string should be allowed at DB level (validation at API level)
-        let result = db.create_character("", None, None, None);
+        let result = db.create_character("", None, None, None, None);
         assert!(result.is_ok()); // DB allows it, validation should be in frontend/command
     }
 
     #[test]
     fn test_create_character_whitespace_only_name() {
         let (db, _temp) = setup_test_db();
-        let result = db.create_character("   ", None, None, None);
+        let result = db.create_character("   ", None, None, None, None);
         assert!(result.is_ok()); // DB allows it, needs frontend validation
     }
 
     #[test]
     fn test_create_character_unicode_name() {
         let (db, _temp) = setup_test_db();
-        let id = db.create_character("Señor 日本語 🎉", None, None, None).unwrap();
+        let id = db.create_character("Señor 日本語 🎉", None, None, None, None).unwrap();
         assert!(id > 0);
 
         let chars = db.get_characters().unwrap();
@@ -96,7 +97,7 @@ mod character_tests {
     fn test_create_character_very_long_name() {
         let (db, _temp) = setup_test_db();
         let long_name = "A".repeat(10000);
-        let result = db.create_character(&long_name, None, None, None);
+        let result = db.create_character(&long_name, None, None, None, None);
         assert!(result.is_ok()); // SQLite TEXT has no limit
     }
 
@@ -114,7 +115,7 @@ mod character_tests {
         ];
 
         for name in names {
-            let result = db.create_character(name, None, None, None);
+            let result = db.create_character(name, None, None, None, None);
             assert!(result.is_ok(), "Failed for name: {}", name);
         }
     }
@@ -144,7 +145,7 @@ mod character_tests {
     #[test]
     fn test_add_appearance_basic() {
         let (db, _temp, episode_id) = setup_db_with_episode();
-        let char_id = db.create_character("Test Char", None, None, None).unwrap();
+        let char_id = db.create_character("Test Char", None, None, None, None).unwrap();
 
         let app_id = db.add_character_appearance(char_id, episode_id, None, None, None).unwrap();
         assert!(app_id > 0);
@@ -153,7 +154,7 @@ mod character_tests {
     #[test]
     fn test_add_appearance_with_timestamp() {
         let (db, _temp, episode_id) = setup_db_with_episode();
-        let char_id = db.create_character("Test Char", None, None, None).unwrap();
+        let char_id = db.create_character("Test Char", None, None, None, None).unwrap();
 
         let app_id = db.add_character_appearance(
             char_id,
@@ -168,7 +169,7 @@ mod character_tests {
     #[test]
     fn test_add_appearance_negative_start_time() {
         let (db, _temp, episode_id) = setup_db_with_episode();
-        let char_id = db.create_character("Test Char", None, None, None).unwrap();
+        let char_id = db.create_character("Test Char", None, None, None, None).unwrap();
 
         // Negative time - DB accepts it (validation should be at API level)
         let result = db.add_character_appearance(char_id, episode_id, Some(-100.0), None, None);
@@ -178,7 +179,7 @@ mod character_tests {
     #[test]
     fn test_add_appearance_start_after_end() {
         let (db, _temp, episode_id) = setup_db_with_episode();
-        let char_id = db.create_character("Test Char", None, None, None).unwrap();
+        let char_id = db.create_character("Test Char", None, None, None, None).unwrap();
 
         // start > end - DB accepts it (validation should be at API level)
         let result = db.add_character_appearance(
@@ -194,7 +195,7 @@ mod character_tests {
     #[test]
     fn test_add_appearance_very_large_timestamp() {
         let (db, _temp, episode_id) = setup_db_with_episode();
-        let char_id = db.create_character("Test Char", None, None, None).unwrap();
+        let char_id = db.create_character("Test Char", None, None, None, None).unwrap();
 
         // Very large timestamp (beyond any episode length)
         let result = db.add_character_appearance(
@@ -210,7 +211,7 @@ mod character_tests {
     #[test]
     fn test_add_appearance_zero_timestamp() {
         let (db, _temp, episode_id) = setup_db_with_episode();
-        let char_id = db.create_character("Test Char", None, None, None).unwrap();
+        let char_id = db.create_character("Test Char", None, None, None, None).unwrap();
 
         let result = db.add_character_appearance(char_id, episode_id, Some(0.0), None, None);
         assert!(result.is_ok());
@@ -228,7 +229,7 @@ mod character_tests {
     #[test]
     fn test_add_appearance_nonexistent_episode() {
         let (db, _temp, _) = setup_db_with_episode();
-        let char_id = db.create_character("Test Char", None, None, None).unwrap();
+        let char_id = db.create_character("Test Char", None, None, None, None).unwrap();
 
         // Episode ID 99999 doesn't exist - should fail due to FK constraint
         let result = db.add_character_appearance(char_id, 99999, None, None, None);
@@ -238,7 +239,7 @@ mod character_tests {
     #[test]
     fn test_add_multiple_appearances_same_episode() {
         let (db, _temp, episode_id) = setup_db_with_episode();
-        let char_id = db.create_character("Test Char", None, None, None).unwrap();
+        let char_id = db.create_character("Test Char", None, None, None, None).unwrap();
 
         // Same character can appear multiple times in same episode (different timestamps)
         let app1 = db.add_character_appearance(char_id, episode_id, Some(100.0), None, None).unwrap();
@@ -250,7 +251,7 @@ mod character_tests {
     #[test]
     fn test_add_duplicate_appearance_exact_same() {
         let (db, _temp, episode_id) = setup_db_with_episode();
-        let char_id = db.create_character("Test Char", None, None, None).unwrap();
+        let char_id = db.create_character("Test Char", None, None, None, None).unwrap();
 
         // No UNIQUE constraint on appearances - duplicates allowed
         let app1 = db.add_character_appearance(char_id, episode_id, Some(100.0), None, None).unwrap();
@@ -264,7 +265,7 @@ mod character_tests {
     #[test]
     fn test_add_appearance_negative_segment_idx() {
         let (db, _temp, episode_id) = setup_db_with_episode();
-        let char_id = db.create_character("Test Char", None, None, None).unwrap();
+        let char_id = db.create_character("Test Char", None, None, None, None).unwrap();
 
         let result = db.add_character_appearance(char_id, episode_id, None, None, Some(-1));
         assert!(result.is_ok()); // DB accepts it
@@ -277,9 +278,9 @@ mod character_tests {
     #[test]
     fn test_update_character_basic() {
         let (db, _temp) = setup_test_db();
-        let id = db.create_character("Old Name", None, None, None).unwrap();
+        let id = db.create_character("Old Name", None, None, None, None).unwrap();
 
-        db.update_character(id, "New Name", None, None, None).unwrap();
+        db.update_character(id, "New Name", None, None, None, None).unwrap();
 
         let chars = db.get_characters().unwrap();
         assert_eq!(chars[0].name, "New Name");
@@ -288,11 +289,11 @@ mod character_tests {
     #[test]
     fn test_update_character_to_duplicate_name() {
         let (db, _temp) = setup_test_db();
-        let _id1 = db.create_character("Character 1", None, None, None).unwrap();
-        let id2 = db.create_character("Character 2", None, None, None).unwrap();
+        let _id1 = db.create_character("Character 1", None, None, None, None).unwrap();
+        let id2 = db.create_character("Character 2", None, None, None, None).unwrap();
 
         // Try to rename character 2 to same name as character 1
-        let result = db.update_character(id2, "Character 1", None, None, None);
+        let result = db.update_character(id2, "Character 1", None, None, None, None);
         assert!(result.is_err()); // UNIQUE constraint violation
     }
 
@@ -301,7 +302,7 @@ mod character_tests {
         let (db, _temp) = setup_test_db();
 
         // Update non-existent character - executes without error but affects 0 rows
-        let result = db.update_character(99999, "Name", None, None, None);
+        let result = db.update_character(99999, "Name", None, None, None, None);
         assert!(result.is_ok()); // No error, just no effect
     }
 
@@ -312,7 +313,7 @@ mod character_tests {
     #[test]
     fn test_delete_character_basic() {
         let (db, _temp) = setup_test_db();
-        let id = db.create_character("To Delete", None, None, None).unwrap();
+        let id = db.create_character("To Delete", None, None, None, None).unwrap();
 
         db.delete_character(id).unwrap();
 
@@ -323,7 +324,7 @@ mod character_tests {
     #[test]
     fn test_delete_character_cascades_appearances() {
         let (db, _temp, episode_id) = setup_db_with_episode();
-        let char_id = db.create_character("Test Char", None, None, None).unwrap();
+        let char_id = db.create_character("Test Char", None, None, None, None).unwrap();
 
         // Add appearances
         db.add_character_appearance(char_id, episode_id, Some(100.0), None, None).unwrap();
@@ -360,7 +361,7 @@ mod character_tests {
     #[test]
     fn test_get_characters_appearance_count() {
         let (db, _temp, episode_id) = setup_db_with_episode();
-        let char_id = db.create_character("Test Char", None, None, None).unwrap();
+        let char_id = db.create_character("Test Char", None, None, None, None).unwrap();
 
         // Add 3 appearances
         for i in 0..3 {

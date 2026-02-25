@@ -23,6 +23,7 @@ export function TranscriptReviewProvider({ episode, onNotification, isVisible, c
   const [audioDrops, setAudioDrops] = useState([])
   const [segments, setSegments] = useState(null)
   const [selectedSegmentIdx, setSelectedSegmentIdx] = useState(null)
+  const [polishRunning, setPolishRunning] = useState(false)
 
   // Handler registry — TranscriptEditor registers its async operations here
   // so PropertiesPanel can trigger them without window globals.
@@ -87,6 +88,7 @@ export function TranscriptReviewProvider({ episode, onNotification, isVisible, c
     setAudioDrops([])
     setSegments(null)
     setSelectedSegmentIdx(null)
+    setPolishRunning(false)
     handlersRef.current = {}
   }, [])
 
@@ -105,6 +107,7 @@ export function TranscriptReviewProvider({ episode, onNotification, isVisible, c
     audioDrops, setAudioDrops,
     segments, setSegments,
     selectedSegmentIdx, setSelectedSegmentIdx,
+    polishRunning, setPolishRunning,
     // Handler registration (called by TranscriptEditor on every render)
     registerHandlers,
     // Action proxies (called by PropertiesPanel)

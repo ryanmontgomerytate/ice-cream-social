@@ -206,6 +206,8 @@ pub struct Character {
     pub first_episode_id: Option<i64>,
     pub first_episode_title: Option<String>,
     pub image_url: Option<String>,
+    pub speaker_id: Option<i64>,
+    pub speaker_name: Option<String>,
     pub appearance_count: Option<i32>,
 }
 
@@ -343,12 +345,14 @@ pub struct VoiceSampleRecord {
     pub id: i64,
     pub speaker_name: String,
     pub episode_id: Option<i64>,
+    pub episode_number: Option<String>,
     pub segment_idx: Option<i64>,
     pub start_time: f64,
     pub end_time: f64,
     pub transcript_text: Option<String>,
     pub file_path: String,
     pub rating: i32,
+    pub source: Option<String>,
     pub created_at: Option<String>,
     // Joined fields:
     pub episode_title: Option<String>,
@@ -394,4 +398,47 @@ pub struct PipelineHealth {
     pub estimated_completion_days: f32,
     pub failed_last_24h: i64,
     pub unresolved_errors: i64,
+}
+
+// ============================================================================
+// Segment Classifications (Qwen audio analysis — pending human review)
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SegmentClassification {
+    pub id: i64,
+    pub episode_id: i64,
+    pub segment_idx: i32,
+    pub classifier: String,
+    pub is_performance_bit: bool,
+    pub character_name: Option<String>,
+    pub character_id: Option<i64>,
+    pub speaker_note: Option<String>,
+    pub tone_description: Option<String>,
+    pub confidence: Option<f64>,
+    pub approved: i32,  // 0=pending, 1=approved, -1=rejected
+    pub created_at: Option<String>,
+    // Joined fields
+    pub segment_text: Option<String>,
+    pub segment_start_time: Option<f64>,
+}
+
+// ============================================================================
+// Transcript Corrections (Scoop Polish — text correction + multi-speaker detect)
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TranscriptCorrection {
+    pub id: i64,
+    pub episode_id: i64,
+    pub segment_idx: i32,
+    pub original_text: String,
+    pub corrected_text: String,
+    pub has_multiple_speakers: bool,
+    pub speaker_change_note: Option<String>,
+    pub confidence: Option<f64>,
+    pub approved: i32,  // 0=pending, 1=approved, -1=rejected
+    pub created_at: Option<String>,
+    // Joined field
+    pub segment_start_time: Option<f64>,
 }

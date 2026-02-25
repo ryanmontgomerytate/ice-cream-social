@@ -244,6 +244,21 @@ def classify_clip(model, processor, device, clip_audio, sr: int, prompt_text: st
     return extract_json_result(response)
 
 
+def build_polish_prompt(original_text: str) -> str:
+    return (
+        f"This clip is from a comedy podcast called \"Matt and Mattingly's Ice Cream Social\".\n"
+        f"The existing transcription is: \"{original_text}\"\n"
+        f"1. Correct transcription errors (misheared words, wrong proper nouns, misspellings).\n"
+        f"2. Detect if a SECOND speaker speaks briefly in this clip (short affirmations like "
+        f"\"yeah\", \"right\", \"mm-hmm\", or any audible second voice count).\n"
+        f"Answer ONLY in JSON — no explanation:\n"
+        f'{{ "corrected_text": string, "has_multiple_speakers": bool, '
+        f'"speaker_change_note": string|null, "confidence": float }}\n'
+        f"corrected_text: exact corrected transcription (return UNCHANGED if no errors).\n"
+        f"speaker_change_note: describe where the second speaker occurs (e.g. '~0.3s: second voice says \"Yeah\"'), or null."
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Classify transcript segments for performance bits using Qwen2.5-Omni-3B"
@@ -258,6 +273,17 @@ def main():
         "--characters",
         default="[]",
         help='JSON array of known characters: [{"name":"Sweet Bean","catchphrase":"Sweet Bean!"},...]',
+    )
+    parser.add_argument(
+        "--mode",
+        choices=["classify", "polish"],
+        default="classify",
+        help="Mode: classify (performance bit detection) or polish (text correction + multi-speaker detection)",
+    )
+    parser.add_argument(
+        "--segment-texts",
+        default="{}",
+        help='JSON object mapping segment_idx (str) to existing transcript text (for polish mode)',
     )
     args = parser.parse_args()
 
@@ -281,13 +307,21 @@ def main():
         print(json.dumps(error))
         sys.exit(1)
 
+    try:
+        segment_texts: dict = json.loads(args.segment_texts)
+    except json.JSONDecodeError as e:
+        error = {"status": "error", "message": f"Invalid --segment-texts JSON: {e}"}
+        print(json.dumps(error))
+        sys.exit(1)
+
     if not segments:
         result = {"status": "success", "results": [], "elapsed_secs": 0.0}
         print(json.dumps(result))
         return
 
     total = len(segments)
-    print(f"Classifying {total} segment(s) from: {audio_path.name}", file=sys.stderr)
+    mode = args.mode
+    print(f"Mode: {mode} — processing {total} segment(s) from: {audio_path.name}", file=sys.stderr)
     emit_progress(0, total)
 
     t0 = time.time()
@@ -309,63 +343,116 @@ def main():
         print(json.dumps(error))
         sys.exit(1)
 
-    prompt_text = build_prompt(characters)
     results = []
 
-    for i, seg in enumerate(segments):
-        segment_idx = seg.get("segment_idx", i)
-        start = float(seg.get("start", 0))
-        end = float(seg.get("end", start + 10))
+    if mode == "polish":
+        # ── Polish mode: text correction + multi-speaker detection ──────────
+        for i, seg in enumerate(segments):
+            segment_idx = seg.get("segment_idx", i)
+            start = float(seg.get("start", 0))
+            end = float(seg.get("end", start + 10))
+            original_text = segment_texts.get(str(segment_idx), "")
 
-        print(f"Processing segment {segment_idx} ({start:.1f}s–{end:.1f}s)...", file=sys.stderr)
+            print(f"Polishing segment {segment_idx} ({start:.1f}s–{end:.1f}s)...", file=sys.stderr)
 
-        try:
-            clip, _clip_start = extract_clip(audio_data, sr, start, end)
+            try:
+                clip, _clip_start = extract_clip(audio_data, sr, start, end)
 
-            if len(clip) == 0:
-                raise ValueError("Extracted clip is empty — check start/end times")
+                if len(clip) == 0:
+                    raise ValueError("Extracted clip is empty — check start/end times")
 
-            raw = classify_clip(model, processor, device, clip, sr, prompt_text)
+                prompt_text = build_polish_prompt(original_text)
+                raw = classify_clip(model, processor, device, clip, sr, prompt_text)
 
-            # Normalize / validate fields
-            is_bit = bool(raw.get("is_performance_bit", False))
-            char_name = raw.get("character_name") or None
-            if isinstance(char_name, str):
-                char_name = char_name.strip() or None
-                # Only keep if it matches one of the known characters (case-insensitive)
-                if char_name and characters:
-                    known_names = [c.get("name", "").lower() for c in characters]
-                    if char_name.lower() not in known_names:
-                        # Try partial match
-                        matched = next(
-                            (c["name"] for c in characters if char_name.lower() in c.get("name", "").lower() or c.get("name", "").lower() in char_name.lower()),
-                            None
-                        )
-                        char_name = matched
+                corrected_text = str(raw.get("corrected_text", original_text)).strip() or original_text
+                has_multiple = bool(raw.get("has_multiple_speakers", False))
+                speaker_change_note = raw.get("speaker_change_note") or None
+                if isinstance(speaker_change_note, str):
+                    speaker_change_note = speaker_change_note.strip()[:500] or None
+                confidence = float(raw.get("confidence", 0.5))
 
-            results.append({
-                "segment_idx": segment_idx,
-                "is_performance_bit": is_bit,
-                "character_name": char_name,
-                "speaker_note": str(raw.get("speaker_note", ""))[:500],
-                "tone_description": str(raw.get("tone_description", ""))[:200],
-                "confidence": float(raw.get("confidence", 0.5)),
-            })
+                results.append({
+                    "segment_idx": segment_idx,
+                    "original_text": original_text,
+                    "corrected_text": corrected_text,
+                    "has_multiple_speakers": has_multiple,
+                    "speaker_change_note": speaker_change_note,
+                    "confidence": confidence,
+                })
 
-        except Exception as e:
-            import traceback
-            traceback.print_exc(file=sys.stderr)
-            print(f"ERROR classifying segment {segment_idx}: {e}", file=sys.stderr)
-            results.append({
-                "segment_idx": segment_idx,
-                "is_performance_bit": False,
-                "character_name": None,
-                "speaker_note": f"Classification failed: {e}",
-                "tone_description": "",
-                "confidence": 0.0,
-            })
+            except Exception as e:
+                import traceback
+                traceback.print_exc(file=sys.stderr)
+                print(f"ERROR polishing segment {segment_idx}: {e}", file=sys.stderr)
+                results.append({
+                    "segment_idx": segment_idx,
+                    "original_text": original_text,
+                    "corrected_text": original_text,
+                    "has_multiple_speakers": False,
+                    "speaker_change_note": f"Polish failed: {e}",
+                    "confidence": 0.0,
+                })
 
-        emit_progress(i + 1, total)
+            emit_progress(i + 1, total)
+
+    else:
+        # ── Classify mode: performance bit detection ─────────────────────────
+        prompt_text = build_prompt(characters)
+
+        for i, seg in enumerate(segments):
+            segment_idx = seg.get("segment_idx", i)
+            start = float(seg.get("start", 0))
+            end = float(seg.get("end", start + 10))
+
+            print(f"Processing segment {segment_idx} ({start:.1f}s–{end:.1f}s)...", file=sys.stderr)
+
+            try:
+                clip, _clip_start = extract_clip(audio_data, sr, start, end)
+
+                if len(clip) == 0:
+                    raise ValueError("Extracted clip is empty — check start/end times")
+
+                raw = classify_clip(model, processor, device, clip, sr, prompt_text)
+
+                # Normalize / validate fields
+                is_bit = bool(raw.get("is_performance_bit", False))
+                char_name = raw.get("character_name") or None
+                if isinstance(char_name, str):
+                    char_name = char_name.strip() or None
+                    # Only keep if it matches one of the known characters (case-insensitive)
+                    if char_name and characters:
+                        known_names = [c.get("name", "").lower() for c in characters]
+                        if char_name.lower() not in known_names:
+                            # Try partial match
+                            matched = next(
+                                (c["name"] for c in characters if char_name.lower() in c.get("name", "").lower() or c.get("name", "").lower() in char_name.lower()),
+                                None
+                            )
+                            char_name = matched
+
+                results.append({
+                    "segment_idx": segment_idx,
+                    "is_performance_bit": is_bit,
+                    "character_name": char_name,
+                    "speaker_note": str(raw.get("speaker_note", ""))[:500],
+                    "tone_description": str(raw.get("tone_description", ""))[:200],
+                    "confidence": float(raw.get("confidence", 0.5)),
+                })
+
+            except Exception as e:
+                import traceback
+                traceback.print_exc(file=sys.stderr)
+                print(f"ERROR classifying segment {segment_idx}: {e}", file=sys.stderr)
+                results.append({
+                    "segment_idx": segment_idx,
+                    "is_performance_bit": False,
+                    "character_name": None,
+                    "speaker_note": f"Classification failed: {e}",
+                    "tone_description": "",
+                    "confidence": 0.0,
+                })
+
+            emit_progress(i + 1, total)
 
     elapsed = time.time() - t0
     output = {

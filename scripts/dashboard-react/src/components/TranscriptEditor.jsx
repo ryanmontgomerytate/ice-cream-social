@@ -68,6 +68,7 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
     audioDrops, setAudioDrops,
     setSegments: setCtxSegments,
     selectedSegmentIdx, setSelectedSegmentIdx,
+    polishRunning,
     registerHandlers,
   } = useTranscriptReview()
 
@@ -79,9 +80,19 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
   const [viewMode, setViewMode] = useState('speakers')
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [savedToast, setSavedToast] = useState(false)
+  const [savedToastMessage, setSavedToastMessage] = useState('Saved')
+  const savedToastTimerRef = useRef(null)
   const [reprocessing, setReprocessing] = useState(false)
+  const [reprocessBackend, setReprocessBackend] = useState('current')
+  const [currentEmbeddingBackend, setCurrentEmbeddingBackend] = useState('pyannote')
+  const [compareRunning, setCompareRunning] = useState(false)
+  const [compareResults, setCompareResults] = useState(null)
+  const [compareExpanded, setCompareExpanded] = useState(true)
+  const [rebuildingBackend, setRebuildingBackend] = useState(null)
   const [diarizationLocked, setDiarizationLocked] = useState(false)
   const [autoLabeling, setAutoLabeling] = useState(false)
+  const [episodeImageError, setEpisodeImageError] = useState(false)
 
   // Episode speaker assignments (authoritative speaker/sound bite mappings from DB)
   const [episodeSpeakerAssignments, setEpisodeSpeakerAssignments] = useState([])
@@ -94,6 +105,9 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
   const [flagInlineInput, setFlagInlineInput] = useState('') // for wrong_speaker / other inline inputs
   const [speakerPickerIdx, setSpeakerPickerIdx] = useState(null)  // segment idx for multi-speaker picker
   const [speakerPickerSelected, setSpeakerPickerSelected] = useState([])  // selected speaker IDs
+  const [chapterRangeStart, setChapterRangeStart] = useState(null)
+  const [chapterRangeType, setChapterRangeType] = useState(null)
+  const [chapterRangeEndInput, setChapterRangeEndInput] = useState('')
 
   // Audio state
   const [audioPath, setAudioPath] = useState(null)
@@ -107,21 +121,65 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
   const transcriptContainerRef = useRef(null)
   const segmentRefs = useRef({})
 
+  const episodeImageUrl = useMemo(() => {
+    if (episode?.image_url) return episode.image_url
+    const rawNum = episode?.episode_number?.toString() || ''
+    const cleanNum = rawNum.replace(/[^0-9]/g, '')
+    if (!cleanNum) return null
+    return `https://heyscoops.fandom.com/wiki/Special:FilePath/ICS_${cleanNum}.png`
+  }, [episode?.image_url, episode?.episode_number])
+
+  const flashSavedToast = useCallback((message = '✓ Saved') => {
+    setSavedToastMessage(message)
+    setSavedToast(true)
+    if (savedToastTimerRef.current) clearTimeout(savedToastTimerRef.current)
+    savedToastTimerRef.current = setTimeout(() => {
+      setSavedToast(false)
+    }, 1500)
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (savedToastTimerRef.current) clearTimeout(savedToastTimerRef.current)
+    }
+  }, [])
+
   // Load transcript when episode changes; clear lock on episode switch
   useEffect(() => {
     if (episode?.id) {
       loadTranscript()
       loadAudioPath()
       setReprocessing(false)
+      setCompareRunning(false)
+      setCompareResults(null)
+      setCompareExpanded(true)
+      setRebuildingBackend(null)
       setDiarizationLocked(false)
+      speakersAPI.getEmbeddingModel().then((backend) => {
+        setCurrentEmbeddingBackend(backend || 'pyannote')
+      }).catch(() => {
+        setCurrentEmbeddingBackend('pyannote')
+      })
     }
   }, [episode?.id])
 
-  // Refresh voice library when tab becomes visible (catches speakers added via Audio ID tab)
+  useEffect(() => {
+    setEpisodeImageError(false)
+  }, [episodeImageUrl])
+
+  // Refresh voice library + character data when tab becomes visible
   const prevVisibleRef = useRef(false)
   useEffect(() => {
     if (isVisible && !prevVisibleRef.current && episode?.id) {
       speakersAPI.getVoiceLibrary().then(voices => setVoiceLibrary(voices)).catch(() => {})
+      // Fix 1a: refresh character appearances and character list (catches edits made in Characters tab)
+      Promise.all([
+        contentAPI.getCharacterAppearancesForEpisode(episode.id).catch(() => null),
+        contentAPI.getCharacters().catch(() => null),
+      ]).then(([appearances, chars]) => {
+        if (appearances) setCharacterAppearances(appearances)
+        if (chars) setCharacters(chars)
+      })
     }
     prevVisibleRef.current = isVisible
   }, [isVisible])
@@ -193,6 +251,21 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
 
       // Build speaker names: start from JSON, then overlay DB assignments
       const names = { ...(data.speaker_names || {}) }
+
+      // Literal speaker names baked into segment JSON (e.g. "Jacob Smith" instead
+      // of SPEAKER_XX) from older transcripts need to map to themselves so that
+      // displayName is truthy. Without this, the ! badge appears and deduplication
+      // fails when the same person also has a SPEAKER_XX → name DB mapping.
+      if (data.segments_json) {
+        try {
+          JSON.parse(data.segments_json).forEach(seg => {
+            if (seg.speaker && seg.speaker !== 'UNKNOWN' && !seg.speaker.match(/^SPEAKER_\d+$/) && !names[seg.speaker]) {
+              names[seg.speaker] = seg.speaker
+            }
+          })
+        } catch (_) {}
+      }
+
       for (const assignment of speakerAssignments) {
         if (assignment.speaker_name) {
           names[assignment.diarization_label] = assignment.speaker_name
@@ -372,6 +445,12 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
     seekTo(Math.max(0, Math.min(duration, currentTime + seconds)))
   }
 
+  const pausePlaybackForReview = () => {
+    if (audioRef.current && !audioRef.current.paused) {
+      audioRef.current.pause()
+    }
+  }
+
   // Flag operations
   const createFlag = async (idx, flagType, correctedSpeaker = null, characterId = null, notes = null, speakerIds = null) => {
     try {
@@ -385,6 +464,7 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
       setActivePicker(null)
       setSpeakerPickerIdx(null)
       setSpeakerPickerSelected([])
+      flashSavedToast('✓ Flag saved')
     } catch (err) {
       onNotification?.(`Failed to create flag: ${err.message}`, 'error')
     }
@@ -392,7 +472,7 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
 
   const createCharacterAndFlagIt = async (idx, name) => {
     try {
-      const characterId = await contentAPI.createCharacter(name.trim(), null, null, null)
+      const characterId = await contentAPI.createCharacter(name.trim(), null, null, null, null)
       setCharacters(prev => [...prev, { id: characterId, name: name.trim() }])
       setNewCharacterName('')
       await createFlag(idx, 'character_voice', null, characterId)
@@ -409,6 +489,7 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
       const newFlags = { ...flaggedSegments }
       delete newFlags[idx]
       setFlaggedSegments(newFlags)
+      flashSavedToast('✓ Flag removed')
     } catch (err) {
       onNotification?.(`Failed to delete flag: ${err.message}`, 'error')
     }
@@ -423,6 +504,7 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
       const appearances = await contentAPI.getCharacterAppearancesForEpisode(episode.id)
       setCharacterAppearances(appearances)
       setActivePicker(null)
+      flashSavedToast('✓ Character saved')
     } catch (err) {
       onNotification?.(`Failed to add character: ${err.message}`, 'error')
     }
@@ -431,7 +513,7 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
   const createCharacterAndAdd = async (idx, name) => {
     if (!name.trim()) return
     try {
-      const characterId = await contentAPI.createCharacter(name.trim(), null, null, null)
+      const characterId = await contentAPI.createCharacter(name.trim(), null, null, null, null)
       await addCharacterToSegment(idx, characterId)
       const allCharacters = await contentAPI.getCharacters()
       setCharacters(allCharacters)
@@ -446,25 +528,51 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
       await contentAPI.deleteCharacterAppearance(appearanceId)
       const appearances = await contentAPI.getCharacterAppearancesForEpisode(episode.id)
       setCharacterAppearances(appearances)
+      flashSavedToast('✓ Character removed')
     } catch (err) {
       onNotification?.(`Failed to remove character: ${err.message}`, 'error')
     }
   }
 
   // Chapter operations
-  const createChapter = async (chapterTypeId, segmentIdx) => {
+  const createChapter = async (chapterTypeId, segmentIdx, endSegmentIdx = null) => {
     if (!segments || segmentIdx == null) return
-    const segment = segments[segmentIdx]
-    const startTime = segment.start ?? parseTimestampToSeconds(segment)
-    const endTime = segment.end ?? getSegmentEndTime(segment)
+    const startSegment = segments[segmentIdx]
+    const endIdx = endSegmentIdx != null ? endSegmentIdx : segmentIdx
+    const endSegment = segments[endIdx] || startSegment
+    const startTime = startSegment.start ?? parseTimestampToSeconds(startSegment)
+    const endTime = endSegment.end ?? getSegmentEndTime(endSegment)
     try {
-      await contentAPI.createEpisodeChapter(episode.id, chapterTypeId, null, startTime, endTime, segmentIdx, segmentIdx)
+      await contentAPI.createEpisodeChapter(episode.id, chapterTypeId, null, startTime, endTime, segmentIdx, endIdx)
       const chapters = await contentAPI.getEpisodeChapters(episode.id)
       setEpisodeChapters(chapters)
       setActivePicker(null)
+      setChapterRangeStart(null)
+      setChapterRangeType(null)
+      setChapterRangeEndInput('')
+      flashSavedToast('✓ Chapter saved')
     } catch (err) {
       onNotification?.(`Failed to create chapter: ${err.message}`, 'error')
     }
+  }
+
+  const submitChapterRange = async () => {
+    if (chapterRangeStart == null || chapterRangeType == null) return
+    const raw = chapterRangeEndInput.trim()
+    const endIdx = raw ? parseInt(raw, 10) : chapterRangeStart
+    if (Number.isNaN(endIdx)) {
+      onNotification?.('Enter a valid end segment number', 'error')
+      return
+    }
+    if (!segments || endIdx < 0 || endIdx >= segments.length) {
+      onNotification?.('End segment is out of range', 'error')
+      return
+    }
+    if (endIdx < chapterRangeStart) {
+      onNotification?.('End segment must be after start segment', 'error')
+      return
+    }
+    await createChapter(chapterRangeType, chapterRangeStart, endIdx)
   }
 
   const deleteChapter = async (chapterId) => {
@@ -472,6 +580,7 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
       await contentAPI.deleteEpisodeChapter(chapterId)
       const chapters = await contentAPI.getEpisodeChapters(episode.id)
       setEpisodeChapters(chapters)
+      flashSavedToast('✓ Chapter removed')
     } catch (err) {
       onNotification?.(`Failed to delete chapter: ${err.message}`, 'error')
     }
@@ -486,6 +595,7 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
       const instances = await contentAPI.getAudioDropInstances(episode.id)
       setAudioDropInstances(instances)
       setActivePicker(null)
+      flashSavedToast('✓ Sound bite saved')
     } catch (err) {
       onNotification?.(`Failed to add sound bite: ${err.message}`, 'error')
     }
@@ -537,6 +647,7 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
       await contentAPI.deleteAudioDropInstance(instanceId)
       const instances = await contentAPI.getAudioDropInstances(episode.id)
       setAudioDropInstances(instances)
+      flashSavedToast('✓ Sound bite removed')
     } catch (err) {
       onNotification?.(`Failed to remove sound bite: ${err.message}`, 'error')
     }
@@ -549,6 +660,10 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
       delete newSamples[idx]
     } else {
       newSamples[idx] = true
+      if (segments?.[idx] && isSoundBite(segments[idx].speaker)) {
+        const label = speakerNames[segments[idx].speaker] || segments[idx].speaker
+        onNotification?.(`Sample marked for sound bite "${label}"`, 'info')
+      }
     }
     setMarkedSamples(newSamples)
     setHasUnsavedChanges(true)
@@ -571,6 +686,7 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
         ...prev.filter(a => a.diarization_label !== originalLabel),
         { diarization_label: originalLabel, audio_drop_id: drop.id, audio_drop_name: drop.name, speaker_id: null, speaker_name: null }
       ])
+      flashSavedToast('✓ Sound bite linked')
     } catch (err) {
       console.error('Failed to link audio drop:', err)
     }
@@ -623,7 +739,8 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
       setSaving(true)
       const sampleIndices = Object.keys(markedSamples).map(idx => parseInt(idx))
       await episodesAPI.updateSpeakerNames(episode.id, speakerNames, sampleIndices.length > 0 ? sampleIndices : null)
-      if (Object.keys(markedSamples).length > 0 && segments) {
+      const hasMarkedSamples = Object.keys(markedSamples).length > 0
+      if (hasMarkedSamples && segments) {
         const samplesToSave = Object.keys(markedSamples).map(idx => {
           const segIdx = parseInt(idx)
           const segment = segments[segIdx]
@@ -636,10 +753,25 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
             segmentIdx: segIdx,
           }
         })
-        await episodesAPI.saveVoiceSamples(episode.id, samplesToSave).catch(() => {})
+        const savedSamples = await episodesAPI.saveVoiceSamples(episode.id, samplesToSave)
+        if (savedSamples === 0) {
+          onNotification?.(
+            'No audio samples were extracted. Check speaker/drop mapping and audio clip boundaries.',
+            'warning'
+          )
+        } else {
+          const soundBiteSaved = samplesToSave.filter(s => isSoundBite(s.speaker)).length
+          const speakerSaved = samplesToSave.length - soundBiteSaved
+          const detail = []
+          if (speakerSaved > 0) detail.push(`${speakerSaved} speaker`)
+          if (soundBiteSaved > 0) detail.push(`${soundBiteSaved} sound bite`)
+          onNotification?.(`Saved ${savedSamples} audio sample${savedSamples === 1 ? '' : 's'} (${detail.join(', ')})`, 'success')
+        }
       }
       setHasUnsavedChanges(false)
-      onNotification?.('Changes saved', 'success')
+      if (!hasMarkedSamples) {
+        onNotification?.('Changes saved', 'success')
+      }
     } catch (err) {
       onNotification?.(`Failed to save: ${err.message}`, 'error')
     } finally {
@@ -875,12 +1007,34 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
     }
     if (pickerType === 'flag-wrong-speaker') {
       const segment = segments?.[idx]
+      // Filter out audio-drop entries from the speaker list (fix 3b)
+      const audioDropNames = new Set(audioDrops.map(d => d.name))
+      const speakerOnlyLibrary = voiceLibrary.filter(v => !audioDropNames.has(v.name) && !v.name.startsWith('🔊'))
+      const unassignedLabels = uniqueSpeakers.filter(label => !speakerNames[label])
       return (
         <div className="mt-2 p-2 bg-white rounded-lg border border-red-200 shadow-sm">
           <div className="text-[10px] text-gray-400 uppercase tracking-wide mb-1 px-1">
             Who should this be? (current: {speakerNames[segment?.speaker] || segment?.speaker})
           </div>
-          {voiceLibrary.map(v => (
+          {unassignedLabels.length > 0 && (
+            <>
+              <div className="text-[10px] text-gray-400 uppercase tracking-wide mb-1 px-1">Unassigned Labels</div>
+              <div className="max-h-28 overflow-y-auto">
+                {unassignedLabels.map(label => (
+                  <button key={label} onClick={(e) => {
+                    e.stopPropagation()
+                    createFlag(idx, 'wrong_speaker', label)
+                    setActivePicker(null)
+                  }} className="w-full px-2 py-1.5 text-sm text-left rounded hover:bg-red-50 text-red-800 flex items-center gap-2">
+                    <span>🏷️</span> {label}
+                  </button>
+                ))}
+              </div>
+              <div className="text-[10px] text-gray-400 uppercase tracking-wide mt-2 mb-1 px-1 border-t border-gray-100 pt-2">Known Speakers</div>
+            </>
+          )}
+          <div className="max-h-48 overflow-y-auto">
+          {speakerOnlyLibrary.map(v => (
             <button key={v.name} onClick={(e) => {
               e.stopPropagation()
               createFlag(idx, 'wrong_speaker', v.name)
@@ -889,6 +1043,7 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
               <span>🎤</span> {v.short_name || v.name}
             </button>
           ))}
+          </div>
           {audioDrops.length > 0 && (
             <>
               <div className="text-[10px] text-gray-400 uppercase tracking-wide mt-2 mb-1 px-1 border-t border-gray-100 pt-2">Sound Bites</div>
@@ -1027,10 +1182,58 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
         <div className="mt-2 p-2 bg-white rounded-lg border border-gray-200 shadow-sm">
           <div className="text-[10px] text-gray-400 uppercase tracking-wide mb-1 px-1">Chapter type</div>
           {chapterTypes.map(ct => (
-            <button key={ct.id} onClick={(e) => { e.stopPropagation(); createChapter(ct.id, idx) }} className="w-full px-2 py-1.5 text-sm text-left rounded hover:bg-indigo-50 flex items-center gap-2">
+            <button key={ct.id} onClick={(e) => {
+              e.stopPropagation()
+              setChapterRangeStart(idx)
+              setChapterRangeType(ct.id)
+              setChapterRangeEndInput(String(idx))
+            }} className="w-full px-2 py-1.5 text-sm text-left rounded hover:bg-indigo-50 flex items-center gap-2">
               <span>{ct.icon}</span> <span style={{ color: ct.color }}>{ct.name}</span>
             </button>
           ))}
+          {chapterRangeStart === idx && chapterRangeType && (
+            <div className="mt-2 p-2 rounded border border-indigo-200 bg-indigo-50">
+              <div className="text-xs text-indigo-700">Start segment: #{chapterRangeStart}</div>
+              <div className="flex gap-2 mt-2 items-center">
+                <input
+                  type="number"
+                  min="0"
+                  placeholder={`End at segment #${chapterRangeStart}`}
+                  value={chapterRangeEndInput}
+                  onChange={(e) => setChapterRangeEndInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    e.stopPropagation()
+                    if (e.key === 'Enter') submitChapterRange()
+                  }}
+                  className="flex-1 px-2 py-1 text-xs border border-indigo-200 rounded"
+                  onClick={(e) => e.stopPropagation()}
+                />
+                <button
+                  onClick={(e) => { e.stopPropagation(); submitChapterRange() }}
+                  className="px-2.5 py-1 text-xs bg-indigo-600 text-white rounded hover:bg-indigo-700"
+                >
+                  Save range
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); createChapter(chapterRangeType, chapterRangeStart) }}
+                  className="px-2 py-1 text-xs bg-white text-indigo-700 rounded border border-indigo-200 hover:bg-indigo-100"
+                >
+                  Just this
+                </button>
+              </div>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setChapterRangeStart(null)
+                  setChapterRangeType(null)
+                  setChapterRangeEndInput('')
+                }}
+                className="mt-2 text-xs text-gray-500 hover:text-gray-700"
+              >
+                Cancel
+              </button>
+            </div>
+          )}
         </div>
       )
     }
@@ -1138,8 +1341,13 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
           </span>
         )}
         {character && (
-          <span className="px-2 py-1 rounded text-xs font-medium bg-pink-100 text-pink-700 cursor-pointer" onClick={(e) => { e.stopPropagation(); removeCharacterFromSegment(character.id) }} title="Click to remove">
+          <span className="px-2 py-1 rounded text-xs font-medium bg-pink-100 text-pink-700 group/char inline-flex items-center gap-1" title={character.character_name}>
             🎭 {character.character_name}
+            <button
+              className="hidden group-hover/char:inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-pink-300 hover:bg-pink-500 text-pink-800 hover:text-white text-[9px] leading-none ml-0.5"
+              onClick={(e) => { e.stopPropagation(); removeCharacterFromSegment(character.id) }}
+              title="Remove character from this segment"
+            >×</button>
           </span>
         )}
         {chapter && (
@@ -1195,6 +1403,16 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
               className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${activePicker === 'speaker' ? 'bg-purple-100 text-purple-700 ring-1 ring-purple-300' : 'bg-white text-gray-600 hover:bg-purple-50 border border-gray-200'}`}>
               ✎ Speaker
             </button>
+            {hasUnsavedChanges && (
+              <button
+                onClick={(e) => { e.stopPropagation(); saveEdits() }}
+                disabled={saving || diarizationLocked || polishRunning}
+                className="ml-auto px-3 py-2 rounded-lg text-sm font-medium bg-yellow-500 hover:bg-yellow-600 text-white disabled:opacity-50"
+                title="Save episode changes"
+              >
+                {saving ? 'Saving…' : 'Save'}
+              </button>
+            )}
           </div>
           {activePicker && renderActionPicker(activePicker, idx)}
         </div>
@@ -1303,7 +1521,7 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
   }
 
   return (
-    <div className="h-full flex flex-col bg-white">
+    <div className="min-h-full flex flex-col bg-white">
       {/* Header with episode info */}
       <div className="px-4 py-3 border-b border-gray-200 flex-shrink-0">
         <div className="flex items-center gap-2">
@@ -1317,6 +1535,14 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
               </svg>
             </button>
+          )}
+          {episodeImageUrl && !episodeImageError && (
+            <img
+              src={episodeImageUrl}
+              alt=""
+              onError={() => setEpisodeImageError(true)}
+              className="w-10 h-10 rounded-md object-cover border border-gray-200 flex-shrink-0"
+            />
           )}
           <h2 className="text-lg font-bold text-gray-800 truncate">{episode.title}</h2>
         </div>
@@ -1351,29 +1577,172 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
             const hintCount = Object.values(flaggedSegments).filter(f =>
               ['wrong_speaker', 'multiple_speakers', 'character_voice'].includes(f.flag_type) && !f.resolved
             ).length
+            const backendLabel = reprocessBackend === 'current'
+              ? `Current (${currentEmbeddingBackend})`
+              : reprocessBackend
             return (
-              <button
-                disabled={reprocessing || diarizationLocked}
-                onClick={async () => {
-                  setReprocessing(true)
-                  try {
-                    await episodesAPI.reprocessDiarization(episode.id)
-                    setDiarizationLocked(true)
-                    onNotification?.('Episode locked for re-diarization — editing disabled until complete', 'success')
-                  } catch (err) {
-                    onNotification?.(`Failed to queue re-diarization: ${err.message}`, 'error')
-                    setReprocessing(false)
-                  }
-                }}
-                className={`px-2.5 py-1 rounded text-xs font-medium transition-all duration-300 ${
-                  reprocessing
-                    ? 'bg-green-100 text-green-700 border border-green-300 cursor-not-allowed'
-                    : 'bg-orange-100 text-orange-700 border border-orange-300 hover:bg-orange-200 cursor-pointer'
-                }`}
-                title={hintCount > 0 ? `Reprocess with ${hintCount} speaker correction${hintCount > 1 ? 's' : ''} as hints` : 'Reprocess diarization (no corrections flagged)'}
-              >
-                {reprocessing ? '✓ Queued for Diarization' : hintCount > 0 ? `🔄 Reprocess (${hintCount} hints)` : '🔄 Reprocess Diarization'}
-              </button>
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="inline-flex items-center rounded-md border border-orange-300 overflow-hidden">
+                  <select
+                    value={reprocessBackend}
+                    onChange={(e) => setReprocessBackend(e.target.value)}
+                    disabled={reprocessing || diarizationLocked}
+                    className="px-2 py-1 text-xs bg-white text-orange-700 disabled:opacity-50 border-r border-orange-300"
+                    title="Choose embedding backend for this reprocess run"
+                  >
+                    <option value="current">Backend: Current ({currentEmbeddingBackend})</option>
+                    <option value="pyannote">Backend: pyannote</option>
+                    <option value="ecapa-tdnn">Backend: ecapa-tdnn</option>
+                  </select>
+                  <button
+                    disabled={reprocessing || diarizationLocked}
+                    onClick={async () => {
+                      setReprocessing(true)
+                      try {
+                        await episodesAPI.reprocessDiarization(episode.id, {
+                          embeddingBackend: reprocessBackend === 'current' ? null : reprocessBackend,
+                          prioritizeTop: true,
+                        })
+                        setDiarizationLocked(true)
+                        onNotification?.(`Queued re-diarization (${backendLabel}) at top priority.`, 'success')
+                      } catch (err) {
+                        onNotification?.(`Failed to queue re-diarization: ${err.message}`, 'error')
+                        setReprocessing(false)
+                      }
+                    }}
+                    className={`px-3 py-1 text-xs font-medium transition-all duration-300 ${
+                      reprocessing
+                        ? 'bg-green-100 text-green-700 cursor-not-allowed'
+                        : 'bg-orange-100 text-orange-700 hover:bg-orange-200 cursor-pointer'
+                    }`}
+                    title={hintCount > 0
+                      ? `Reprocess with ${hintCount} speaker correction${hintCount > 1 ? 's' : ''} as hints. Runs at top queue priority.`
+                      : 'Reprocess diarization (no corrections flagged). Runs at top queue priority.'}
+                  >
+                    {reprocessing ? '✓ Queued for Diarization' : '🔄 Reprocess Diarization'}
+                  </button>
+                </div>
+
+                {transcript?.has_diarization && (
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      disabled={compareRunning}
+                      onClick={async () => {
+                        setCompareRunning(true)
+                        try {
+                          const result = await speakersAPI.compareEmbeddingBackends(episode.id)
+                          setCompareResults(result)
+                        } catch (err) {
+                          onNotification?.(`Compare failed: ${err.message}`, 'error')
+                        } finally {
+                          setCompareRunning(false)
+                        }
+                      }}
+                      className="px-2.5 py-1 rounded text-xs font-medium bg-slate-100 text-slate-700 border border-slate-300 hover:bg-slate-200 disabled:opacity-50"
+                      title="Run ECAPA vs pyannote compare for this episode"
+                    >
+                      {compareRunning ? 'Comparing…' : '⚖️ Compare Backends'}
+                    </button>
+                    <button
+                      disabled={rebuildingBackend != null}
+                      onClick={async () => {
+                        setRebuildingBackend('ecapa-tdnn')
+                        try {
+                          const result = await speakersAPI.rebuildVoiceLibrary('ecapa-tdnn')
+                          onNotification?.(`ECAPA prints rebuilt: ${result.rebuilt} clips across ${result.speaker_count} speakers`, 'success')
+                        } catch (err) {
+                          onNotification?.(`ECAPA rebuild failed: ${err.message}`, 'error')
+                        } finally {
+                          setRebuildingBackend(null)
+                        }
+                      }}
+                      className="px-2.5 py-1 rounded text-xs font-medium bg-violet-100 text-violet-700 border border-violet-300 hover:bg-violet-200 disabled:opacity-50"
+                      title="Build ECAPA-TDNN voice prints from current samples"
+                    >
+                      {rebuildingBackend === 'ecapa-tdnn' ? 'Building ECAPA…' : 'Build ECAPA Prints'}
+                    </button>
+                    <button
+                      disabled={rebuildingBackend != null}
+                      onClick={async () => {
+                        setRebuildingBackend('pyannote')
+                        try {
+                          const result = await speakersAPI.rebuildVoiceLibrary('pyannote')
+                          onNotification?.(`pyannote prints rebuilt: ${result.rebuilt} clips across ${result.speaker_count} speakers`, 'success')
+                        } catch (err) {
+                          onNotification?.(`pyannote rebuild failed: ${err.message}`, 'error')
+                        } finally {
+                          setRebuildingBackend(null)
+                        }
+                      }}
+                      className="px-2.5 py-1 rounded text-xs font-medium bg-sky-100 text-sky-700 border border-sky-300 hover:bg-sky-200 disabled:opacity-50"
+                      title="Build pyannote voice prints from current samples"
+                    >
+                      {rebuildingBackend === 'pyannote' ? 'Building pyannote…' : 'Build pyannote Prints'}
+                    </button>
+                  </div>
+                )}
+
+                {compareResults?.backend_errors && Object.keys(compareResults.backend_errors).length > 0 && (
+                  <div className="w-full mt-2 p-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700">
+                    {Object.entries(compareResults.backend_errors).map(([backend, err]) => (
+                      <div key={backend}>{backend}: {String(err)}</div>
+                    ))}
+                  </div>
+                )}
+
+                {compareResults?.results && (
+                  <div className="w-full mt-2 border border-slate-200 rounded-lg bg-white overflow-hidden">
+                    <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                      <div className="text-xs text-slate-600">
+                        Compare Results • {compareResults.segments_tested || 0} diarization label{(compareResults.segments_tested || 0) === 1 ? '' : 's'}
+                      </div>
+                      <button
+                        onClick={() => setCompareExpanded(prev => !prev)}
+                        className="px-2 py-1 rounded text-xs font-medium bg-white border border-slate-300 text-slate-700 hover:bg-slate-100"
+                        title={compareExpanded ? 'Collapse compare results' : 'Expand compare results'}
+                      >
+                        {compareExpanded ? 'Collapse' : 'Expand'}
+                      </button>
+                    </div>
+                    {compareExpanded && (
+                      <div className="max-h-64 overflow-auto">
+                        <table className="w-full text-xs">
+                          <thead className="bg-slate-100 text-slate-700">
+                            <tr>
+                              <th className="text-left px-2 py-1.5">Label</th>
+                              <th className="text-left px-2 py-1.5">ECAPA-TDNN</th>
+                              <th className="text-left px-2 py-1.5">pyannote</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {Object.entries(compareResults.results).map(([label, row]) => {
+                              const ecapa = row['ecapa-tdnn'] || { name: null, confidence: 0 }
+                              const pyannote = row.pyannote || { name: null, confidence: 0 }
+                              const assignedLabel = speakerNames[label]
+                              return (
+                                <tr key={label} className="border-t border-slate-100">
+                                  <td className="px-2 py-1.5 font-medium text-slate-800">
+                                    <div>{label}</div>
+                                    {assignedLabel && assignedLabel !== label && (
+                                      <div className="text-[11px] text-slate-500 mt-0.5">{assignedLabel}</div>
+                                    )}
+                                  </td>
+                                  <td className="px-2 py-1.5 text-slate-700">
+                                    {ecapa.name || 'Unknown'} ({Math.round((ecapa.confidence || 0) * 100)}%)
+                                  </td>
+                                  <td className="px-2 py-1.5 text-slate-700">
+                                    {pyannote.name || 'Unknown'} ({Math.round((pyannote.confidence || 0) * 100)}%)
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             )
           })()}
           {episode.is_transcribed && (
@@ -1418,91 +1787,110 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
         </div>
       )}
 
-      {/* Audio Player */}
-      {audioPath && (
-        <div className="px-4 py-3 bg-gradient-to-r from-purple-50 to-indigo-50 border-b border-purple-100 flex-shrink-0">
-          <div className="flex items-center gap-4">
-            <button onClick={togglePlay} className="w-10 h-10 flex items-center justify-center bg-purple-500 hover:bg-purple-600 text-white rounded-full shadow-md transition-colors">
-              {isPlaying ? (
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" /></svg>
-              ) : (
-                <svg className="w-4 h-4 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
-              )}
-            </button>
-            <button onClick={() => skip(-10)} className="p-2 text-gray-600 hover:text-purple-600">-10s</button>
-            <button onClick={() => skip(10)} className="p-2 text-gray-600 hover:text-purple-600">+10s</button>
-            <div className="flex-1 flex items-center gap-2">
-              <span className="text-xs text-gray-500 w-12 text-right font-mono">{formatTime(currentTime)}</span>
-              <div className="flex-1 h-2 bg-gray-200 rounded-full cursor-pointer" onClick={(e) => {
-                const rect = e.currentTarget.getBoundingClientRect()
-                const percent = (e.clientX - rect.left) / rect.width
-                seekTo(percent * duration)
-              }}>
-                <div className="h-full bg-purple-500 rounded-full" style={{ width: `${duration ? (currentTime / duration) * 100 : 0}%` }} />
-              </div>
-              <span className="text-xs text-gray-500 w-12 font-mono">{formatTime(duration)}</span>
-            </div>
-            <button onClick={() => {
-              const rates = [1, 1.25, 1.5, 1.75, 2]
-              const nextRate = rates[(rates.indexOf(playbackRate) + 1) % rates.length]
-              setPlaybackRate(nextRate)
-              if (audioRef.current) audioRef.current.playbackRate = nextRate
-            }} className="px-2 py-1 text-xs font-medium text-gray-600 bg-white rounded border">
-              {playbackRate}x
-            </button>
-            <button onClick={() => setAutoScroll(!autoScroll)} className={`p-2 rounded ${autoScroll ? 'text-purple-600 bg-purple-100' : 'text-gray-400'}`} title="Auto-scroll">
-              ↓
-            </button>
+      {/* Scoop Polish Banner */}
+      {polishRunning && (
+        <div className="px-4 py-3 bg-teal-50 border-b border-teal-200 flex items-center gap-3 flex-shrink-0">
+          <div className="w-4 h-4 border-2 border-teal-500 border-t-transparent rounded-full animate-spin flex-shrink-0" />
+          <div>
+            <span className="text-sm font-semibold text-teal-800">Scoop Polish in progress</span>
+            <span className="text-xs text-teal-600 ml-2">Save disabled until complete</span>
           </div>
-          <audio ref={audioRef} src={audioPath} preload="metadata" />
         </div>
       )}
 
-      {/* Search and View Mode */}
-      <div className="px-4 py-3 border-b border-gray-200 flex gap-3 flex-shrink-0 items-center">
-        <input
-          type="text"
-          placeholder="Search in transcript..."
-          className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-        />
-        {hasSpeakerLabels && (
-          <div className="flex rounded-lg border border-gray-200 overflow-hidden">
-            <button onClick={() => setViewMode('speakers')} className={`px-3 py-2 text-sm ${viewMode === 'speakers' ? 'bg-purple-500 text-white' : 'bg-white text-gray-600'}`}>
-              By Speaker
-            </button>
-            <button onClick={() => setViewMode('plain')} className={`px-3 py-2 text-sm ${viewMode === 'plain' ? 'bg-purple-500 text-white' : 'bg-white text-gray-600'}`}>
-              Plain
-            </button>
+      <div className="sticky top-0 z-30 bg-white border-b border-gray-200 flex-shrink-0">
+        {/* Audio Player */}
+        {audioPath && (
+          <div className="px-4 py-3 bg-gradient-to-r from-purple-50 to-indigo-50 border-b border-purple-100">
+            <div className="flex items-center gap-4">
+              <button onClick={togglePlay} className="w-10 h-10 flex items-center justify-center bg-purple-500 hover:bg-purple-600 text-white rounded-full shadow-md transition-colors">
+                {isPlaying ? (
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" /></svg>
+                ) : (
+                  <svg className="w-4 h-4 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+                )}
+              </button>
+              <button onClick={() => skip(-10)} className="p-2 text-gray-600 hover:text-purple-600">-10s</button>
+              <button onClick={() => skip(10)} className="p-2 text-gray-600 hover:text-purple-600">+10s</button>
+              <div className="flex-1 flex items-center gap-2">
+                <span className="text-xs text-gray-500 w-12 text-right font-mono">{formatTime(currentTime)}</span>
+                <div className="flex-1 h-2 bg-gray-200 rounded-full cursor-pointer" onClick={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect()
+                  const percent = (e.clientX - rect.left) / rect.width
+                  seekTo(percent * duration)
+                }}>
+                  <div className="h-full bg-purple-500 rounded-full" style={{ width: `${duration ? (currentTime / duration) * 100 : 0}%` }} />
+                </div>
+                <span className="text-xs text-gray-500 w-12 font-mono">{formatTime(duration)}</span>
+              </div>
+              <button onClick={() => {
+                const rates = [1, 1.25, 1.5, 1.75, 2]
+                const nextRate = rates[(rates.indexOf(playbackRate) + 1) % rates.length]
+                setPlaybackRate(nextRate)
+                if (audioRef.current) audioRef.current.playbackRate = nextRate
+              }} className="px-2 py-1 text-xs font-medium text-gray-600 bg-white rounded border">
+                {playbackRate}x
+              </button>
+              <button onClick={() => setAutoScroll(!autoScroll)} className={`p-2 rounded ${autoScroll ? 'text-purple-600 bg-purple-100' : 'text-gray-400'}`} title="Auto-scroll">
+                ↓
+              </button>
+            </div>
+            <audio ref={audioRef} src={audioPath} preload="metadata" />
           </div>
         )}
-        {hasUnsavedChanges && (
-          <button onClick={saveEdits} disabled={saving || diarizationLocked} className="px-4 py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg text-sm font-medium disabled:opacity-50">
-            {saving ? 'Saving...' : 'Save'}
-          </button>
-        )}
-      </div>
 
-      {/* Keyboard shortcut hint */}
-      <div className="px-4 py-1.5 border-b border-gray-100 bg-gray-50/50 flex-shrink-0">
-        <span className="text-[10px] text-gray-400">
-          <kbd className="px-1 py-0.5 bg-gray-200 rounded text-[10px]">J</kbd>/<kbd className="px-1 py-0.5 bg-gray-200 rounded text-[10px]">K</kbd> navigate
-          <span className="mx-2">·</span>
-          <kbd className="px-1 py-0.5 bg-gray-200 rounded text-[10px]">Space</kbd> play/pause
-          <span className="mx-2">·</span>
-          <kbd className="px-1 py-0.5 bg-gray-200 rounded text-[10px]">F</kbd> flag
-          <span className="mx-2">·</span>
-          <kbd className="px-1 py-0.5 bg-gray-200 rounded text-[10px]">C</kbd> character
-          <span className="mx-2">·</span>
-          <kbd className="px-1 py-0.5 bg-gray-200 rounded text-[10px]">H</kbd> chapter
-          <span className="mx-2">·</span>
-          <kbd className="px-1 py-0.5 bg-gray-200 rounded text-[10px]">Esc</kbd> close
-        </span>
+        {/* Search and View Mode */}
+        <div className="bg-white px-4 py-3 border-b border-gray-200 flex gap-3 items-center">
+          <input
+            type="text"
+            placeholder="Search in transcript..."
+            className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+          {hasSpeakerLabels && (
+            <div className="flex rounded-lg border border-gray-200 overflow-hidden">
+              <button onClick={() => setViewMode('speakers')} className={`px-3 py-2 text-sm ${viewMode === 'speakers' ? 'bg-purple-500 text-white' : 'bg-white text-gray-600'}`}>
+                By Speaker
+              </button>
+              <button onClick={() => setViewMode('plain')} className={`px-3 py-2 text-sm ${viewMode === 'plain' ? 'bg-purple-500 text-white' : 'bg-white text-gray-600'}`}>
+                Plain
+              </button>
+            </div>
+          )}
+          {hasUnsavedChanges && (
+            <div className="flex items-center gap-2">
+              <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded text-xs">● Unsaved changes</span>
+              <button onClick={saveEdits} disabled={saving || diarizationLocked || polishRunning} className="px-4 py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg text-sm font-medium disabled:opacity-50">
+                {saving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          )}
+          {savedToast && (
+            <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded text-xs">{savedToastMessage}</span>
+          )}
+        </div>
+
+        {/* Keyboard shortcut hint */}
+        <div className="px-4 py-1.5 border-b border-gray-100 bg-gray-50/50">
+          <span className="text-[10px] text-gray-400">
+            <kbd className="px-1 py-0.5 bg-gray-200 rounded text-[10px]">J</kbd>/<kbd className="px-1 py-0.5 bg-gray-200 rounded text-[10px]">K</kbd> navigate
+            <span className="mx-2">·</span>
+            <kbd className="px-1 py-0.5 bg-gray-200 rounded text-[10px]">Space</kbd> play/pause
+            <span className="mx-2">·</span>
+            <kbd className="px-1 py-0.5 bg-gray-200 rounded text-[10px]">F</kbd> flag
+            <span className="mx-2">·</span>
+            <kbd className="px-1 py-0.5 bg-gray-200 rounded text-[10px]">C</kbd> character
+            <span className="mx-2">·</span>
+            <kbd className="px-1 py-0.5 bg-gray-200 rounded text-[10px]">H</kbd> chapter
+            <span className="mx-2">·</span>
+            <kbd className="px-1 py-0.5 bg-gray-200 rounded text-[10px]">Esc</kbd> close
+          </span>
+        </div>
       </div>
 
       {/* Transcript Content */}
-      <div ref={transcriptContainerRef} className="flex-1 overflow-y-auto p-4">
+      <div ref={transcriptContainerRef} className="p-4">
         {hasSpeakerLabels && viewMode === 'speakers' && filteredSegments ? (
           <div className="space-y-3">
             {filteredSegments.map((segment, idx) => {
@@ -1524,6 +1912,7 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
                     'border-gray-200 hover:border-gray-300 hover:shadow-sm'
                   }`}
                   onClick={() => {
+                    pausePlaybackForReview()
                     setSelectedSegmentIdx(isSelected ? null : idx)
                     setActivePicker(null)
                   }}
@@ -1535,6 +1924,7 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
                       style={{ backgroundColor: colors.hex }}
                       onClick={(e) => {
                         e.stopPropagation()
+                        pausePlaybackForReview()
                         setSelectedSegmentIdx(idx)
                         setActivePicker('speaker')
                       }}
@@ -1546,16 +1936,26 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
 
                     {/* Right: Content Column */}
                     <div
-                      className="flex-1 min-w-0 px-5 py-4"
+                      className="relative flex-1 min-w-0 px-5 py-4"
                       style={{ borderLeft: `4px solid ${colors.borderHex}` }}
                     >
-                      {/* Timestamp + playing indicator */}
-                      <div className="flex items-center gap-3 mb-2">
-                        <button onClick={(e) => { e.stopPropagation(); seekToSegment(segment) }} className="text-xs text-gray-400 hover:text-purple-600 font-mono">
-                          {formatTimestamp(segment)}
+                      {isSelected && hasUnsavedChanges && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); saveEdits() }}
+                          disabled={saving || diarizationLocked || polishRunning}
+                          className="absolute top-3 right-3 px-2.5 py-1 text-xs font-medium rounded bg-yellow-500 hover:bg-yellow-600 text-white disabled:opacity-50"
+                          title="Save episode changes"
+                        >
+                          {saving ? 'Saving…' : 'Save'}
                         </button>
-                        {isCurrent && <span className="text-xs text-purple-600 font-medium animate-pulse">▶ NOW</span>}
-                      </div>
+                      )}
+                      {/* Timestamp + playing indicator */}
+              <div className="flex items-center gap-3 mb-2">
+                <button onClick={(e) => { e.stopPropagation(); seekToSegment(segment) }} className="text-xs text-gray-400 hover:text-purple-600 font-mono">
+                  {formatTimestamp(segment)}
+                </button>
+                {isCurrent && <span className="text-xs text-purple-600 font-medium animate-pulse">▶ NOW</span>}
+              </div>
 
                       {/* Segment text */}
                       <p className={`text-gray-700 leading-relaxed ${isCurrent ? 'font-medium' : ''}`}>{segment.text?.trim()}</p>

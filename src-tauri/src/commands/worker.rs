@@ -14,6 +14,8 @@ pub struct CaffeinateProcess(pub Mutex<Option<Child>>);
 pub struct PipelineSlotInfo {
     pub episode: EpisodeSummary,
     pub stage: String,
+    pub transcription_model: Option<String>,
+    pub embedding_backend: Option<String>,
     pub progress: Option<i32>,
     pub elapsed_seconds: Option<i64>,
     pub estimated_remaining_seconds: Option<i64>,
@@ -37,6 +39,7 @@ pub struct WorkerStatus {
 #[derive(Debug, Serialize)]
 pub struct WorkerInfo {
     pub model: String,
+    pub embedding_model: String,
     pub memory_mb: Option<f64>,
     pub memory_percent: Option<f64>,
     pub processed_today: Option<i32>,
@@ -52,6 +55,16 @@ pub async fn get_worker_status(
 
     let memory_info = get_memory_info();
     let processed_today = db.get_processed_today().unwrap_or(state.processed_today);
+    let transcription_model = db
+        .get_setting("transcription_model")
+        .unwrap_or(None)
+        .filter(|v| !v.trim().is_empty())
+        .unwrap_or_else(|| "medium".to_string());
+    let embedding_model = db
+        .get_setting("embedding_model")
+        .unwrap_or(None)
+        .filter(|v| v == "ecapa-tdnn" || v == "pyannote")
+        .unwrap_or_else(|| "pyannote".to_string());
 
     // Convert slots to serializable info
     let slot_infos: Vec<PipelineSlotInfo> = state
@@ -64,6 +77,8 @@ pub async fn get_worker_status(
             PipelineSlotInfo {
                 episode: slot.episode.clone(),
                 stage: slot.stage.clone(),
+                transcription_model: slot.transcription_model.clone(),
+                embedding_backend: slot.embedding_backend.clone(),
                 progress: slot.progress,
                 elapsed_seconds: Some(elapsed),
                 estimated_remaining_seconds: slot.estimated_remaining,
@@ -95,7 +110,8 @@ pub async fn get_worker_status(
         last_activity: state.last_activity.map(|t| t.to_rfc3339()),
         next_check_seconds: Some(10),
         worker_info: WorkerInfo {
-            model: state.model.clone(),
+            model: transcription_model,
+            embedding_model,
             memory_mb: memory_info.0,
             memory_percent: memory_info.1,
             processed_today: Some(processed_today),

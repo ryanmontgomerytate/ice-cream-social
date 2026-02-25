@@ -39,6 +39,9 @@ scripts/dashboard-react/--help
 scripts/episodes/*.mp3
 scripts/transcripts/
 scripts/voice_library/embeddings.json
+scripts/voice_library/embeddings_*.json
+scripts/voice_library/samples/
+scripts/voice_library/models/
 data/*.db
 data/*.db-shm
 data/*.db-wal

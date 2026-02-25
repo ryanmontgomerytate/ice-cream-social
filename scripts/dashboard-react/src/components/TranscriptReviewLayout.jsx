@@ -92,7 +92,7 @@ function TranscriptReviewLayoutInner({ selectedEpisode, setSelectedEpisode, onNo
   const showEditorPanels = selectedEpisode && (hasTranscript || transcriptLoading)
 
   return (
-    <div className="h-[calc(100vh-220px)] flex bg-gray-100 rounded-xl overflow-hidden shadow-lg border border-gray-200">
+    <div className="h-[calc(100vh-170px)] min-h-0 flex bg-gray-100 rounded-xl overflow-hidden shadow-lg border border-gray-200">
       {/* Left Sidebar - Episodes */}
       {sidebarCollapsed && showEditorPanels ? (
         <div className="w-12 h-full bg-white border-r border-gray-200 flex flex-col items-center py-4 flex-shrink-0">
@@ -147,7 +147,7 @@ function TranscriptReviewLayoutInner({ selectedEpisode, setSelectedEpisode, onNo
 
       {/* Center - Transcript Editor (hidden when library is expanded) */}
       {selectedEpisode && (
-        <div className={`${showEditorPanels ? 'flex-1' : 'w-0 overflow-hidden'} min-w-0`}>
+        <div className={`${showEditorPanels ? 'flex-1 min-h-0 overflow-y-auto' : 'w-0 overflow-hidden'} min-w-0 h-full`}>
           <TranscriptEditor
             onClose={handleCloseEpisode}
             onTranscriptLoaded={handleTranscriptLoaded}

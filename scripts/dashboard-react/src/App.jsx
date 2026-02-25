@@ -18,6 +18,7 @@ import { isTauri, statsAPI, workerAPI, episodesAPI, setupEventListeners } from '
 function App() {
   const [connected, setConnected] = useState(false)
   const [activeMainTab, setActiveMainTab] = useState('episodes')
+  const [showBackToTop, setShowBackToTop] = useState(false)
   const [stats, setStats] = useState({
     total_episodes: 0,
     transcribed_episodes: 0,
@@ -123,6 +124,15 @@ function App() {
     return () => clearInterval(interval)
   }, [])
 
+  useEffect(() => {
+    const onScroll = () => {
+      setShowBackToTop(window.scrollY > 400)
+    }
+    window.addEventListener('scroll', onScroll, { passive: true })
+    onScroll()
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
+
   const loadStats = async () => {
     try {
       const data = await statsAPI.getStats()
@@ -150,6 +160,7 @@ function App() {
           next_check_seconds: 60,
           worker_info: {
             model: 'unknown',
+            embedding_model: 'pyannote',
             memory_mb: null,
             memory_percent: null,
             processed_today: null
@@ -169,45 +180,22 @@ function App() {
 
   return (
     <div className="min-h-screen bg-cream-100">
-      <Header connected={connected} isTauri={isTauri} />
+      <Header
+        connected={connected}
+        isTauri={isTauri}
+        activeMainTab={activeMainTab}
+        onSelectMainTab={setActiveMainTab}
+      />
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-        {/* Main Navigation Tabs */}
-        <div className="border-b border-cream-200">
-          <nav className="flex gap-1">
-            {[
-              { id: 'episodes', label: 'Episodes', icon: '📻' },
-              { id: 'search', label: 'Search', icon: '🔍' },
-              { id: 'extraction', label: 'Extraction', icon: '🤖' },
-              { id: 'speakers', label: 'Audio ID', icon: '🎙️' },
-              { id: 'characters', label: 'Characters', icon: '🎭' },
-              { id: 'sponsors', label: 'Sponsors', icon: '📺' },
-              { id: 'stats', label: 'Stats', icon: '📊' },
-              { id: 'settings', label: 'Settings', icon: '⚙️' },
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveMainTab(tab.id)}
-                className={`px-4 py-3 font-medium text-sm transition-colors border-b-2 ${
-                  activeMainTab === tab.id
-                    ? 'border-coral-500 text-coral-600 bg-white'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-cream-50'
-                }`}
-              >
-                <span className="mr-2">{tab.icon}</span>
-                {tab.label}
-              </button>
-            ))}
-          </nav>
-        </div>
-
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 space-y-6">
         {/* Tab Content */}
-        {activeMainTab === 'stats' && (
+        {/* Stats tab kept mounted to preserve dismissed error state */}
+        <div style={{ display: activeMainTab === 'stats' ? 'block' : 'none' }}>
           <PipelineStats stats={stats} currentActivity={currentActivity} onOpenEpisode={(id) => {
             setOpenEpisodeId(id)
             setActiveMainTab('episodes')
           }} />
-        )}
+        </div>
 
         {/* Episodes tab kept mounted at all times to preserve selected episode state */}
         <div style={{ display: activeMainTab === 'episodes' ? 'block' : 'none' }}>
@@ -256,7 +244,19 @@ function App() {
         )}
 
         {activeMainTab === 'characters' && (
-          <CharactersPanel onNotification={showNotification} />
+          <CharactersPanel
+            onNotification={showNotification}
+            onViewEpisode={async (episodeId, timestamp, segmentIdx) => {
+              try {
+                const episode = await episodesAPI.getEpisode(episodeId)
+                if (episode) {
+                  setTranscriptEpisode({ ...episode, initialTimestamp: timestamp, initialSegmentIdx: segmentIdx })
+                }
+              } catch (error) {
+                showNotification(`Error loading episode: ${error.message}`, 'error')
+              }
+            }}
+          />
         )}
 
         {activeMainTab === 'sponsors' && (
@@ -282,6 +282,17 @@ function App() {
           type={notification.type}
           onClose={() => setNotification(null)}
         />
+      )}
+
+      {showBackToTop && (
+        <button
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          className="fixed bottom-5 right-5 z-50 w-11 h-11 rounded-full bg-white border border-cream-300 shadow-lg text-gray-700 hover:bg-cream-50 hover:text-coral-600 transition-colors"
+          title="Back to top"
+          aria-label="Back to top"
+        >
+          <span className="text-lg font-bold leading-none">^</span>
+        </button>
       )}
     </div>
   )

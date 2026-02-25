@@ -33,6 +33,11 @@ export default function Stats({ stats, onOpenEpisode }) {
     }
   }, [queuesCollapsed, inQueue, inDiarizationQueue, transcribed])
 
+  const formatEmbeddingModel = (model) => {
+    if (!model) return null
+    return model === 'ecapa-tdnn' ? 'ECAPA-TDNN' : model
+  }
+
   return (
     <div className="space-y-4 mb-4">
       {/* Episode Tracking */}
@@ -215,7 +220,21 @@ export default function Stats({ stats, onOpenEpisode }) {
                             <tr key={ep.id} className="hover:bg-orange-50">
                               <td className="px-4 py-1.5 text-gray-400 w-6 tabular-nums">{i + 1}</td>
                               <td className="px-2 py-1.5 text-gray-500 whitespace-nowrap w-12">{ep.episode_number ? `#${ep.episode_number}` : '—'}</td>
-                              <td className="px-2 py-1.5 text-gray-800 truncate max-w-xs">{ep.title}</td>
+                              <td className="px-2 py-1.5 text-gray-800 truncate max-w-xs">
+                                <div className="flex items-center gap-2">
+                                  <span className="truncate">{ep.title}</span>
+                                  {ep.embedding_backend_override && (
+                                    <span className="px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 border border-violet-200 text-[10px] whitespace-nowrap">
+                                      Embed: {formatEmbeddingModel(ep.embedding_backend_override)}
+                                    </span>
+                                  )}
+                                  {(ep.priority || 0) >= 10000 && (
+                                    <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200 text-[10px] whitespace-nowrap">
+                                      Priority
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
                               {onOpenEpisode && (
                                 <td className="px-2 py-1.5 w-8">
                                   <button onClick={() => onOpenEpisode(ep.id)} className="text-orange-500 hover:text-orange-700 text-xs" title="Open episode">→</button>

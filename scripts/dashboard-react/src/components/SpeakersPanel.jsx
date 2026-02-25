@@ -84,7 +84,7 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
   const [loading, setLoading] = useState(true)
   const [showAddForm, setShowAddForm] = useState(false)
   const [editingSpeaker, setEditingSpeaker] = useState(null)
-  const [formData, setFormData] = useState({ name: '', shortName: '', isHost: false })
+  const [formData, setFormData] = useState({ name: '', shortName: '', isHost: false, isGuest: false, isScoop: false })
   const [expandedRow, setExpandedRow] = useState(null)
   const [expandedSamples, setExpandedSamples] = useState({})
   const [loadingSamples, setLoadingSamples] = useState({})
@@ -92,6 +92,13 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
   const [inlineAddForm, setInlineAddForm] = useState({ name: '', shortName: '', isHost: false })
   const [playingFile, setPlayingFile] = useState(null)
   const audioRef = useRef(null)
+  const [rebuildRunning, setRebuildRunning] = useState(false)
+  const [harvestRunning, setHarvestRunning] = useState(false)
+  const [harvestProgress, setHarvestProgress] = useState(null)
+  const [rebuildingSpeaker, setRebuildingSpeaker] = useState(null)
+  const editFormRef = useRef(null)
+  const [deletingSpeakerId, setDeletingSpeakerId] = useState(null)
+  const [purgeRunning, setPurgeRunning] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -112,11 +119,14 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
       setAudioDrops(dropsData)
     } catch (error) {
       console.error('Error loading data:', error)
-      onNotification?.('Error loading audio ID data', 'error')
+      onNotification?.(`Error loading audio ID data: ${errText(error)}`, 'error')
     } finally {
       setLoading(false)
     }
   }
+
+  const errText = (error) => error?.message || String(error)
+
 
   // Lazy-load samples when a row is expanded
   const loadSamplesForRow = async (name) => {
@@ -142,6 +152,43 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
     }
   }
 
+  const handleRebuildVoiceLibrary = async () => {
+    if (rebuildRunning) return
+    setRebuildRunning(true)
+    try {
+      const result = await speakersAPI.rebuildVoiceLibrary()
+      onNotification?.(
+        `Recalibrated: ${result.rebuilt} clips trained across ${result.speaker_count} speakers`,
+        'success'
+      )
+      loadData()
+    } catch (e) {
+      onNotification?.(`Rebuild failed: ${e?.message || String(e)}`, 'error')
+    } finally {
+      setRebuildRunning(false)
+    }
+  }
+
+  const handleVoiceHarvest = async () => {
+    if (harvestRunning) return
+    setHarvestRunning(true)
+    setHarvestProgress('Starting...')
+    try {
+      const result = await speakersAPI.runVoiceHarvest()
+      onNotification?.(
+        `Harvest complete: ${result.samples_added} samples added from ${result.episodes_processed} episodes`,
+        'success'
+      )
+      setHarvestProgress(null)
+      loadData()
+    } catch (e) {
+      onNotification?.(`Harvest failed: ${e?.message || String(e)}`, 'error')
+      setHarvestProgress(null)
+    } finally {
+      setHarvestRunning(false)
+    }
+  }
+
   // Speaker CRUD
   const handleAddSpeaker = async () => {
     if (!formData.name.trim()) {
@@ -152,14 +199,16 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
       await speakersAPI.createSpeaker(
         formData.name.trim(),
         formData.shortName.trim() || null,
-        formData.isHost
+        formData.isHost,
+        formData.isGuest,
+        formData.isScoop
       )
       onNotification?.(`Speaker "${formData.name}" added`, 'success')
-      setFormData({ name: '', shortName: '', isHost: false })
+      setFormData({ name: '', shortName: '', isHost: false, isGuest: false, isScoop: false })
       setShowAddForm(false)
       loadData()
     } catch (error) {
-      onNotification?.(`Error adding speaker: ${error.message}`, 'error')
+      onNotification?.(`Error adding speaker: ${errText(error)}`, 'error')
     }
   }
 
@@ -170,26 +219,31 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
         editingSpeaker.id,
         formData.name.trim(),
         formData.shortName.trim() || null,
-        formData.isHost
+        formData.isHost,
+        formData.isGuest,
+        formData.isScoop
       )
       onNotification?.(`Speaker "${formData.name}" updated`, 'success')
       setEditingSpeaker(null)
-      setFormData({ name: '', shortName: '', isHost: false })
+      setFormData({ name: '', shortName: '', isHost: false, isGuest: false, isScoop: false })
       loadData()
     } catch (error) {
-      onNotification?.(`Error updating speaker: ${error.message}`, 'error')
+      onNotification?.(`Error updating speaker: ${errText(error)}`, 'error')
     }
   }
 
   const handleDeleteSpeaker = async (speaker) => {
     if (!await confirm(`Delete speaker "${speaker.name}"?`)) return
+    setDeletingSpeakerId(speaker.id)
     try {
       await speakersAPI.deleteSpeaker(speaker.id)
       onNotification?.(`Speaker "${speaker.name}" deleted`, 'success')
       if (expandedRow === speaker.name) setExpandedRow(null)
       loadData()
     } catch (error) {
-      onNotification?.(`Error deleting speaker: ${error.message}`, 'error')
+      onNotification?.(`Error deleting speaker: ${errText(error)}`, 'error')
+    } finally {
+      setDeletingSpeakerId(null)
     }
   }
 
@@ -200,13 +254,18 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
       name: speaker.name,
       shortName: speaker.short_name || '',
       isHost: speaker.is_host,
+      isGuest: speaker.is_guest || false,
+      isScoop: speaker.is_scoop || false,
     })
     setShowAddForm(false)
+    setTimeout(() => {
+      editFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 0)
   }
 
   const cancelEditing = () => {
     setEditingSpeaker(null)
-    setFormData({ name: '', shortName: '', isHost: false })
+    setFormData({ name: '', shortName: '', isHost: false, isGuest: false, isScoop: false })
   }
 
   const handleInlineAddSpeaker = async () => {
@@ -222,8 +281,52 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
       setInlineAddForm({ name: '', shortName: '', isHost: false })
       loadData()
     } catch (error) {
-      onNotification?.(`Error adding speaker: ${error.message}`, 'error')
+      onNotification?.(`Error adding speaker: ${errText(error)}`, 'error')
     }
+  }
+
+  const isPlaceholderName = (name) => {
+    if (!name) return false
+    if (name.startsWith('SPEAKER_')) return true
+    const compact = name.toLowerCase().replace(/[\s_-]/g, '')
+    return compact.startsWith('speaker') && /^[0-9]+$/.test(compact.slice('speaker'.length))
+  }
+
+  const handlePurgeVoiceEntry = async (name) => {
+    if (!await confirm(`Delete "${name}" from Voice Library? This removes its stored clips and voice print.`)) return
+    setPurgeRunning(true)
+    try {
+      const result = await speakersAPI.purgeVoiceLibraryEntry(name)
+      onNotification?.(
+        `Purged "${name}" (${result.deleted_files || 0} files, ${result.deleted_db_records || 0} DB records)`,
+        'success'
+      )
+      if (expandedRow === name) setExpandedRow(null)
+      loadData()
+    } catch (error) {
+      onNotification?.(`Error purging "${name}": ${errText(error)}`, 'error')
+    } finally {
+      setPurgeRunning(false)
+    }
+  }
+
+  const handlePurgePlaceholderUnlinked = async () => {
+    const placeholders = unlinkedEntries.filter(v => isPlaceholderName(v.name))
+    if (placeholders.length === 0) return
+    if (!await confirm(`Delete ${placeholders.length} placeholder Voice Library entries (Speaker_XX / Speaker XX)?`)) return
+    setPurgeRunning(true)
+    let removed = 0
+    for (const entry of placeholders) {
+      try {
+        await speakersAPI.purgeVoiceLibraryEntry(entry.name)
+        removed += 1
+      } catch {
+        // Continue purging the rest; user gets a summary at end.
+      }
+    }
+    onNotification?.(`Purged ${removed}/${placeholders.length} placeholder entries`, removed === placeholders.length ? 'success' : 'warning')
+    loadData()
+    setPurgeRunning(false)
   }
 
   // Sample playback
@@ -250,7 +353,7 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
       const voiceData = await speakersAPI.getVoiceLibrary()
       setVoiceLibrary(voiceData)
     } catch (error) {
-      onNotification?.(`Error deleting voice print: ${error.message}`, 'error')
+      onNotification?.(`Error deleting voice print: ${errText(error)}`, 'error')
     }
   }
 
@@ -266,25 +369,35 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
       onNotification?.(`Sound bite "${item.cleanName}" deleted`, 'success')
       loadData()
     } catch (error) {
-      onNotification?.(`Error deleting sound bite: ${error.message}`, 'error')
+      onNotification?.(`Error deleting sound bite: ${errText(error)}`, 'error')
     }
+  }
+
+  const deleteSampleAndRefreshPrint = async (speakerName, sampleId, filePath) => {
+    await speakersAPI.deleteVoiceSample(speakerName, filePath, sampleId)
+    // Force print refresh from current remaining clips.
+    // This guarantees deleted clip no longer contributes to the embedding.
+    await speakersAPI.deleteVoicePrint(speakerName).catch(() => {})
+    await speakersAPI.rebuildVoicePrintForSpeaker(speakerName).catch(() => {})
+    const [freshSamples, voiceData] = await Promise.all([
+      speakersAPI.getVoiceSamples(speakerName),
+      speakersAPI.getVoiceLibrary(),
+    ])
+    setExpandedSamples(prev => ({ ...prev, [speakerName]: freshSamples }))
+    setVoiceLibrary(voiceData)
   }
 
   // Sample deletion
   const handleDeleteSample = async (speakerName, sample) => {
     if (!await confirm(`Delete sample "${sample.file_name}"?`)) return
     try {
-      await speakersAPI.deleteVoiceSample(speakerName, sample.file_path, sample.id)
+      setRebuildingSpeaker(speakerName)
+      await deleteSampleAndRefreshPrint(speakerName, sample.id, sample.file_path)
       onNotification?.(`Deleted "${sample.file_name}"`, 'success')
-      // Directly fetch fresh samples — avoids stale closure in loadSamplesForRow
-      const [freshSamples, voiceData] = await Promise.all([
-        speakersAPI.getVoiceSamples(speakerName),
-        speakersAPI.getVoiceLibrary(),
-      ])
-      setExpandedSamples(prev => ({ ...prev, [speakerName]: freshSamples }))
-      setVoiceLibrary(voiceData)
+      setRebuildingSpeaker(null)
     } catch (error) {
-      onNotification?.(`Error deleting sample: ${error.message}`, 'error')
+      onNotification?.(`Error deleting sample: ${errText(error)}`, 'error')
+      setRebuildingSpeaker(null)
     }
   }
 
@@ -301,7 +414,7 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
         )
       }))
     } catch (error) {
-      onNotification?.(`Error updating rating: ${error.message}`, 'error')
+      onNotification?.(`Error updating rating: ${errText(error)}`, 'error')
     }
   }
 
@@ -379,12 +492,27 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
     if (isSoundBite(v)) return false
     return !speakers.some(s => s.name === v.name)
   })
+  const unlinkedRows = unlinkedEntries.map(v => ({
+    name: v.name,
+    cleanName: v.name,
+    short_name: v.short_name,
+    voiceInfo: v,
+    sample_count: v.sample_count || 0,
+    sample_file: v.sample_file,
+    type: 'unlinked',
+    episode_count: v.episode_count || 0,
+    total_speaking_time: 0,
+    total_segments: 0,
+  }))
+  const placeholderUnlinkedCount = unlinkedEntries.filter(v => isPlaceholderName(v.name)).length
 
   const renderRow = (item, section) => {
     const isExpanded = expandedRow === item.name
     const isSpeaker = section === 'speaker'
+    const isUnlinked = section === 'unlinked'
+    const isSpeakerLike = isSpeaker || isUnlinked
     const voiceInfo = item.voiceInfo
-    const hasEmbedding = voiceInfo && voiceInfo.sample_count > 0
+    const hasEmbedding = voiceInfo?.has_embedding === true
     const embeddingCount = voiceInfo?.sample_count || 0
     const fileCount = voiceInfo?.file_count || 0
     const sourceFile = voiceInfo?.sample_file || item.sample_file
@@ -401,9 +529,9 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
         >
           <div className="flex items-center gap-3 min-w-0">
             <div className={`w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0 ${
-              item.is_host ? 'bg-purple-500' : isSpeaker ? 'bg-gray-400' : 'bg-amber-500'
+              item.is_host ? 'bg-purple-500' : isSpeakerLike ? 'bg-gray-400' : 'bg-amber-500'
             }`}>
-              {isSpeaker ? avatar : '🔊'}
+              {isSpeakerLike ? avatar : '🔊'}
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
@@ -415,21 +543,40 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
                     Host
                   </span>
                 )}
+                {item.is_guest && (
+                  <span className="px-1.5 py-0.5 bg-amber-200 text-amber-700 rounded text-xs font-medium flex-shrink-0">
+                    Guest
+                  </span>
+                )}
+                {item.is_scoop && (
+                  <span className="px-1.5 py-0.5 bg-indigo-200 text-indigo-700 rounded text-xs font-medium flex-shrink-0">
+                    Scoop
+                  </span>
+                )}
                 {hasEmbedding && (
                   <span
                     className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-xs font-medium flex-shrink-0"
-                    title={`Trained from ${embeddingCount} clip${embeddingCount !== 1 ? 's' : ''}. Assigned in ${voiceInfo?.episode_count || 0} episode(s).${sourceFile ? ` Last: ${sourceFile}` : ''}`}
+                    title={`Embedding built from ${embeddingCount} source clip${embeddingCount !== 1 ? 's' : ''}. Assigned in ${voiceInfo?.episode_count || 0} episode(s).${sourceFile ? ` Last: ${sourceFile}` : ''}`}
                   >
-                    Voice Print ({embeddingCount}x)
+                    Voice Print ({embeddingCount} src)
                   </span>
                 )}
-                {fileCount > 0 && (
-                  <span className="px-1.5 py-0.5 bg-yellow-100 text-yellow-700 rounded text-xs font-medium flex-shrink-0">
+                {hasEmbedding && fileCount > 0 && (
+                  <span className="px-1.5 py-0.5 bg-yellow-100 text-yellow-700 rounded text-xs font-medium flex-shrink-0"
+                    title={`${fileCount} audio clip${fileCount !== 1 ? 's' : ''} on disk`}>
                     {fileCount} clip{fileCount !== 1 ? 's' : ''}
                   </span>
                 )}
+                {!hasEmbedding && fileCount > 0 && (
+                  <span
+                    className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-xs font-medium flex-shrink-0"
+                    title={`${fileCount} clip${fileCount !== 1 ? 's' : ''} on disk but not yet trained — click "Recalibrate All" to train`}
+                  >
+                    {fileCount} clip{fileCount !== 1 ? 's' : ''} — needs Rebuild
+                  </span>
+                )}
               </div>
-              {isSpeaker && (
+              {isSpeakerLike && (
                 <div className="flex items-center gap-3 mt-0.5 text-xs text-gray-500">
                   <span>{item.episode_count || 0} episodes</span>
                   <span>{formatTime(item.total_speaking_time)}</span>
@@ -463,11 +610,44 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
                 {!item.is_host && (
                   <button
                     onClick={(e) => { e.stopPropagation(); handleDeleteSpeaker(item); }}
+                    disabled={deletingSpeakerId === item.id}
                     className="px-3 py-1 text-xs text-red-600 hover:bg-red-100 rounded border border-red-200 transition-colors"
                   >
-                    Delete Speaker
+                    {deletingSpeakerId === item.id ? 'Deleting…' : 'Delete Speaker'}
                   </button>
                 )}
+              </div>
+            )}
+            {isUnlinked && (
+              <div className="flex gap-2 mb-3">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    if (inlineAddSpeaker === item.name) {
+                      setInlineAddSpeaker(null)
+                    } else {
+                      setInlineAddSpeaker(item.name)
+                      setInlineAddForm({ name: item.name, shortName: item.short_name || '', isHost: false })
+                      setShowAddForm(false)
+                      setEditingSpeaker(null)
+                    }
+                  }}
+                  className={`px-3 py-1 text-xs rounded border transition-colors ${
+                    inlineAddSpeaker === item.name
+                      ? 'bg-purple-100 text-purple-700 border-purple-300'
+                      : 'text-purple-600 hover:bg-purple-100 border-purple-200'
+                  }`}
+                >
+                  {inlineAddSpeaker === item.name ? 'Cancel' : 'Add as Speaker'}
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handlePurgeVoiceEntry(item.name) }}
+                  disabled={purgeRunning}
+                  className="px-3 py-1 text-xs rounded border border-red-200 text-red-600 hover:bg-red-50 transition-colors disabled:opacity-60"
+                  title="Delete this unlinked voice-library entry and its samples"
+                >
+                  Delete
+                </button>
               </div>
             )}
             {!isSpeaker && item.drop && (
@@ -480,29 +660,88 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
                 </button>
               </div>
             )}
+            {isUnlinked && inlineAddSpeaker === item.name && (
+              <div className="mb-3 p-3 bg-purple-50 rounded-lg border border-purple-200">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Full Name *</label>
+                    <input
+                      type="text"
+                      value={inlineAddForm.name}
+                      onChange={(e) => setInlineAddForm(f => ({ ...f, name: e.target.value }))}
+                      className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-purple-500"
+                      autoFocus
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Short Name</label>
+                    <input
+                      type="text"
+                      value={inlineAddForm.shortName}
+                      onChange={(e) => setInlineAddForm(f => ({ ...f, shortName: e.target.value }))}
+                      className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-purple-500"
+                    />
+                  </div>
+                  <div className="flex items-end gap-3">
+                    <label className="flex items-center gap-1.5 cursor-pointer text-sm text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={inlineAddForm.isHost}
+                        onChange={(e) => setInlineAddForm(f => ({ ...f, isHost: e.target.checked }))}
+                        className="w-3.5 h-3.5"
+                      />
+                      Is Host
+                    </label>
+                  </div>
+                </div>
+                <div className="flex gap-2 mt-3">
+                  <button
+                    onClick={handleInlineAddSpeaker}
+                    className="px-3 py-1.5 bg-purple-500 hover:bg-purple-600 text-white rounded text-xs font-medium transition-colors"
+                  >
+                    Add Speaker
+                  </button>
+                  <button
+                    onClick={() => setInlineAddSpeaker(null)}
+                    className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded text-xs transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
 
-            {/* Voice ID info */}
-            {hasEmbedding && (
-              <div className="mb-3 p-2 bg-green-50 rounded border border-green-200 text-xs text-green-700 flex items-center justify-between gap-2">
-                <span>
-                  Voice print trained from {embeddingCount} clip{embeddingCount !== 1 ? 's' : ''}
-                  {sourceFile && (
-                    <span className="text-green-600 ml-1">&middot; Last source: {sourceFile}</span>
-                  )}
-                </span>
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleDeleteVoicePrint(item) }}
-                  className="flex-shrink-0 px-2 py-1 text-xs text-red-600 hover:bg-red-100 rounded border border-red-200 transition-colors"
-                  title="Delete trained voice print (keep audio clips)"
-                >
-                  Delete print
-                </button>
+            {!hasEmbedding && fileCount > 0 && (
+              <div className="mb-3 p-2 bg-amber-50 rounded border border-amber-200 text-xs text-amber-700">
+                <strong>{fileCount} clip{fileCount !== 1 ? 's' : ''} on disk</strong> — voice print not yet trained.
+                This usually means files were placed manually. Click <strong>Recalibrate All</strong> to train from these clips.
+                Requires HF_TOKEN in .env.
               </div>
             )}
 
             {/* Audio sample files */}
-            <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
-              Audio Samples
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                Audio Samples
+                {hasEmbedding && (
+                  <span className="ml-2 normal-case text-[11px] font-normal text-green-700">
+                    Embedding uses {embeddingCount} source clip{embeddingCount !== 1 ? 's' : ''}
+                    {sourceFile ? ` · latest: ${sourceFile}` : ''}
+                  </span>
+                )}
+                {rebuildingSpeaker === item.name && (
+                  <span className="ml-2 text-[10px] text-indigo-600">Rebuilding voice print…</span>
+                )}
+              </div>
+              {hasEmbedding && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleDeleteVoicePrint(item) }}
+                  className="flex-shrink-0 px-2 py-1 text-xs text-red-600 hover:bg-red-100 rounded border border-red-200 transition-colors"
+                  title="Delete voice print only. Clips remain."
+                >
+                  Delete print
+                </button>
+              )}
             </div>
             {loadingSamples[item.name] ? (
               <MiniIceCreamLoader />
@@ -543,8 +782,22 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
                           </div>
                           <div className="flex items-center gap-2 text-xs text-gray-400">
                             <span>{formatFileSize(sample.file_size)}</span>
+                            {sample.source && (
+                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                                sample.source === 'harvest'
+                                  ? 'bg-amber-100 text-amber-700'
+                                  : sample.source === 'auto'
+                                  ? 'bg-blue-100 text-blue-700'
+                                  : sample.source === 'manual'
+                                  ? 'bg-green-100 text-green-700'
+                                  : 'bg-gray-100 text-gray-600'
+                              }`}>
+                                {sample.source}
+                              </span>
+                            )}
                             {sample.episode_title && (
                               <span className="text-gray-500">
+                                {sample.episode_number ? `Ep ${sample.episode_number}: ` : ''}
                                 {sample.episode_title.length > 30
                                   ? sample.episode_title.substring(0, 30) + '...'
                                   : sample.episode_title}
@@ -566,6 +819,13 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
                                 : sample.transcript_text}"
                             </div>
                           )}
+                          {sample.segment_idx != null && (
+                            <div className="mt-1 flex justify-end">
+                              <span className="px-1.5 py-0.5 rounded text-[10px] bg-purple-50 text-purple-600 border border-purple-200">
+                                seg #{sample.segment_idx}
+                              </span>
+                            </div>
+                          )}
                         </div>
                       </div>
                       <div className="flex items-center gap-1 flex-shrink-0">
@@ -583,7 +843,7 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
                         <button
                           onClick={() => handleDeleteSample(item.name, sample)}
                           className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
-                          title="Delete sample"
+                          title="Delete sample (voice print auto-refreshes)"
                         >
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -613,22 +873,52 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
                 Manage speakers and sound bites used for automatic audio identification
               </p>
             </div>
-            <button
-              onClick={() => {
-                setShowAddForm(true)
-                setEditingSpeaker(null)
-                setFormData({ name: '', shortName: '', isHost: false })
-              }}
-              className="px-3 py-2 bg-white/20 hover:bg-white/30 text-white rounded-lg font-medium text-sm transition-colors"
-            >
-              + Add Speaker
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleRebuildVoiceLibrary}
+                disabled={rebuildRunning}
+                className="px-3 py-2 bg-white/10 hover:bg-white/20 disabled:opacity-50 text-white/80 hover:text-white rounded-lg text-xs transition-colors flex items-center gap-1.5"
+                title="Recalibrate all voice prints from scratch — use if prints seem inaccurate or if you manually placed sample files"
+              >
+                {rebuildRunning ? (
+                  <span className="animate-spin text-xs">⟳</span>
+                ) : (
+                  <span className="text-xs">🔧</span>
+                )}
+                {rebuildRunning ? 'Recalibrating...' : 'Recalibrate All'}
+              </button>
+              <button
+                onClick={handleVoiceHarvest}
+                disabled={harvestRunning}
+                className="px-3 py-2 bg-white/20 hover:bg-white/30 disabled:opacity-50 text-white rounded-lg font-medium text-sm transition-colors flex items-center gap-1.5"
+                title="Auto-harvest voice samples from reviewed/diarized episodes"
+              >
+                {harvestRunning ? (
+                  <span className="animate-spin text-xs">⟳</span>
+                ) : (
+                  <span className="text-xs">🌾</span>
+                )}
+                {harvestRunning
+                  ? (harvestProgress || 'Harvesting...')
+                  : 'Harvest Samples'}
+              </button>
+              <button
+                onClick={() => {
+                  setShowAddForm(true)
+                  setEditingSpeaker(null)
+                  setFormData({ name: '', shortName: '', isHost: false, isGuest: false, isScoop: false })
+                }}
+                className="px-3 py-2 bg-white/20 hover:bg-white/30 text-white rounded-lg font-medium text-sm transition-colors"
+              >
+                + Add Speaker
+              </button>
+            </div>
           </div>
         </div>
 
         {/* Add/Edit Form */}
         {(showAddForm || editingSpeaker) && (
-          <div className="p-4 bg-purple-50 border-b border-purple-200">
+          <div ref={editFormRef} className="p-4 bg-purple-50 border-b border-purple-200">
             <h3 className="font-medium text-purple-800 mb-3">
               {editingSpeaker ? 'Edit Speaker' : 'Add New Speaker'}
             </h3>
@@ -639,9 +929,15 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
                   type="text"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  list="speaker-name-suggestions"
                   placeholder="e.g., Matt Donnelly"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
                 />
+                <datalist id="speaker-name-suggestions">
+                  {[...new Set([...speakers.map(s => s.name), ...voiceLibrary.map(v => v.name)])].map(name => (
+                    <option key={name} value={name} />
+                  ))}
+                </datalist>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Short Name</label>
@@ -653,7 +949,7 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
                 />
               </div>
-              <div className="flex items-end gap-4">
+              <div className="flex items-end gap-4 flex-wrap">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
@@ -661,7 +957,25 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
                     onChange={(e) => setFormData({ ...formData, isHost: e.target.checked })}
                     className="w-4 h-4 text-purple-500 border-gray-300 rounded focus:ring-purple-400"
                   />
-                  <span className="text-sm text-gray-700">Is Host</span>
+                  <span className="text-sm text-gray-700">Host</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.isGuest}
+                    onChange={(e) => setFormData({ ...formData, isGuest: e.target.checked })}
+                    className="w-4 h-4 text-amber-500 border-gray-300 rounded focus:ring-amber-400"
+                  />
+                  <span className="text-sm text-gray-700">Guest</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.isScoop}
+                    onChange={(e) => setFormData({ ...formData, isScoop: e.target.checked })}
+                    className="w-4 h-4 text-indigo-500 border-gray-300 rounded focus:ring-indigo-400"
+                  />
+                  <span className="text-sm text-gray-700">Scoop</span>
                 </label>
               </div>
             </div>
@@ -709,103 +1023,24 @@ export default function SpeakersPanel({ onNotification, onViewEpisode }) {
               )}
 
               {/* Unlinked voice entries that could be speakers */}
-              {unlinkedEntries.length > 0 && (
+              {unlinkedRows.length > 0 && (
                 <>
-                  <div className="text-xs text-gray-400 uppercase tracking-wide mt-4 mb-1 px-1">
-                    Voice Library Only (not added as speaker)
-                  </div>
-                  {unlinkedEntries.map(v => (
-                    <div key={v.name}>
-                      <div className="flex items-center justify-between px-4 py-2.5 rounded-lg border border-dashed border-yellow-300 bg-yellow-50">
-                        <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-sm bg-yellow-500">
-                            {v.short_name.charAt(0).toUpperCase()}
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium text-gray-800">{v.name}</span>
-                              <span className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-xs font-medium">
-                                Voice Print ({v.sample_count || 0}x)
-                              </span>
-                            </div>
-                            {v.sample_file && (
-                              <div className="text-xs text-gray-400 mt-0.5">Source: {v.sample_file}</div>
-                            )}
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => {
-                            if (inlineAddSpeaker === v.name) {
-                              setInlineAddSpeaker(null)
-                            } else {
-                              setInlineAddSpeaker(v.name)
-                              setInlineAddForm({ name: v.name, shortName: v.short_name || '', isHost: false })
-                              setShowAddForm(false)
-                              setEditingSpeaker(null)
-                            }
-                          }}
-                          className={`px-3 py-1 text-xs rounded border transition-colors ${
-                            inlineAddSpeaker === v.name
-                              ? 'bg-purple-100 text-purple-700 border-purple-300'
-                              : 'text-purple-600 hover:bg-purple-100 border-purple-200'
-                          }`}
-                        >
-                          {inlineAddSpeaker === v.name ? 'Cancel' : 'Add as Speaker'}
-                        </button>
-                      </div>
-                      {/* Inline add form — pops right under this card */}
-                      {inlineAddSpeaker === v.name && (
-                        <div className="mt-1 p-3 bg-purple-50 rounded-lg border border-purple-200">
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                            <div>
-                              <label className="block text-xs font-medium text-gray-600 mb-1">Full Name *</label>
-                              <input
-                                type="text"
-                                value={inlineAddForm.name}
-                                onChange={(e) => setInlineAddForm(f => ({ ...f, name: e.target.value }))}
-                                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-purple-500"
-                                autoFocus
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs font-medium text-gray-600 mb-1">Short Name</label>
-                              <input
-                                type="text"
-                                value={inlineAddForm.shortName}
-                                onChange={(e) => setInlineAddForm(f => ({ ...f, shortName: e.target.value }))}
-                                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-purple-500"
-                              />
-                            </div>
-                            <div className="flex items-end gap-3">
-                              <label className="flex items-center gap-1.5 cursor-pointer text-sm text-gray-700">
-                                <input
-                                  type="checkbox"
-                                  checked={inlineAddForm.isHost}
-                                  onChange={(e) => setInlineAddForm(f => ({ ...f, isHost: e.target.checked }))}
-                                  className="w-3.5 h-3.5"
-                                />
-                                Is Host
-                              </label>
-                            </div>
-                          </div>
-                          <div className="flex gap-2 mt-3">
-                            <button
-                              onClick={handleInlineAddSpeaker}
-                              className="px-3 py-1.5 bg-purple-500 hover:bg-purple-600 text-white rounded text-xs font-medium transition-colors"
-                            >
-                              Add Speaker
-                            </button>
-                            <button
-                              onClick={() => setInlineAddSpeaker(null)}
-                              className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded text-xs transition-colors"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        </div>
-                      )}
+                  <div className="mt-4 mb-1 px-1 flex items-center justify-between gap-2">
+                    <div className="text-xs text-gray-500 uppercase tracking-wide">
+                      Voice Library Only (not added as speaker)
                     </div>
-                  ))}
+                    {placeholderUnlinkedCount > 0 && (
+                      <button
+                        onClick={handlePurgePlaceholderUnlinked}
+                        className="px-2 py-1 text-[11px] rounded border border-red-200 text-red-600 hover:bg-red-50 transition-colors"
+                        title="Delete placeholder entries like Speaker_17 that were harvested before naming"
+                      >
+                        Delete {placeholderUnlinkedCount} placeholder{placeholderUnlinkedCount === 1 ? '' : 's'}
+                      </button>
+                    )}
+                  </div>
+                  {purgeRunning && <MiniIceCreamLoader />}
+                  {unlinkedRows.map(row => renderRow(row, 'unlinked'))}
                 </>
               )}
             </div>

@@ -232,9 +232,11 @@ impl Database {
                 description TEXT,
                 catchphrase TEXT,
                 first_episode_id INTEGER,
+                speaker_id INTEGER,
                 image_url TEXT,
                 created_at TEXT DEFAULT (datetime('now', 'localtime')),
-                FOREIGN KEY (first_episode_id) REFERENCES episodes(id)
+                FOREIGN KEY (first_episode_id) REFERENCES episodes(id),
+                FOREIGN KEY (speaker_id) REFERENCES speakers(id)
             );
 
             -- Character appearances in episodes
@@ -383,7 +385,8 @@ impl Database {
                 ('Closing', 'Episode wrap-up', '#6b7280', '👋', 6),
                 ('Interview', 'Guest interview segment', '#14b8a6', '🎤', 7),
                 ('News', 'Current events discussion', '#ef4444', '📰', 8),
-                ('Bit', 'Comedy bit or recurring joke', '#f97316', '😂', 9);
+                ('Bit', 'Comedy bit or recurring joke', '#f97316', '😂', 9),
+                ('Commercial', 'Sponsor commercial segment', '#f97316', '📺', 10);
 
             -- Insert default hosts if not exists
             INSERT OR IGNORE INTO speakers (name, short_name, is_host) VALUES
@@ -397,6 +400,11 @@ impl Database {
             -- Insert default settings
             INSERT OR IGNORE INTO app_settings (key, value) VALUES
                 ('auto_transcribe', 'false'),
+                ('pause_transcribe_queue', 'false'),
+                ('pause_diarize_queue', 'false'),
+                ('priority_reprocess_pause_transcribe', 'false'),
+                ('embedding_model', 'pyannote'),
+                ('hf_hub_offline', 'false'),
                 ('transcription_model', 'medium'),
                 ('enable_diarization', 'true'),
                 ('ollama_model', 'llama3.2:3b');
@@ -458,6 +466,10 @@ Mark the start time of each segment.',
             "ALTER TABLE transcription_queue ADD COLUMN queue_type TEXT DEFAULT 'full'",
             [],
         ); // Ignore error if column already exists
+        let _ = conn.execute(
+            "ALTER TABLE transcription_queue ADD COLUMN embedding_backend_override TEXT",
+            [],
+        ); // Ignore error if column already exists
 
         // Migration: Add category columns to episodes (idempotent)
         let _ = conn.execute(
@@ -498,6 +510,14 @@ Mark the start time of each segment.',
         );
         let _ = conn.execute(
             "ALTER TABLE episodes ADD COLUMN diarized_date TEXT",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE episodes ADD COLUMN transcription_model_used TEXT",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE episodes ADD COLUMN embedding_backend_used TEXT",
             [],
         );
 
@@ -606,6 +626,16 @@ Mark the start time of each segment.',
             "ALTER TABLE episode_speakers ADD COLUMN audio_drop_id INTEGER REFERENCES audio_drops(id) ON DELETE SET NULL",
             [],
         ); // Ignore error if column already exists
+
+        // Migration: Add confidence + source to episode_speakers (voice feedback loop)
+        let _ = conn.execute(
+            "ALTER TABLE episode_speakers ADD COLUMN confidence REAL",
+            [],
+        ); // source values: 'manual' | 'auto' | 'harvest'
+        let _ = conn.execute(
+            "ALTER TABLE episode_speakers ADD COLUMN source TEXT DEFAULT 'manual'",
+            [],
+        );
         let _ = conn.execute_batch(
             "CREATE INDEX IF NOT EXISTS idx_episode_speakers_drop ON episode_speakers(audio_drop_id);",
         );
@@ -629,6 +659,7 @@ Mark the start time of each segment.',
                 transcript_text TEXT,
                 file_path TEXT NOT NULL,
                 rating INTEGER DEFAULT 0,
+                source TEXT DEFAULT 'manual',
                 created_at TEXT DEFAULT (datetime('now', 'localtime')),
                 FOREIGN KEY (episode_id) REFERENCES episodes(id) ON DELETE SET NULL
             );
@@ -636,6 +667,10 @@ Mark the start time of each segment.',
             CREATE INDEX IF NOT EXISTS idx_voice_samples_episode ON voice_samples(episode_id);
             "#,
         )?;
+        let _ = conn.execute(
+            "ALTER TABLE voice_samples ADD COLUMN source TEXT DEFAULT 'manual'",
+            [],
+        );
 
         // Pipeline error log — persists across restarts for post-crash debugging
         conn.execute_batch(
@@ -684,6 +719,48 @@ Mark the start time of each segment.',
             CREATE INDEX IF NOT EXISTS idx_seg_class_approved ON segment_classifications(approved);
             "#,
         )?;
+
+        // Transcript corrections (Scoop Polish — text correction + multi-speaker detection)
+        conn.execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS transcript_corrections (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                episode_id INTEGER NOT NULL,
+                segment_idx INTEGER NOT NULL,
+                original_text TEXT NOT NULL,
+                corrected_text TEXT NOT NULL,
+                has_multiple_speakers INTEGER DEFAULT 0,
+                speaker_change_note TEXT,
+                confidence REAL,
+                approved INTEGER DEFAULT 0,
+                created_at TEXT DEFAULT (datetime('now', 'localtime')),
+                FOREIGN KEY (episode_id) REFERENCES episodes(id) ON DELETE CASCADE,
+                UNIQUE(episode_id, segment_idx)
+            );
+            CREATE INDEX IF NOT EXISTS idx_transcript_corrections_episode ON transcript_corrections(episode_id);
+            CREATE INDEX IF NOT EXISTS idx_transcript_corrections_approved ON transcript_corrections(approved);
+            "#,
+        )?;
+
+        // Migration: Add is_guest and is_scoop columns to speakers (idempotent)
+        let _ = conn.execute(
+            "ALTER TABLE speakers ADD COLUMN is_guest INTEGER DEFAULT 0",
+            [],
+        ); // Ignore error if column already exists
+        let _ = conn.execute(
+            "ALTER TABLE speakers ADD COLUMN is_scoop INTEGER DEFAULT 0",
+            [],
+        ); // Ignore error if column already exists
+
+        // Migration: Add speaker_id to characters (idempotent)
+        let _ = conn.execute(
+            "ALTER TABLE characters ADD COLUMN speaker_id INTEGER REFERENCES speakers(id)",
+            [],
+        ); // Ignore error if column already exists
+        let _ = conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_characters_speaker ON characters(speaker_id)",
+            [],
+        );
 
         Ok(())
     }
@@ -1704,6 +1781,16 @@ Mark the start time of each segment.',
     /// Requeue an episode for diarization only, with race condition protection.
     /// Returns error if the episode is currently being processed.
     pub fn requeue_for_diarization(&self, episode_id: i64, priority: i32) -> Result<()> {
+        self.requeue_for_diarization_with_backend(episode_id, priority, None)
+    }
+
+    /// Requeue an episode for diarization only and optionally force an embedding backend override.
+    pub fn requeue_for_diarization_with_backend(
+        &self,
+        episode_id: i64,
+        priority: i32,
+        embedding_backend_override: Option<&str>,
+    ) -> Result<()> {
         let conn = self.conn.lock().unwrap();
 
         // Check current queue status
@@ -1724,8 +1811,8 @@ Mark the start time of each segment.',
             Some("pending") => {
                 // Already pending, just update priority and queue_type
                 conn.execute(
-                    "UPDATE transcription_queue SET priority = ?, queue_type = 'diarize_only' WHERE episode_id = ?",
-                    params![priority, episode_id],
+                    "UPDATE transcription_queue SET priority = ?, queue_type = 'diarize_only', embedding_backend_override = ? WHERE episode_id = ?",
+                    params![priority, embedding_backend_override, episode_id],
                 )?;
             }
             Some(_) => {
@@ -1733,18 +1820,18 @@ Mark the start time of each segment.',
                 let now = chrono::Local::now().to_rfc3339();
                 conn.execute(
                     "UPDATE transcription_queue SET status = 'pending', priority = ?, queue_type = 'diarize_only', \
-                     added_to_queue_date = ?, retry_count = 0, error_message = NULL, \
+                     embedding_backend_override = ?, added_to_queue_date = ?, retry_count = 0, error_message = NULL, \
                      started_date = NULL, completed_date = NULL WHERE episode_id = ?",
-                    params![priority, now, episode_id],
+                    params![priority, embedding_backend_override, now, episode_id],
                 )?;
             }
             None => {
                 // No row exists - insert
                 let now = chrono::Local::now().to_rfc3339();
                 conn.execute(
-                    "INSERT INTO transcription_queue (episode_id, priority, status, queue_type, added_to_queue_date, retry_count) \
-                     VALUES (?, ?, 'pending', 'diarize_only', ?, 0)",
-                    params![episode_id, priority, now],
+                    "INSERT INTO transcription_queue (episode_id, priority, status, queue_type, embedding_backend_override, added_to_queue_date, retry_count) \
+                     VALUES (?, ?, 'pending', 'diarize_only', ?, ?, 0)",
+                    params![episode_id, priority, embedding_backend_override, now],
                 )?;
             }
         }
@@ -1848,6 +1935,32 @@ Mark the start time of each segment.',
             )
             .optional()?;
         Ok(result)
+    }
+
+    /// Get per-episode embedding backend override from queue, if set.
+    pub fn get_queue_embedding_override(&self, episode_id: i64) -> Result<Option<String>> {
+        let conn = self.conn.lock().unwrap();
+        let result = conn
+            .query_row(
+                "SELECT embedding_backend_override FROM transcription_queue WHERE episode_id = ?",
+                params![episode_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(result)
+    }
+
+    /// Count priority diarize-only items that are still pending/processing.
+    pub fn count_priority_diarization_items(&self, min_priority: i32) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM transcription_queue \
+             WHERE queue_type = 'diarize_only' AND priority >= ? \
+             AND status IN ('pending', 'processing')",
+            params![min_priority],
+            |row| row.get(0),
+        )?;
+        Ok(count)
     }
 
     // =========================================================================
@@ -1967,6 +2080,20 @@ Mark the start time of each segment.',
         Ok(())
     }
 
+    pub fn update_episode_pipeline_identity(
+        &self,
+        episode_id: i64,
+        transcription_model: &str,
+        embedding_backend: &str,
+    ) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE episodes SET transcription_model_used = ?, embedding_backend_used = ? WHERE id = ?",
+            params![transcription_model, embedding_backend, episode_id],
+        )?;
+        Ok(())
+    }
+
     pub fn get_pipeline_timing_stats(&self) -> Result<PipelineTimingStats> {
         let conn = self.conn.lock().unwrap();
 
@@ -2028,11 +2155,16 @@ Mark the start time of each segment.',
     pub fn get_recently_completed_episodes(&self, limit: i64) -> Result<Vec<CompletedEpisodeTiming>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, title, episode_number, duration, download_duration, transcribe_duration,
-                    diarize_duration, processing_time, transcribed_date
-             FROM episodes
-             WHERE transcribe_duration IS NOT NULL AND canonical_id IS NULL
-             ORDER BY transcribed_date DESC
+            "SELECT e.id, e.title, e.episode_number, e.duration, e.download_duration, e.transcribe_duration,
+                    e.diarize_duration, e.processing_time,
+                    COALESCE(q.completed_date, e.diarized_date, e.transcribed_date) AS completed_date,
+                    e.transcription_model_used, e.embedding_backend_used,
+                    q.queue_type
+             FROM episodes e
+             LEFT JOIN transcription_queue q ON q.episode_id = e.id
+             WHERE (e.transcribe_duration IS NOT NULL OR e.diarize_duration IS NOT NULL)
+               AND e.canonical_id IS NULL
+             ORDER BY datetime(COALESCE(q.completed_date, e.diarized_date, e.transcribed_date)) DESC
              LIMIT ?",
         )?;
         let items = stmt.query_map(params![limit], |row| {
@@ -2046,6 +2178,9 @@ Mark the start time of each segment.',
                 diarize_duration: row.get(6)?,
                 total_duration: row.get(7)?,
                 completed_date: row.get(8)?,
+                transcription_model_used: row.get(9)?,
+                embedding_backend_used: row.get(10)?,
+                last_queue_type: row.get(11)?,
             })
         })?.collect::<Result<Vec<_>, _>>()?;
         Ok(items)
@@ -2054,7 +2189,14 @@ Mark the start time of each segment.',
     /// Get episodes for queue display.
     /// Transcribe list: ALL untranscribed non-canonical episodes (whether queued or not), with is_downloaded.
     /// Diarize list: pending diarize_only queue items.
-    pub fn get_queue_episode_lists(&self) -> Result<(Vec<(i64, String, Option<i64>, String, bool)>, Vec<(i64, String, Option<i64>, String)>)> {
+    pub fn get_queue_episode_lists(
+        &self,
+    ) -> Result<
+        (
+            Vec<(i64, String, Option<i64>, String, bool)>,
+            Vec<(i64, String, Option<i64>, String, Option<String>, i32)>,
+        ),
+    > {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT e.id, e.title, CAST(e.episode_number AS INTEGER),
@@ -2072,7 +2214,8 @@ Mark the start time of each segment.',
         })?.filter_map(|r| r.ok()).collect();
 
         let mut stmt2 = conn.prepare(
-            "SELECT e.id, e.title, CAST(e.episode_number AS INTEGER), q.added_to_queue_date
+            "SELECT e.id, e.title, CAST(e.episode_number AS INTEGER), q.added_to_queue_date,
+                    q.embedding_backend_override, q.priority
              FROM transcription_queue q
              JOIN episodes e ON q.episode_id = e.id
              WHERE q.status IN ('pending', 'processing')
@@ -2080,7 +2223,14 @@ Mark the start time of each segment.',
              ORDER BY q.priority DESC, q.added_to_queue_date ASC"
         )?;
         let diarize_queue = stmt2.query_map([], |row| {
-            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?, row.get::<_, Option<i64>>(2)?, row.get::<_, String>(3)?))
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<i64>>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, Option<String>>(4)?,
+                row.get::<_, i32>(5)?,
+            ))
         })?.filter_map(|r| r.ok()).collect();
 
         Ok((transcribe_queue, diarize_queue))
@@ -2135,7 +2285,7 @@ Mark the start time of each segment.',
     pub fn get_speakers(&self) -> Result<Vec<Speaker>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, name, short_name, description, is_host, image_url, created_at
+            "SELECT id, name, short_name, description, is_host, is_guest, is_scoop, image_url, created_at
              FROM speakers ORDER BY is_host DESC, name ASC"
         )?;
         let rows = stmt.query_map([], |row| {
@@ -2145,8 +2295,10 @@ Mark the start time of each segment.',
                 short_name: row.get(2)?,
                 description: row.get(3)?,
                 is_host: row.get::<_, i32>(4)? == 1,
-                image_url: row.get(5)?,
-                created_at: row.get(6)?,
+                is_guest: row.get::<_, i32>(5).unwrap_or(0) == 1,
+                is_scoop: row.get::<_, i32>(6).unwrap_or(0) == 1,
+                image_url: row.get(7)?,
+                created_at: row.get(8)?,
             })
         })?;
         let mut speakers = Vec::new();
@@ -2156,28 +2308,102 @@ Mark the start time of each segment.',
         Ok(speakers)
     }
 
-    pub fn create_speaker(&self, name: &str, short_name: Option<&str>, is_host: bool) -> Result<i64> {
+    pub fn create_speaker(&self, name: &str, short_name: Option<&str>, is_host: bool, is_guest: bool, is_scoop: bool) -> Result<i64> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT INTO speakers (name, short_name, is_host) VALUES (?, ?, ?)",
-            params![name, short_name, if is_host { 1 } else { 0 }],
+            "INSERT INTO speakers (name, short_name, is_host, is_guest, is_scoop) VALUES (?, ?, ?, ?, ?)",
+            params![name, short_name, if is_host { 1 } else { 0 }, if is_guest { 1 } else { 0 }, if is_scoop { 1 } else { 0 }],
         )?;
         Ok(conn.last_insert_rowid())
     }
 
-    pub fn update_speaker(&self, id: i64, name: &str, short_name: Option<&str>, is_host: bool) -> Result<()> {
+    pub fn update_speaker(&self, id: i64, name: &str, short_name: Option<&str>, is_host: bool, is_guest: bool, is_scoop: bool) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "UPDATE speakers SET name = ?, short_name = ?, is_host = ? WHERE id = ?",
-            params![name, short_name, if is_host { 1 } else { 0 }, id],
+            "UPDATE speakers SET name = ?, short_name = ?, is_host = ?, is_guest = ?, is_scoop = ? WHERE id = ?",
+            params![name, short_name, if is_host { 1 } else { 0 }, if is_guest { 1 } else { 0 }, if is_scoop { 1 } else { 0 }, id],
         )?;
         Ok(())
     }
 
     pub fn delete_speaker(&self, id: i64) -> Result<()> {
         let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE episode_speakers SET speaker_id = NULL WHERE speaker_id = ?",
+            params![id],
+        )?;
+        conn.execute(
+            "UPDATE characters SET speaker_id = NULL WHERE speaker_id = ?",
+            params![id],
+        )?;
         conn.execute("DELETE FROM speakers WHERE id = ?", params![id])?;
         Ok(())
+    }
+
+    pub fn get_or_create_speaker_id_by_name(&self, name: &str) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        if let Ok(id) = conn.query_row(
+            "SELECT id FROM speakers WHERE name = ?1",
+            params![name],
+            |row| row.get(0),
+        ) {
+            return Ok(id);
+        }
+        let short_name = name.split_whitespace().next().unwrap_or(name).to_string();
+        conn.execute(
+            "INSERT INTO speakers (name, short_name, is_host, is_guest, is_scoop) VALUES (?1, ?2, 0, 0, 0)",
+            params![name, short_name],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    pub fn get_diarization_labels_for_episode(&self, episode_id: i64) -> Result<Vec<String>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT DISTINCT speaker FROM transcript_segments WHERE episode_id = ?1 AND speaker IS NOT NULL",
+        )?;
+        let labels = stmt
+            .query_map([episode_id], |row| row.get::<_, String>(0))?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(labels)
+    }
+
+    pub fn get_episode_speaker_assignment_state(
+        &self,
+        episode_id: i64,
+        diarization_label: &str,
+    ) -> Result<Option<(Option<i64>, Option<i64>)>> {
+        let conn = self.conn.lock().unwrap();
+        let result = conn
+            .query_row(
+                "SELECT speaker_id, audio_drop_id FROM episode_speakers WHERE episode_id = ?1 AND diarization_label = ?2",
+                params![episode_id, diarization_label],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .ok();
+        Ok(result)
+    }
+
+    pub fn auto_create_unknown_speakers_for_episode(&self, episode_id: i64) -> Result<i64> {
+        let labels = self.get_diarization_labels_for_episode(episode_id)?;
+        let mut created = 0;
+        for label in labels {
+            if !label.starts_with("SPEAKER_") {
+                continue;
+            }
+            if let Some((speaker_id, audio_drop_id)) = self.get_episode_speaker_assignment_state(episode_id, &label)? {
+                if speaker_id.is_some() || audio_drop_id.is_some() {
+                    continue;
+                }
+            }
+            let suffix = label.trim_start_matches("SPEAKER_");
+            let speaker_name = format!("Speaker_{}", suffix);
+            let speaker_id = self.get_or_create_speaker_id_by_name(&speaker_name)?;
+            self.link_episode_speaker(episode_id, &label, speaker_id)?;
+            created += 1;
+        }
+        Ok(created)
     }
 
     pub fn get_speaker_stats(&self) -> Result<Vec<SpeakerStats>> {
@@ -2220,6 +2446,34 @@ Mark the start time of each segment.',
         Ok(())
     }
 
+    /// Auto-assign a diarization label to a speaker based on voice library confidence.
+    /// Uses INSERT OR IGNORE so it never overwrites an existing manual assignment.
+    pub fn link_episode_speaker_auto(
+        &self,
+        episode_id: i64,
+        diarization_label: &str,
+        speaker_name: &str,
+        confidence: f64,
+    ) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        // Resolve speaker_id by name (case-insensitive)
+        let speaker_id: Option<i64> = conn.query_row(
+            "SELECT id FROM speakers WHERE LOWER(name) = LOWER(?1)",
+            params![speaker_name],
+            |row| row.get(0),
+        ).ok();
+        let Some(speaker_id) = speaker_id else {
+            return Ok(()); // Speaker not in DB — silently skip
+        };
+        // INSERT OR IGNORE — never overwrites manual assignments
+        conn.execute(
+            "INSERT OR IGNORE INTO episode_speakers (episode_id, diarization_label, speaker_id, confidence, source)
+             VALUES (?1, ?2, ?3, ?4, 'auto')",
+            params![episode_id, diarization_label, speaker_id, confidence],
+        )?;
+        Ok(())
+    }
+
     pub fn link_episode_audio_drop(&self, episode_id: i64, diarization_label: &str, audio_drop_id: i64) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
@@ -2227,6 +2481,47 @@ Mark the start time of each segment.',
              VALUES (?, ?, NULL, ?)",
             params![episode_id, diarization_label, audio_drop_id],
         )?;
+        Ok(())
+    }
+
+    /// Sync episode_speakers from a speaker_names map (label → display name).
+    /// For each SPEAKER_XX label that maps to a known speaker name, upserts a row in
+    /// episode_speakers so episode counts stay accurate. Labels already assigned to an
+    /// audio_drop are left untouched. Unknown names (guests not yet in speakers table)
+    /// are silently skipped.
+    pub fn sync_episode_speaker_names(
+        &self,
+        episode_id: i64,
+        speaker_names: &std::collections::HashMap<String, String>,
+    ) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        for (label, name) in speaker_names {
+            // Only process SPEAKER_XX labels (literal-name keys are self-referential)
+            if !label.starts_with("SPEAKER_") {
+                continue;
+            }
+            // Look up speaker by name
+            let speaker_id: Option<i64> = conn.query_row(
+                "SELECT id FROM speakers WHERE name = ?",
+                params![name],
+                |row| row.get(0),
+            ).ok();
+            let Some(speaker_id) = speaker_id else { continue };
+            // Don't overwrite an existing audio_drop assignment for this label
+            let has_drop: bool = conn.query_row(
+                "SELECT COUNT(*) FROM episode_speakers WHERE episode_id = ? AND diarization_label = ? AND audio_drop_id IS NOT NULL",
+                params![episode_id, label],
+                |row| row.get::<_, i64>(0),
+            ).unwrap_or(0) > 0;
+            if has_drop {
+                continue;
+            }
+            conn.execute(
+                "INSERT OR REPLACE INTO episode_speakers (episode_id, diarization_label, speaker_id, audio_drop_id)
+                 VALUES (?, ?, ?, NULL)",
+                params![episode_id, label, speaker_id],
+            )?;
+        }
         Ok(())
     }
 
@@ -2258,13 +2553,23 @@ Mark the start time of each segment.',
         end_time: f64,
         transcript_text: Option<&str>,
         file_path: &str,
+        source: Option<&str>,
     ) -> Result<i64> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT INTO voice_samples (speaker_name, episode_id, segment_idx, start_time, end_time, transcript_text, file_path)
-             SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7
+            "INSERT INTO voice_samples (speaker_name, episode_id, segment_idx, start_time, end_time, transcript_text, file_path, source)
+             SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8
              WHERE NOT EXISTS (SELECT 1 FROM voice_samples WHERE file_path = ?7)",
-            params![speaker_name, episode_id, segment_idx, start_time, end_time, transcript_text, file_path],
+            params![
+                speaker_name,
+                episode_id,
+                segment_idx,
+                start_time,
+                end_time,
+                transcript_text,
+                file_path,
+                source.unwrap_or("manual")
+            ],
         )?;
         Ok(conn.last_insert_rowid())
     }
@@ -2274,7 +2579,7 @@ Mark the start time of each segment.',
         let mut stmt = conn.prepare(
             "SELECT vs.id, vs.speaker_name, vs.episode_id, vs.segment_idx,
                     vs.start_time, vs.end_time, vs.transcript_text, vs.file_path,
-                    vs.rating, vs.created_at, e.title as episode_title
+                    vs.rating, vs.source, vs.created_at, e.title as episode_title, e.episode_number
              FROM voice_samples vs
              LEFT JOIN episodes e ON vs.episode_id = e.id
              WHERE vs.speaker_name = ?1
@@ -2291,8 +2596,10 @@ Mark the start time of each segment.',
                 transcript_text: row.get(6)?,
                 file_path: row.get(7)?,
                 rating: row.get(8)?,
-                created_at: row.get(9)?,
-                episode_title: row.get(10)?,
+                source: row.get(9)?,
+                created_at: row.get(10)?,
+                episode_title: row.get(11)?,
+                episode_number: row.get(12)?,
             })
         })?;
         let mut samples = Vec::new();
@@ -2321,6 +2628,25 @@ Mark the start time of each segment.',
         ).optional()?;
         conn.execute("DELETE FROM voice_samples WHERE id = ?1", params![id])?;
         Ok(file_path)
+    }
+
+    pub fn get_voice_sample_files_by_source(&self, source: &str) -> Result<Vec<String>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT file_path FROM voice_samples WHERE source = ?1 AND file_path IS NOT NULL AND file_path != ''"
+        )?;
+        let mut rows = stmt.query(params![source])?;
+        let mut files = Vec::new();
+        while let Some(row) = rows.next()? {
+            files.push(row.get::<_, String>(0)?);
+        }
+        Ok(files)
+    }
+
+    pub fn delete_voice_samples_by_source(&self, source: &str) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        let deleted = conn.execute("DELETE FROM voice_samples WHERE source = ?1", params![source])?;
+        Ok(deleted as i64)
     }
 
     pub fn unlink_episode_speaker(&self, episode_id: i64, diarization_label: &str) -> Result<()> {
@@ -2444,8 +2770,29 @@ Mark the start time of each segment.',
     // Chapter Types
     // =========================================================================
 
+    fn ensure_default_chapter_types(&self, conn: &rusqlite::Connection) -> Result<()> {
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM chapter_types", [], |row| row.get(0))?;
+        if count > 0 {
+            return Ok(());
+        }
+
+        conn.execute_batch(
+            r#"
+            INSERT INTO chapter_types (name, description, color, icon, sort_order) VALUES
+                ('Intro', 'Episode introduction and banter', '#22c55e', '🎬', 1),
+                ('Scoop Mail', 'Listener mail segment', '#3b82f6', '📧', 2),
+                ('Jock vs Nerd', 'Trivia competition segment', '#f59e0b', '🏆', 3),
+                ('Thank Yous', 'Patron acknowledgments', '#8b5cf6', '🙏', 4),
+                ('Patreon Extra', 'Bonus segment for patrons', '#14b8a6', '🎁', 5),
+                ('Commercial', 'Sponsor commercial segment', '#ec4899', '📺', 6);
+            "#
+        )?;
+        Ok(())
+    }
+
     pub fn get_chapter_types(&self) -> Result<Vec<models::ChapterType>> {
         let conn = self.conn.lock().unwrap();
+        self.ensure_default_chapter_types(&conn)?;
         let mut stmt = conn.prepare(
             "SELECT id, name, description, color, icon, sort_order FROM chapter_types ORDER BY sort_order"
         )?;
@@ -2481,7 +2828,7 @@ Mark the start time of each segment.',
             r#"SELECT ec.id, ec.episode_id, ec.chapter_type_id, ct.name, ct.color, ct.icon,
                       ec.title, ec.start_time, ec.end_time, ec.start_segment_idx, ec.end_segment_idx, ec.notes
                FROM episode_chapters ec
-               JOIN chapter_types ct ON ec.chapter_type_id = ct.id
+               LEFT JOIN chapter_types ct ON ec.chapter_type_id = ct.id
                WHERE ec.episode_id = ?1
                ORDER BY ec.start_time"#
         )?;
@@ -2590,6 +2937,28 @@ Mark the start time of each segment.',
         Ok(rows)
     }
 
+    /// Get transcript segments with timing info (for AI chapter detection)
+    pub fn get_transcript_segments_for_episode_full(
+        &self,
+        episode_id: i64,
+    ) -> Result<Vec<(i32, String, f64, Option<f64>)>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT segment_idx, text, start_time, end_time FROM transcript_segments WHERE episode_id = ?1 ORDER BY segment_idx",
+        )?;
+        let rows = stmt.query_map([episode_id], |row| {
+            Ok((
+                row.get::<_, i32>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, f64>(2)?,
+                row.get::<_, Option<f64>>(3)?,
+            ))
+        })?
+        .filter_map(|r| r.ok())
+        .collect();
+        Ok(rows)
+    }
+
     // =========================================================================
     // Characters
     // =========================================================================
@@ -2599,9 +2968,11 @@ Mark the start time of each segment.',
         let mut stmt = conn.prepare(
             r#"SELECT c.id, c.name, c.short_name, c.description, c.catchphrase,
                       c.first_episode_id, e.title, c.image_url,
+                      c.speaker_id, s.name,
                       (SELECT COUNT(*) FROM character_appearances WHERE character_id = c.id) as appearance_count
                FROM characters c
                LEFT JOIN episodes e ON c.first_episode_id = e.id
+               LEFT JOIN speakers s ON c.speaker_id = s.id
                ORDER BY c.name"#
         )?;
         let chars = stmt.query_map([], |row| {
@@ -2614,26 +2985,28 @@ Mark the start time of each segment.',
                 first_episode_id: row.get(5)?,
                 first_episode_title: row.get(6)?,
                 image_url: row.get(7)?,
-                appearance_count: row.get(8)?,
+                speaker_id: row.get(8)?,
+                speaker_name: row.get(9)?,
+                appearance_count: row.get(10)?,
             })
         })?.filter_map(|r| r.ok()).collect();
         Ok(chars)
     }
 
-    pub fn create_character(&self, name: &str, short_name: Option<&str>, description: Option<&str>, catchphrase: Option<&str>) -> Result<i64> {
+    pub fn create_character(&self, name: &str, short_name: Option<&str>, description: Option<&str>, catchphrase: Option<&str>, speaker_id: Option<i64>) -> Result<i64> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT INTO characters (name, short_name, description, catchphrase) VALUES (?1, ?2, ?3, ?4)",
-            params![name, short_name, description, catchphrase]
+            "INSERT INTO characters (name, short_name, description, catchphrase, speaker_id) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![name, short_name, description, catchphrase, speaker_id]
         )?;
         Ok(conn.last_insert_rowid())
     }
 
-    pub fn update_character(&self, id: i64, name: &str, short_name: Option<&str>, description: Option<&str>, catchphrase: Option<&str>) -> Result<()> {
+    pub fn update_character(&self, id: i64, name: &str, short_name: Option<&str>, description: Option<&str>, catchphrase: Option<&str>, speaker_id: Option<i64>) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "UPDATE characters SET name = ?1, short_name = ?2, description = ?3, catchphrase = ?4 WHERE id = ?5",
-            params![name, short_name, description, catchphrase, id]
+            "UPDATE characters SET name = ?1, short_name = ?2, description = ?3, catchphrase = ?4, speaker_id = ?5 WHERE id = ?6",
+            params![name, short_name, description, catchphrase, speaker_id, id]
         )?;
         Ok(())
     }
@@ -2642,6 +3015,16 @@ Mark the start time of each segment.',
         let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM characters WHERE id = ?1", [id])?;
         Ok(())
+    }
+
+    pub fn get_character_speaker_name(&self, character_id: i64) -> Result<Option<String>> {
+        let conn = self.conn.lock().unwrap();
+        let name: Option<String> = conn.query_row(
+            "SELECT s.name FROM characters c LEFT JOIN speakers s ON c.speaker_id = s.id WHERE c.id = ?1",
+            [character_id],
+            |row| row.get(0),
+        ).ok();
+        Ok(name)
     }
 
     pub fn add_character_appearance(&self, character_id: i64, episode_id: i64, start_time: Option<f64>, end_time: Option<f64>, segment_idx: Option<i32>) -> Result<i64> {
@@ -3620,6 +4003,34 @@ Mark the start time of each segment.',
         Ok(appearances)
     }
 
+    /// Get character appearances for a character across episodes
+    pub fn get_character_appearances_for_character(&self, character_id: i64) -> Result<Vec<models::CharacterAppearance>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            r#"SELECT ca.id, ca.character_id, c.name, ca.episode_id, e.title,
+                      ca.start_time, ca.end_time, ca.segment_idx, ca.notes
+               FROM character_appearances ca
+               JOIN characters c ON ca.character_id = c.id
+               JOIN episodes e ON ca.episode_id = e.id
+               WHERE ca.character_id = ?1
+               ORDER BY e.episode_number DESC, ca.start_time NULLS LAST, ca.segment_idx NULLS LAST"#
+        )?;
+        let appearances = stmt.query_map([character_id], |row| {
+            Ok(models::CharacterAppearance {
+                id: row.get(0)?,
+                character_id: row.get(1)?,
+                character_name: row.get(2)?,
+                episode_id: row.get(3)?,
+                episode_title: row.get(4)?,
+                start_time: row.get(5)?,
+                end_time: row.get(6)?,
+                segment_idx: row.get(7)?,
+                notes: row.get(8)?,
+            })
+        })?.filter_map(|r| r.ok()).collect();
+        Ok(appearances)
+    }
+
     /// Delete a character appearance
     pub fn delete_character_appearance(&self, id: i64) -> Result<()> {
         let conn = self.conn.lock().unwrap();
@@ -3797,6 +4208,33 @@ Mark the start time of each segment.',
         Ok(path)
     }
 
+    /// Get the published_date for an episode (first 10 chars = YYYY-MM-DD).
+    pub fn get_episode_published_date(&self, episode_id: i64) -> Result<Option<String>> {
+        let conn = self.conn.lock().unwrap();
+        let date: Option<String> = conn.query_row(
+            "SELECT SUBSTR(published_date, 1, 10) FROM episodes WHERE id = ?1",
+            [episode_id],
+            |row| row.get(0),
+        ).optional()?;
+        Ok(date)
+    }
+
+    /// Get start_time, end_time, and text for a segment.
+    /// Returns None if the segment doesn't exist.
+    pub fn get_segment_times(
+        &self,
+        episode_id: i64,
+        segment_idx: i64,
+    ) -> Result<Option<(f64, f64, Option<String>)>> {
+        let conn = self.conn.lock().unwrap();
+        let result = conn.query_row(
+            "SELECT start_time, end_time, text FROM transcript_segments WHERE episode_id = ?1 AND segment_idx = ?2",
+            params![episode_id, segment_idx],
+            |row| Ok((row.get::<_, f64>(0)?, row.get::<_, f64>(1)?, row.get::<_, Option<String>>(2)?)),
+        ).optional()?;
+        Ok(result)
+    }
+
     // =========================================================================
     // Segment Classifications (Qwen audio analysis)
     // =========================================================================
@@ -3951,6 +4389,110 @@ Mark the start time of each segment.',
         )?;
         Ok(())
     }
+
+    // =========================================================================
+    // Transcript Corrections (Scoop Polish)
+    // =========================================================================
+
+    /// Save a batch of polish results (all pending, approved=0).
+    /// Replaces any existing pending correction for the same (episode_id, segment_idx).
+    pub fn save_transcript_corrections(
+        &self,
+        episode_id: i64,
+        results: &[serde_json::Value],
+    ) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
+        for result in results {
+            let segment_idx = result.get("segment_idx").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+            let original_text = result.get("original_text").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let corrected_text = result.get("corrected_text").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let has_multiple = result.get("has_multiple_speakers").and_then(|v| v.as_bool()).unwrap_or(false) as i32;
+            let speaker_change_note = result.get("speaker_change_note").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let confidence = result.get("confidence").and_then(|v| v.as_f64());
+
+            // Replace existing pending correction for this segment
+            conn.execute(
+                "DELETE FROM transcript_corrections WHERE episode_id = ?1 AND segment_idx = ?2 AND approved = 0",
+                params![episode_id, segment_idx],
+            )?;
+
+            conn.execute(
+                "INSERT INTO transcript_corrections
+                 (episode_id, segment_idx, original_text, corrected_text,
+                  has_multiple_speakers, speaker_change_note, confidence, approved, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, ?8)",
+                params![
+                    episode_id, segment_idx, original_text, corrected_text,
+                    has_multiple, speaker_change_note, confidence, now,
+                ],
+            )?;
+        }
+
+        Ok(())
+    }
+
+    /// Get all transcript corrections for an episode (with joined segment timing).
+    pub fn get_transcript_corrections(
+        &self,
+        episode_id: i64,
+    ) -> Result<Vec<models::TranscriptCorrection>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT tc.id, tc.episode_id, tc.segment_idx,
+                    tc.original_text, tc.corrected_text,
+                    tc.has_multiple_speakers, tc.speaker_change_note,
+                    tc.confidence, tc.approved, tc.created_at,
+                    ts.start_time
+             FROM transcript_corrections tc
+             LEFT JOIN transcript_segments ts
+               ON ts.episode_id = tc.episode_id AND ts.segment_idx = tc.segment_idx
+             WHERE tc.episode_id = ?1
+             ORDER BY tc.segment_idx ASC",
+        )?;
+        let rows = stmt.query_map([episode_id], |row| {
+            Ok(models::TranscriptCorrection {
+                id: row.get(0)?,
+                episode_id: row.get(1)?,
+                segment_idx: row.get(2)?,
+                original_text: row.get(3)?,
+                corrected_text: row.get(4)?,
+                has_multiple_speakers: {
+                    let v: i32 = row.get(5)?;
+                    v != 0
+                },
+                speaker_change_note: row.get(6)?,
+                confidence: row.get(7)?,
+                approved: row.get(8)?,
+                created_at: row.get(9)?,
+                segment_start_time: row.get(10)?,
+            })
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// Approve a correction: set approved=1.
+    /// The caller is responsible for also calling save_transcript_edits to write the text.
+    pub fn approve_transcript_correction(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE transcript_corrections SET approved = 1 WHERE id = ?1",
+            [id],
+        )?;
+        Ok(())
+    }
+
+    /// Reject a correction: set approved=-1.
+    pub fn reject_transcript_correction(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE transcript_corrections SET approved = -1 WHERE id = ?1",
+            [id],
+        )?;
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -3960,6 +4502,8 @@ pub struct Speaker {
     pub short_name: Option<String>,
     pub description: Option<String>,
     pub is_host: bool,
+    pub is_guest: bool,
+    pub is_scoop: bool,
     pub image_url: Option<String>,
     pub created_at: Option<String>,
 }
@@ -4010,6 +4554,9 @@ pub struct CompletedEpisodeTiming {
     pub diarize_duration: Option<f64>,
     pub total_duration: Option<f64>,
     pub completed_date: Option<String>,
+    pub transcription_model_used: Option<String>,
+    pub embedding_backend_used: Option<String>,
+    pub last_queue_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -1,5 +1,7 @@
+use crate::database::Database;
 use std::path::PathBuf;
 use std::process::Stdio;
+use std::sync::Arc;
 use tokio::io::AsyncBufReadExt;
 use tokio::io::BufReader;
 use tokio::process::Command;
@@ -14,6 +16,10 @@ pub struct DiarizeJob {
     pub audio_path: String,
     pub transcript_path: PathBuf,
     pub hints_path: Option<PathBuf>,
+    pub embedding_backend_override: Option<String>,
+    /// ISO date (YYYY-MM-DD) of the episode, for era-aware voice matching
+    pub episode_date: Option<String>,
+    pub db: Arc<Database>,
 }
 
 /// Result from a diarize task
@@ -95,6 +101,15 @@ async fn diarize_with_progress(
         token.to_string(),
     ];
 
+    let embedding_backend = job
+        .embedding_backend_override
+        .clone()
+        .or_else(|| job.db.get_setting("embedding_model").unwrap_or(None))
+        .filter(|v| v == "ecapa-tdnn" || v == "pyannote")
+        .unwrap_or_else(|| "pyannote".to_string());
+    args.push("--embedding-backend".to_string());
+    args.push(embedding_backend);
+
     // Pass hints file if available
     if let Some(hints_path) = &job.hints_path {
         log::info!("Passing diarization hints: {:?}", hints_path);
@@ -110,6 +125,12 @@ async fn diarize_with_progress(
                 }
             }
         }
+    }
+
+    // Pass episode date for era-aware voice matching
+    if let Some(ref date) = job.episode_date {
+        args.push("--episode-date".to_string());
+        args.push(date.clone());
     }
 
     // Run Python diarization script
@@ -180,6 +201,35 @@ async fn diarize_with_progress(
         match std::fs::read_to_string(&with_speakers_path) {
             Ok(content) => {
                 if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+                    // Auto-assign speakers identified with >= 0.75 confidence
+                    if let Some(names) = json.get("speaker_names").and_then(|v| v.as_object()) {
+                        let confidence_map = json.get("speaker_confidence")
+                            .and_then(|v| v.as_object())
+                            .cloned()
+                            .unwrap_or_default();
+
+                        for (label, name_val) in names {
+                            if let Some(speaker_name) = name_val.as_str() {
+                                let confidence = confidence_map.get(label)
+                                    .and_then(|c| c.as_f64())
+                                    .unwrap_or(0.0);
+
+                                if confidence >= 0.75 {
+                                    if let Err(e) = job.db.link_episode_speaker_auto(
+                                        job.episode_id, label, speaker_name, confidence
+                                    ) {
+                                        log::warn!("Auto-assign speaker failed for {}: {}", label, e);
+                                    } else {
+                                        log::info!(
+                                            "Auto-assigned {} → {} (confidence: {:.2})",
+                                            label, speaker_name, confidence
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     json.get("diarization")
                         .and_then(|d| d.get("num_speakers"))
                         .and_then(|n| n.as_i64())

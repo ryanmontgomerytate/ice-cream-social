@@ -404,7 +404,7 @@ export default function TranscriptModal({ episode, onClose }) {
     if (!name.trim()) return
 
     try {
-      const characterId = await contentAPI.createCharacter(name.trim(), null, null, null)
+      const characterId = await contentAPI.createCharacter(name.trim(), null, null, null, null)
       await addCharacterToSegment(idx, characterId)
       // Reload characters list
       const allCharacters = await contentAPI.getCharacters()
@@ -669,6 +669,23 @@ export default function TranscriptModal({ episode, onClose }) {
       audio.removeEventListener('play', handlePlay)
       audio.removeEventListener('pause', handlePause)
       audio.removeEventListener('ended', handleEnded)
+    }
+  }, [audioPath])
+
+  // Seek to initial timestamp when audio becomes available (handles cached audio where loadedmetadata fires before React handler attaches)
+  useEffect(() => {
+    if (!audioPath || !episode?.initialTimestamp) return
+    const audio = audioRef.current
+    if (!audio) return
+    const doSeek = () => {
+      audio.currentTime = episode.initialTimestamp
+      setCurrentTime(episode.initialTimestamp)
+    }
+    if (audio.readyState >= 1) {
+      doSeek()
+    } else {
+      audio.addEventListener('loadedmetadata', doSeek, { once: true })
+      return () => audio.removeEventListener('loadedmetadata', doSeek)
     }
   }, [audioPath])
 

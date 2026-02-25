@@ -11,6 +11,15 @@ echo -e "${BLUE}🍦 Ice Cream Social - API Quick Test${NC}"
 echo "======================================"
 echo ""
 
+# Rust backend sanity checks (Tauri)
+echo -e "${YELLOW}Rust Check: cargo check${NC}"
+(cd src-tauri && cargo check)
+echo ""
+
+echo -e "${YELLOW}Rust Tests: database::tests${NC}"
+(cd src-tauri && cargo test --package ice-cream-social --lib database::tests)
+echo ""
+
 # Test 1: Health Check
 echo -e "${YELLOW}Test 1: Health Check${NC}"
 curl -s $API/health | python3 -m json.tool

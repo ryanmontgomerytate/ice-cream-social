@@ -1,15 +1,20 @@
 import { useState, useEffect } from 'react'
-import { contentAPI, episodesAPI } from '../services/api'
+import { contentAPI, episodesAPI, speakersAPI } from '../services/api'
 import { useConfirm } from '../hooks/useConfirm'
 
-export default function CharactersPanel({ onNotification }) {
+export default function CharactersPanel({ onNotification, onViewEpisode }) {
   const confirm = useConfirm()
   const [characters, setCharacters] = useState([])
   const [episodes, setEpisodes] = useState([])
+  const [speakers, setSpeakers] = useState([])
   const [loading, setLoading] = useState(true)
   const [showAddForm, setShowAddForm] = useState(false)
   const [editingCharacter, setEditingCharacter] = useState(null)
-  const [formData, setFormData] = useState({ name: '', shortName: '', description: '', catchphrase: '' })
+  const [formData, setFormData] = useState({ name: '', shortName: '', description: '', catchphrase: '', speakerId: '' })
+  const [rebuildingSpeakerId, setRebuildingSpeakerId] = useState(null)
+  const [appearanceByCharacter, setAppearanceByCharacter] = useState({})
+  const [appearanceLoading, setAppearanceLoading] = useState({})
+  const [expandedCharacterIds, setExpandedCharacterIds] = useState([])
 
   // Quick Add state
   const [quickAdd, setQuickAdd] = useState({ characterName: '', episodeId: '', timestamp: '' })
@@ -18,6 +23,7 @@ export default function CharactersPanel({ onNotification }) {
   useEffect(() => {
     loadData()
     loadEpisodes()
+    loadSpeakers()
   }, [])
 
   const loadData = async () => {
@@ -47,6 +53,15 @@ export default function CharactersPanel({ onNotification }) {
     }
   }
 
+  const loadSpeakers = async () => {
+    try {
+      const data = await speakersAPI.getSpeakers()
+      setSpeakers(data)
+    } catch (error) {
+      console.error('Error loading speakers:', error)
+    }
+  }
+
   // Quick Add: Add character appearance (creates character if new)
   const handleQuickAdd = async () => {
     if (!quickAdd.characterName.trim()) {
@@ -69,7 +84,7 @@ export default function CharactersPanel({ onNotification }) {
       if (!character) {
         const newId = await contentAPI.createCharacter(
           quickAdd.characterName.trim(),
-          null, null, null
+          null, null, null, null
         )
         // Reload to get the new character
         const updatedChars = await contentAPI.getCharacters()
@@ -121,10 +136,11 @@ export default function CharactersPanel({ onNotification }) {
         formData.name.trim(),
         formData.shortName.trim() || null,
         formData.description.trim() || null,
-        formData.catchphrase.trim() || null
+        formData.catchphrase.trim() || null,
+        formData.speakerId ? parseInt(formData.speakerId) : null
       )
       onNotification?.(`Character "${formData.name}" added`, 'success')
-      setFormData({ name: '', shortName: '', description: '', catchphrase: '' })
+      setFormData({ name: '', shortName: '', description: '', catchphrase: '', speakerId: '' })
       setShowAddForm(false)
       loadData()
     } catch (error) {
@@ -140,11 +156,12 @@ export default function CharactersPanel({ onNotification }) {
         formData.name.trim(),
         formData.shortName.trim() || null,
         formData.description.trim() || null,
-        formData.catchphrase.trim() || null
+        formData.catchphrase.trim() || null,
+        formData.speakerId ? parseInt(formData.speakerId) : null
       )
       onNotification?.(`Character "${formData.name}" updated`, 'success')
       setEditingCharacter(null)
-      setFormData({ name: '', shortName: '', description: '', catchphrase: '' })
+      setFormData({ name: '', shortName: '', description: '', catchphrase: '', speakerId: '' })
       loadData()
     } catch (error) {
       onNotification?.(`Error updating character: ${error.message}`, 'error')
@@ -169,13 +186,67 @@ export default function CharactersPanel({ onNotification }) {
       shortName: character.short_name || '',
       description: character.description || '',
       catchphrase: character.catchphrase || '',
+      speakerId: character.speaker_id || '',
     })
     setShowAddForm(false)
   }
 
   const cancelEditing = () => {
     setEditingCharacter(null)
-    setFormData({ name: '', shortName: '', description: '', catchphrase: '' })
+    setFormData({ name: '', shortName: '', description: '', catchphrase: '', speakerId: '' })
+  }
+
+  const handleRebuildSpeaker = async (speakerId) => {
+    const speaker = speakers.find(s => s.id === speakerId)
+    if (!speaker) return
+    setRebuildingSpeakerId(speakerId)
+    try {
+      await speakersAPI.rebuildVoicePrintForSpeaker(speaker.name)
+      onNotification?.(`Rebuilt voice print for ${speaker.name}`, 'success')
+    } catch (error) {
+      onNotification?.(`Rebuild failed: ${error.message}`, 'error')
+    } finally {
+      setRebuildingSpeakerId(null)
+    }
+  }
+
+  const formatTimestamp = (seconds) => {
+    if (seconds == null || Number.isNaN(seconds)) return null
+    const total = Math.max(0, Math.floor(seconds))
+    const hrs = Math.floor(total / 3600)
+    const mins = Math.floor((total % 3600) / 60)
+    const secs = total % 60
+    if (hrs > 0) return `${hrs}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
+    return `${mins}:${String(secs).padStart(2, '0')}`
+  }
+
+  const getEpisodeLabel = (episodeId, fallbackTitle) => {
+    const ep = episodes.find(e => e.id === episodeId)
+    if (!ep) return fallbackTitle || `Episode ${episodeId}`
+    const number = ep.episode_number ? `#${ep.episode_number}` : null
+    return [number, ep.title].filter(Boolean).join(' ')
+  }
+
+  const toggleAppearances = async (characterId) => {
+    const isExpanded = expandedCharacterIds.includes(characterId)
+    if (isExpanded) {
+      setExpandedCharacterIds(expandedCharacterIds.filter(id => id !== characterId))
+      return
+    }
+
+    setExpandedCharacterIds([...expandedCharacterIds, characterId])
+    if (appearanceByCharacter[characterId]) return
+
+    setAppearanceLoading(prev => ({ ...prev, [characterId]: true }))
+    try {
+      const data = await contentAPI.getCharacterAppearancesForCharacter(characterId)
+      setAppearanceByCharacter(prev => ({ ...prev, [characterId]: data }))
+    } catch (error) {
+      console.error('Error loading character appearances:', error)
+      onNotification?.('Error loading character appearances', 'error')
+    } finally {
+      setAppearanceLoading(prev => ({ ...prev, [characterId]: false }))
+    }
   }
 
   return (
@@ -191,7 +262,7 @@ export default function CharactersPanel({ onNotification }) {
             onClick={() => {
               setShowAddForm(true)
               setEditingCharacter(null)
-              setFormData({ name: '', shortName: '', description: '', catchphrase: '' })
+              setFormData({ name: '', shortName: '', description: '', catchphrase: '', speakerId: '' })
             }}
             className="px-3 py-2 bg-white/20 hover:bg-white/30 text-white rounded-lg font-medium text-sm transition-colors"
           >
@@ -308,6 +379,22 @@ export default function CharactersPanel({ onNotification }) {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500"
                 />
               </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Linked Speaker (voiceprint)</label>
+                <select
+                  value={formData.speakerId || ''}
+                  onChange={(e) => setFormData({ ...formData, speakerId: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500"
+                >
+                  <option value="">None</option>
+                  {speakers.map(s => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500 mt-1">Link characters to a speaker to reuse voiceprints.</p>
+              </div>
             </div>
             <div className="flex gap-2 mt-4">
               <button
@@ -391,6 +478,63 @@ export default function CharactersPanel({ onNotification }) {
                     <span className="truncate">First: {character.first_episode_title}</span>
                   )}
                 </div>
+                {character.speaker_name && (
+                  <div className="mt-2 flex items-center gap-2 text-xs text-gray-600">
+                    <span className="px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-700">🎤 {character.speaker_name}</span>
+                    <button
+                      onClick={() => handleRebuildSpeaker(character.speaker_id)}
+                      disabled={rebuildingSpeakerId === character.speaker_id}
+                      className="px-2 py-0.5 rounded border border-yellow-200 text-yellow-700 hover:bg-yellow-50 disabled:opacity-50"
+                    >
+                      {rebuildingSpeakerId === character.speaker_id ? 'Rebuilding…' : 'Rebuild voiceprint'}
+                    </button>
+                  </div>
+                )}
+                <div className="mt-3">
+                  <button
+                    onClick={() => toggleAppearances(character.id)}
+                    className="text-xs text-pink-700 hover:text-pink-800 font-medium"
+                  >
+                    {expandedCharacterIds.includes(character.id) ? 'Hide episodes' : 'Show episodes'}
+                  </button>
+                </div>
+                {expandedCharacterIds.includes(character.id) && (
+                  <div className="mt-3 border-t border-pink-100 pt-3 space-y-2 max-h-48 overflow-y-auto">
+                    {appearanceLoading[character.id] && (
+                      <div className="text-xs text-gray-400">Loading appearances...</div>
+                    )}
+                    {!appearanceLoading[character.id] && (appearanceByCharacter[character.id] || []).length === 0 && (
+                      <div className="text-xs text-gray-400">No appearances logged yet.</div>
+                    )}
+                    {(appearanceByCharacter[character.id] || []).map((appearance) => {
+                      const timeLabel = formatTimestamp(appearance.start_time)
+                      const segmentLabel = appearance.segment_idx != null ? `Seg ${appearance.segment_idx}` : null
+                      return (
+                        <div
+                          key={appearance.id}
+                          className="flex items-center justify-between text-xs bg-white/70 border border-pink-100 rounded-md px-2 py-1"
+                        >
+                          <div className="min-w-0">
+                            <div className="truncate text-gray-700">
+                              {getEpisodeLabel(appearance.episode_id, appearance.episode_title)}
+                            </div>
+                            <div className="text-[11px] text-gray-500">
+                              {[timeLabel, segmentLabel].filter(Boolean).join(' • ') || 'No timestamp'}
+                            </div>
+                          </div>
+                          {onViewEpisode && (
+                            <button
+                              onClick={() => onViewEpisode(appearance.episode_id, appearance.start_time ?? null, appearance.segment_idx ?? null)}
+                              className="ml-2 text-[11px] text-pink-700 hover:text-pink-800 font-medium"
+                            >
+                              Open
+                            </button>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
             ))}
           </div>

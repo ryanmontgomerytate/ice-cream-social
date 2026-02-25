@@ -43,6 +43,9 @@ pub struct QueueEpisodeItem {
     pub title: String,
     pub episode_number: Option<i64>,
     pub added_date: String,
+    pub is_downloaded: bool,
+    pub embedding_backend_override: Option<String>,
+    pub priority: Option<i32>,
 }
 
 #[derive(Debug, Serialize)]
@@ -57,11 +60,27 @@ pub async fn get_queue_episode_lists(
 ) -> Result<QueueEpisodeLists, AppError> {
     let (transcribe, diarize) = db.get_queue_episode_lists().map_err(AppError::from)?;
     Ok(QueueEpisodeLists {
-        transcribe: transcribe.into_iter().map(|(id, title, episode_number, added_date)| {
-            QueueEpisodeItem { id, title, episode_number, added_date }
+        transcribe: transcribe.into_iter().map(|(id, title, episode_number, added_date, is_downloaded)| {
+            QueueEpisodeItem {
+                id,
+                title,
+                episode_number,
+                added_date,
+                is_downloaded,
+                embedding_backend_override: None,
+                priority: None,
+            }
         }).collect(),
-        diarize: diarize.into_iter().map(|(id, title, episode_number, added_date)| {
-            QueueEpisodeItem { id, title, episode_number, added_date }
+        diarize: diarize.into_iter().map(|(id, title, episode_number, added_date, embedding_backend_override, priority)| {
+            QueueEpisodeItem {
+                id,
+                title,
+                episode_number,
+                added_date,
+                is_downloaded: true,
+                embedding_backend_override,
+                priority: Some(priority),
+            }
         }).collect(),
     })
 }

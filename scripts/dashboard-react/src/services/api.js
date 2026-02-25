@@ -211,10 +211,10 @@ export const episodesAPI = {
     throw new Error('Content analysis requires Tauri');
   },
 
-  async reprocessDiarization(episodeId) {
+  async reprocessDiarization(episodeId, options = {}) {
     if (isTauri) {
       try {
-        return await tauriAPI.episodesAPI.reprocessDiarization(episodeId);
+        return await tauriAPI.episodesAPI.reprocessDiarization(episodeId, options);
       } catch (e) {
         console.error('Tauri reprocessDiarization failed:', e);
         throw e;
@@ -576,16 +576,16 @@ export const speakersAPI = {
     return [];
   },
 
-  async createSpeaker(name, shortName = null, isHost = false) {
+  async createSpeaker(name, shortName = null, isHost = false, isGuest = false, isScoop = false) {
     if (isTauri) {
-      return await tauriAPI.speakersAPI.createSpeaker(name, shortName, isHost);
+      return await tauriAPI.speakersAPI.createSpeaker(name, shortName, isHost, isGuest, isScoop);
     }
     throw new Error('Speakers only available in Tauri mode');
   },
 
-  async updateSpeaker(id, name, shortName = null, isHost = false) {
+  async updateSpeaker(id, name, shortName = null, isHost = false, isGuest = false, isScoop = false) {
     if (isTauri) {
-      return await tauriAPI.speakersAPI.updateSpeaker(id, name, shortName, isHost);
+      return await tauriAPI.speakersAPI.updateSpeaker(id, name, shortName, isHost, isGuest, isScoop);
     }
     throw new Error('Speakers only available in Tauri mode');
   },
@@ -654,6 +654,32 @@ export const speakersAPI = {
     return [];
   },
 
+  async getEmbeddingModel() {
+    if (isTauri) {
+      try {
+        return await tauriAPI.speakersAPI.getEmbeddingModel();
+      } catch (e) {
+        console.error('Tauri getEmbeddingModel failed:', e);
+        return 'pyannote';
+      }
+    }
+    return 'pyannote';
+  },
+
+  async setEmbeddingModel(backend) {
+    if (isTauri) {
+      return await tauriAPI.speakersAPI.setEmbeddingModel(backend);
+    }
+    throw new Error('Embedding model selection only available in Tauri mode');
+  },
+
+  async compareEmbeddingBackends(episodeId) {
+    if (isTauri) {
+      return await tauriAPI.speakersAPI.compareEmbeddingBackends(episodeId);
+    }
+    throw new Error('Backend comparison only available in Tauri mode');
+  },
+
   async getVoiceSamplePath(speakerName) {
     if (isTauri) {
       try {
@@ -697,6 +723,41 @@ export const speakersAPI = {
       return await tauriAPI.speakersAPI.deleteVoicePrint(speakerName);
     }
     throw new Error('Voice print deletion only available in Tauri mode');
+  },
+
+  async purgeVoiceLibraryEntry(speakerName) {
+    if (isTauri) {
+      return await tauriAPI.speakersAPI.purgeVoiceLibraryEntry(speakerName);
+    }
+    throw new Error('Voice library purge only available in Tauri mode');
+  },
+
+  async rebuildVoicePrintForSpeaker(speakerName) {
+    if (isTauri) {
+      return await tauriAPI.speakersAPI.rebuildVoicePrintForSpeaker(speakerName);
+    }
+    throw new Error('Voice print rebuild only available in Tauri mode');
+  },
+
+  async rebuildVoiceLibrary(backend = null) {
+    if (isTauri) {
+      return await tauriAPI.speakersAPI.rebuildVoiceLibrary(backend);
+    }
+    throw new Error('Voice library rebuild only available in Tauri mode');
+  },
+
+  async runVoiceHarvest(minSecs = 4.0, maxPerSpeaker = 5) {
+    if (isTauri) {
+      return await tauriAPI.speakersAPI.runVoiceHarvest(minSecs, maxPerSpeaker);
+    }
+    throw new Error('Voice harvest only available in Tauri mode');
+  },
+
+  async extractVoiceSampleFromSegment(episodeId, segmentIdx, speakerName) {
+    if (isTauri) {
+      return await tauriAPI.speakersAPI.extractVoiceSampleFromSegment(episodeId, segmentIdx, speakerName);
+    }
+    // Silently no-op in browser mode
   },
 };
 
@@ -754,6 +815,20 @@ export const contentAPI = {
     throw new Error('Content only available in Tauri mode');
   },
 
+  async runAiChapterDetection(episodeId) {
+    if (isTauri) {
+      return await tauriAPI.contentAPI.runAiChapterDetection(episodeId);
+    }
+    throw new Error('Content only available in Tauri mode');
+  },
+
+  async exportSponsorClip(episodeId, startTime, endTime, sponsorName) {
+    if (isTauri) {
+      return await tauriAPI.contentAPI.exportSponsorClip(episodeId, startTime, endTime, sponsorName);
+    }
+    throw new Error('Content only available in Tauri mode');
+  },
+
   // Characters
   async getCharacters() {
     if (isTauri) {
@@ -767,16 +842,16 @@ export const contentAPI = {
     return [];
   },
 
-  async createCharacter(name, shortName, description, catchphrase) {
+  async createCharacter(name, shortName, description, catchphrase, speakerId = null) {
     if (isTauri) {
-      return await tauriAPI.contentAPI.createCharacter(name, shortName, description, catchphrase);
+      return await tauriAPI.contentAPI.createCharacter(name, shortName, description, catchphrase, speakerId);
     }
     throw new Error('Content only available in Tauri mode');
   },
 
-  async updateCharacter(id, name, shortName, description, catchphrase) {
+  async updateCharacter(id, name, shortName, description, catchphrase, speakerId = null) {
     if (isTauri) {
-      return await tauriAPI.contentAPI.updateCharacter(id, name, shortName, description, catchphrase);
+      return await tauriAPI.contentAPI.updateCharacter(id, name, shortName, description, catchphrase, speakerId);
     }
     throw new Error('Content only available in Tauri mode');
   },
@@ -801,6 +876,18 @@ export const contentAPI = {
         return await tauriAPI.contentAPI.getCharacterAppearancesForEpisode(episodeId);
       } catch (e) {
         console.error('Tauri getCharacterAppearancesForEpisode failed:', e);
+        return [];
+      }
+    }
+    return [];
+  },
+
+  async getCharacterAppearancesForCharacter(characterId) {
+    if (isTauri) {
+      try {
+        return await tauriAPI.contentAPI.getCharacterAppearancesForCharacter(characterId);
+      } catch (e) {
+        console.error('Tauri getCharacterAppearancesForCharacter failed:', e);
         return [];
       }
     }
@@ -864,6 +951,24 @@ export const contentAPI = {
     if (isTauri) {
       return await tauriAPI.contentAPI.deleteAudioDropInstance(id);
     }
+    throw new Error('Content only available in Tauri mode');
+  },
+
+  // Chapter Label Rules
+  async getChapterLabelRules() {
+    if (isTauri) return await tauriAPI.contentAPI.getChapterLabelRules();
+    throw new Error('Content only available in Tauri mode');
+  },
+  async saveChapterLabelRule(id, chapterTypeId, pattern, matchType, priority, enabled) {
+    if (isTauri) return await tauriAPI.contentAPI.saveChapterLabelRule(id, chapterTypeId, pattern, matchType, priority, enabled);
+    throw new Error('Content only available in Tauri mode');
+  },
+  async deleteChapterLabelRule(id) {
+    if (isTauri) return await tauriAPI.contentAPI.deleteChapterLabelRule(id);
+    throw new Error('Content only available in Tauri mode');
+  },
+  async autoLabelChapters(episodeId, overwrite = false) {
+    if (isTauri) return await tauriAPI.contentAPI.autoLabelChapters(episodeId, overwrite);
     throw new Error('Content only available in Tauri mode');
   },
 
@@ -952,6 +1057,74 @@ export const contentAPI = {
       return await tauriAPI.contentAPI.addSponsorMention(sponsorId, episodeId, startTime, endTime, segmentIdx);
     }
     throw new Error('Content only available in Tauri mode');
+  },
+
+  // Qwen Segment Classification
+  async runQwenClassification(episodeId, segmentIndices) {
+    if (isTauri) {
+      return await tauriAPI.contentAPI.runQwenClassification(episodeId, segmentIndices);
+    }
+    throw new Error('Qwen classification only available in Tauri mode');
+  },
+
+  async getSegmentClassifications(episodeId) {
+    if (isTauri) {
+      try {
+        return await tauriAPI.contentAPI.getSegmentClassifications(episodeId);
+      } catch (e) {
+        console.error('Tauri getSegmentClassifications failed:', e);
+        return [];
+      }
+    }
+    return [];
+  },
+
+  async approveSegmentClassification(id) {
+    if (isTauri) {
+      return await tauriAPI.contentAPI.approveSegmentClassification(id);
+    }
+    throw new Error('Qwen classification only available in Tauri mode');
+  },
+
+  async rejectSegmentClassification(id) {
+    if (isTauri) {
+      return await tauriAPI.contentAPI.rejectSegmentClassification(id);
+    }
+    throw new Error('Qwen classification only available in Tauri mode');
+  },
+
+  // Scoop Polish
+  async runQwenPolish(episodeId, segmentIndices) {
+    if (isTauri) {
+      return await tauriAPI.contentAPI.runQwenPolish(episodeId, segmentIndices);
+    }
+    throw new Error('Scoop Polish only available in Tauri mode');
+  },
+
+  async getTranscriptCorrections(episodeId) {
+    if (isTauri) {
+      try {
+        return await tauriAPI.contentAPI.getTranscriptCorrections(episodeId);
+      } catch (e) {
+        console.error('Tauri getTranscriptCorrections failed:', e);
+        return [];
+      }
+    }
+    return [];
+  },
+
+  async approveTranscriptCorrection(id) {
+    if (isTauri) {
+      return await tauriAPI.contentAPI.approveTranscriptCorrection(id);
+    }
+    throw new Error('Scoop Polish only available in Tauri mode');
+  },
+
+  async rejectTranscriptCorrection(id) {
+    if (isTauri) {
+      return await tauriAPI.contentAPI.rejectTranscriptCorrection(id);
+    }
+    throw new Error('Scoop Polish only available in Tauri mode');
   },
 };
 

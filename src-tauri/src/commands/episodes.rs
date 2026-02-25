@@ -1065,6 +1065,13 @@ pub async fn update_speaker_names(
 
     log::info!("Speaker names updated for episode {}", episode_id);
 
+    // Sync episode_speakers DB rows so episode counts in the Audio ID tab reflect
+    // every SPEAKER_XX assignment. Non-fatal — a failure here doesn't affect the save.
+    match db.sync_episode_speaker_names(episode_id, &speaker_names) {
+        Ok(()) => log::info!("Synced episode_speakers for episode {}", episode_id),
+        Err(e) => log::warn!("Failed to sync episode_speakers for episode {}: {}", episode_id, e),
+    }
+
     // Re-index FTS5 so search reflects the new speaker names (non-fatal)
     match db.index_episode_from_file(episode_id) {
         Ok(n) if n > 0 => log::info!("Re-indexed {} segments for episode {} after speaker name update", n, episode_id),
@@ -1189,13 +1196,26 @@ pub async fn reprocess_diarization(
     db: State<'_, Arc<Database>>,
     app_handle: tauri::AppHandle,
     episode_id: i64,
+    embedding_backend: Option<String>,
+    prioritize_top: Option<bool>,
 ) -> Result<(), AppError> {
     log::info!("reprocess_diarization called for episode: {}", episode_id);
+    const PRIORITY_REPROCESS_TOP: i32 = 10_000;
 
     let episode = db
         .get_episode_by_id(episode_id)
         .map_err(AppError::from)?
         .ok_or("Episode not found")?;
+
+    let embedding_backend = embedding_backend
+        .filter(|v| !v.trim().is_empty())
+        .map(|v| v.to_lowercase());
+    if let Some(ref backend) = embedding_backend {
+        if backend != "pyannote" && backend != "ecapa-tdnn" {
+            return Err(format!("Unsupported embedding backend: {}", backend).into());
+        }
+    }
+    let prioritize_top = prioritize_top.unwrap_or(true);
 
     let transcript_path = episode.transcript_path.ok_or("No transcript for this episode")?;
 
@@ -1233,7 +1253,13 @@ pub async fn reprocess_diarization(
             }
             "character_voice" => {
                 // Use the character name as the corrected speaker hint
-                if let Some(ref name) = flag.character_name {
+                let mut name = flag.character_name.clone();
+                if let Some(cid) = flag.character_id {
+                    if let Ok(Some(speaker_name)) = db.get_character_speaker_name(cid) {
+                        name = Some(speaker_name);
+                    }
+                }
+                if let Some(ref name) = name {
                     corrections.push(serde_json::json!({
                         "segment_idx": flag.segment_idx,
                         "corrected_speaker": name,
@@ -1276,15 +1302,58 @@ pub async fn reprocess_diarization(
         .map_err(|e| format!("Failed to reset diarization: {}", e))?;
 
     // Use race-condition-safe requeue method
-    db.requeue_for_diarization(episode_id, 100)
+    db.requeue_for_diarization_with_backend(
+        episode_id,
+        if prioritize_top { PRIORITY_REPROCESS_TOP } else { 100 },
+        embedding_backend.as_deref(),
+    )
         .map_err(|e| format!("Failed to requeue for diarization: {}", e))?;
 
-    log::info!("Episode {} queued for re-diarization with hints", episode_id);
+    // Optional: pause new transcribe starts during priority reprocess for maximum diarize resources.
+    let should_pause_transcribe = db
+        .get_setting("priority_reprocess_pause_transcribe")
+        .unwrap_or(None)
+        .map(|v| v == "true")
+        .unwrap_or(false);
+    if prioritize_top && should_pause_transcribe {
+        let mode_active = db
+            .get_setting("priority_reprocess_mode")
+            .unwrap_or(None)
+            .map(|v| v == "true")
+            .unwrap_or(false);
+        if !mode_active {
+            let was_paused = db
+                .get_setting("pause_transcribe_queue")
+                .unwrap_or(None)
+                .map(|v| v == "true")
+                .unwrap_or(false);
+            db.set_setting(
+                "priority_reprocess_prev_pause_transcribe",
+                if was_paused { "true" } else { "false" },
+            )
+            .map_err(AppError::from)?;
+        }
+        db.set_setting("priority_reprocess_mode", "true")
+            .map_err(AppError::from)?;
+        db.set_setting("pause_transcribe_queue", "true")
+            .map_err(AppError::from)?;
+    }
+
+    log::info!(
+        "Episode {} queued for re-diarization with hints (backend={:?}, priority_top={}, pause_transcribe={})",
+        episode_id,
+        embedding_backend,
+        prioritize_top,
+        should_pause_transcribe
+    );
 
     // Notify frontend so queue display updates
     let _ = app_handle.emit("queue_update", serde_json::json!({
         "action": "diarization_queued",
         "episode_id": episode_id,
+        "backend": embedding_backend,
+        "priority_top": prioritize_top,
+        "pause_transcribe": should_pause_transcribe,
         "hints": {
             "corrections": corrections.len(),
             "multiple_speakers_segments": multiple_speakers_segments.len(),
@@ -1340,22 +1409,27 @@ pub async fn save_voice_samples(
     let sound_bites_dir = project_dir.join("scripts").join("voice_library").join("sound_bites");
 
     let mut saved_count = 0;
+    let embedding_backend = db
+        .get_setting("embedding_model")
+        .unwrap_or(None)
+        .filter(|v| v == "ecapa-tdnn" || v == "pyannote")
+        .unwrap_or_else(|| "pyannote".to_string());
 
     for sample in samples {
-        // Skip if speaker name is still a SPEAKER_XX label
-        if sample.speaker_name.starts_with("SPEAKER_") {
-            log::warn!("Skipping sample with unnamed speaker: {}", sample.speaker_name);
-            continue;
-        }
-
         // Check if this diarization label is assigned to a sound bite
         let audio_drop_id = db.get_audio_drop_for_label(episode_id, &sample.speaker)
             .map_err(AppError::from)?;
 
         // Common: build sample filename and extract audio via ffmpeg
+        let display_ep = episode
+            .episode_number
+            .as_deref()
+            .map(|n| n.chars().filter(|c| c.is_ascii_alphanumeric()).collect::<String>())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| episode_id.to_string());
         let sample_filename = format!(
-            "ep{}_{:.0}s-{:.0}s.wav",
-            episode_id, sample.start_time, sample.end_time
+            "ep{}_id{}_{:.0}s-{:.0}s.wav",
+            display_ep, episode_id, sample.start_time, sample.end_time
         );
 
         if let Some(drop_id) = audio_drop_id {
@@ -1402,6 +1476,7 @@ pub async fn save_voice_samples(
                     sample.end_time,
                     Some(&sample.text),
                     &path_str,
+                    Some("manual"),
                 );
             } else {
                 let stderr = String::from_utf8_lossy(&output.stderr);
@@ -1454,6 +1529,7 @@ pub async fn save_voice_samples(
                     sample.end_time,
                     Some(&sample.text),
                     &path_str,
+                    Some("manual"),
                 );
             } else {
                 let stderr = String::from_utf8_lossy(&ffmpeg_output.stderr);
@@ -1469,6 +1545,8 @@ pub async fn save_voice_samples(
                     audio_path.as_str(),
                     &format!("{:.3}", sample.start_time),
                     &format!("{:.3}", sample.end_time),
+                    "--backend",
+                    &embedding_backend,
                 ])
                 .output()
                 .map_err(|e| format!("Failed to run voice library script: {}", e))?;

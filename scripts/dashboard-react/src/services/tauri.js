@@ -136,9 +136,14 @@ export const episodesAPI = {
     return result;
   },
 
-  async reprocessDiarization(episodeId) {
+  async reprocessDiarization(episodeId, options = {}) {
+    const { embeddingBackend = null, prioritizeTop = true } = options;
     console.log('Tauri reprocessDiarization called for:', episodeId);
-    const result = await tauriInvoke('reprocess_diarization', { episodeId });
+    const result = await tauriInvoke('reprocess_diarization', {
+      episodeId,
+      embeddingBackend,
+      prioritizeTop,
+    });
     console.log('Tauri reprocessDiarization result:', result);
     return result;
   },
@@ -350,12 +355,12 @@ export const speakersAPI = {
     return tauriInvoke('get_speakers');
   },
 
-  async createSpeaker(name, shortName = null, isHost = false) {
-    return tauriInvoke('create_speaker', { name, shortName, isHost });
+  async createSpeaker(name, shortName = null, isHost = false, isGuest = false, isScoop = false) {
+    return tauriInvoke('create_speaker', { name, shortName, isHost, isGuest, isScoop });
   },
 
-  async updateSpeaker(id, name, shortName = null, isHost = false) {
-    return tauriInvoke('update_speaker', { id, name, shortName, isHost });
+  async updateSpeaker(id, name, shortName = null, isHost = false, isGuest = false, isScoop = false) {
+    return tauriInvoke('update_speaker', { id, name, shortName, isHost, isGuest, isScoop });
   },
 
   async deleteSpeaker(id) {
@@ -386,6 +391,18 @@ export const speakersAPI = {
     return tauriInvoke('get_voice_library');
   },
 
+  async getEmbeddingModel() {
+    return tauriInvoke('get_embedding_model');
+  },
+
+  async setEmbeddingModel(backend) {
+    return tauriInvoke('set_embedding_model', { backend });
+  },
+
+  async compareEmbeddingBackends(episodeId) {
+    return tauriInvoke('compare_embedding_backends', { episodeId });
+  },
+
   async getVoiceSamplePath(speakerName) {
     return tauriInvoke('get_voice_sample_path', { speakerName });
   },
@@ -404,6 +421,26 @@ export const speakersAPI = {
 
   async deleteVoicePrint(speakerName) {
     return tauriInvoke('delete_voice_print', { speakerName });
+  },
+
+  async purgeVoiceLibraryEntry(speakerName) {
+    return tauriInvoke('purge_voice_library_entry', { speakerName });
+  },
+
+  async rebuildVoicePrintForSpeaker(speakerName) {
+    return tauriInvoke('rebuild_voice_print_for_speaker', { speakerName });
+  },
+
+  async rebuildVoiceLibrary(backend = null) {
+    return tauriInvoke('rebuild_voice_library', { backend });
+  },
+
+  async runVoiceHarvest(minSecs = 4.0, maxPerSpeaker = 5) {
+    return tauriInvoke('run_voice_harvest', { minSecs, maxPerSpeaker });
+  },
+
+  async extractVoiceSampleFromSegment(episodeId, segmentIdx, speakerName) {
+    return tauriInvoke('extract_voice_sample_from_segment', { episodeId, segmentIdx, speakerName });
   },
 };
 
@@ -436,17 +473,25 @@ export const contentAPI = {
     return tauriInvoke('delete_episode_chapter', { chapterId });
   },
 
+  async runAiChapterDetection(episodeId) {
+    return tauriInvoke('run_ai_chapter_detection', { episodeId });
+  },
+
+  async exportSponsorClip(episodeId, startTime, endTime, sponsorName) {
+    return tauriInvoke('export_sponsor_clip', { episodeId, startTime, endTime, sponsorName });
+  },
+
   // Characters
   async getCharacters() {
     return tauriInvoke('get_characters');
   },
 
-  async createCharacter(name, shortName, description, catchphrase) {
-    return tauriInvoke('create_character', { name, shortName, description, catchphrase });
+  async createCharacter(name, shortName, description, catchphrase, speakerId = null) {
+    return tauriInvoke('create_character', { name, shortName, description, catchphrase, speakerId });
   },
 
-  async updateCharacter(id, name, shortName, description, catchphrase) {
-    return tauriInvoke('update_character', { id, name, shortName, description, catchphrase });
+  async updateCharacter(id, name, shortName, description, catchphrase, speakerId = null) {
+    return tauriInvoke('update_character', { id, name, shortName, description, catchphrase, speakerId });
   },
 
   async deleteCharacter(id) {
@@ -483,6 +528,10 @@ export const contentAPI = {
     return tauriInvoke('get_character_appearances_for_episode', { episodeId });
   },
 
+  async getCharacterAppearancesForCharacter(characterId) {
+    return tauriInvoke('get_character_appearances_for_character', { characterId });
+  },
+
   async deleteCharacterAppearance(id) {
     return tauriInvoke('delete_character_appearance', { id });
   },
@@ -512,6 +561,20 @@ export const contentAPI = {
     return tauriInvoke('delete_audio_drop_instance', { id });
   },
 
+  // Chapter Label Rules
+  async getChapterLabelRules() {
+    return tauriInvoke('get_chapter_label_rules');
+  },
+  async saveChapterLabelRule(id, chapterTypeId, pattern, matchType, priority, enabled) {
+    return tauriInvoke('save_chapter_label_rule', { id, chapterTypeId, pattern, matchType, priority, enabled });
+  },
+  async deleteChapterLabelRule(id) {
+    return tauriInvoke('delete_chapter_label_rule', { id });
+  },
+  async autoLabelChapters(episodeId, overwrite = false) {
+    return tauriInvoke('auto_label_chapters', { episodeId, overwrite });
+  },
+
   // Flagged Segments (Review Workflow)
   async createFlaggedSegment(episodeId, segmentIdx, flagType, correctedSpeaker = null, characterId = null, notes = null, speakerIds = null) {
     return tauriInvoke('create_flagged_segment', {
@@ -535,6 +598,40 @@ export const contentAPI = {
 
   async getUnresolvedFlagCount(episodeId) {
     return tauriInvoke('get_unresolved_flag_count', { episodeId });
+  },
+
+  // Qwen Segment Classification
+  async runQwenClassification(episodeId, segmentIndices) {
+    return tauriInvoke('run_qwen_classification', { episodeId, segmentIndices });
+  },
+
+  async getSegmentClassifications(episodeId) {
+    return tauriInvoke('get_segment_classifications', { episodeId });
+  },
+
+  async approveSegmentClassification(id) {
+    return tauriInvoke('approve_segment_classification', { id });
+  },
+
+  async rejectSegmentClassification(id) {
+    return tauriInvoke('reject_segment_classification', { id });
+  },
+
+  // Scoop Polish (transcript correction + multi-speaker detection)
+  async runQwenPolish(episodeId, segmentIndices) {
+    return tauriInvoke('run_qwen_polish', { episodeId, segmentIndices });
+  },
+
+  async getTranscriptCorrections(episodeId) {
+    return tauriInvoke('get_transcript_corrections', { episodeId });
+  },
+
+  async approveTranscriptCorrection(id) {
+    return tauriInvoke('approve_transcript_correction', { id });
+  },
+
+  async rejectTranscriptCorrection(id) {
+    return tauriInvoke('reject_transcript_correction', { id });
   },
 };
 

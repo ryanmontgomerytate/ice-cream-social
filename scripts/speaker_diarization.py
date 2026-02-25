@@ -25,10 +25,12 @@ try:
 except ImportError:
     VOICE_LIBRARY_AVAILABLE = False
 
-# Fix PyTorch 2.6+ weights_only issue - pyannote is a trusted source
+# Fix PyTorch 2.6+ weights_only issue - pyannote checkpoints are trusted
+# Use unconditional override (not setdefault) because lightning_fabric passes
+# weights_only=True explicitly, which setdefault would not override.
 _original_torch_load = torch.load
 def _patched_torch_load(*args, **kwargs):
-    kwargs.setdefault('weights_only', False)
+    kwargs['weights_only'] = False
     return _original_torch_load(*args, **kwargs)
 torch.load = _patched_torch_load
 
@@ -100,7 +102,8 @@ def pad_audio_for_diarization(audio_path: Path) -> Optional[Path]:
 class SpeakerDiarizer:
     """Handles speaker diarization for podcast episodes"""
 
-    def __init__(self, hf_token: Optional[str] = None, use_voice_library: bool = True):
+    def __init__(self, hf_token: Optional[str] = None, use_voice_library: bool = True,
+                 embedding_backend: str = "pyannote"):
         """Initialize speaker diarization pipeline
 
         Args:
@@ -116,13 +119,14 @@ class SpeakerDiarizer:
         self.pipeline = None
         self.voice_library = None
         self.use_voice_library = use_voice_library
+        self.embedding_backend = embedding_backend
 
         if hf_token:
             self._load_pipeline()
             # Initialize voice library if available and enabled
             if use_voice_library and VOICE_LIBRARY_AVAILABLE:
                 try:
-                    self.voice_library = VoiceLibrary(hf_token)
+                    self.voice_library = VoiceLibrary(hf_token, backend=embedding_backend)
                     if self.voice_library.embeddings:
                         logger.info(f"Voice library loaded with {len(self.voice_library.embeddings)} speakers")
                     else:
@@ -252,12 +256,14 @@ class SpeakerDiarizer:
             logger.error(f"Diarization failed: {e}")
             raise
 
-    def identify_speakers(self, diarization: Dict, audio_path: Path) -> Dict[str, Dict]:
+    def identify_speakers(self, diarization: Dict, audio_path: Path,
+                          episode_date: Optional[str] = None) -> Dict[str, Dict]:
         """Identify diarization speakers using voice library
 
         Args:
             diarization: Output from diarize()
             audio_path: Path to original audio file
+            episode_date: ISO date string of episode (for era-weighted matching)
 
         Returns:
             Mapping of diarization labels to speaker info with confidence
@@ -269,7 +275,7 @@ class SpeakerDiarizer:
         try:
             logger.info("Identifying speakers using voice library...")
             mapping = self.voice_library.identify_speakers_in_diarization(
-                diarization, audio_path, return_scores=True
+                diarization, audio_path, return_scores=True, episode_date=episode_date
             )
             return mapping
         except Exception as e:
@@ -441,7 +447,8 @@ def apply_hints_to_transcript(transcript: Dict, hints: Dict) -> Dict:
 
 def process_episode(audio_path: Path, transcript_path: Path, hf_token: str,
                     num_speakers: Optional[int] = None, use_voice_library: bool = True,
-                    hints: Optional[Dict] = None) -> Dict:
+                    hints: Optional[Dict] = None, episode_date: Optional[str] = None,
+                    embedding_backend: str = "pyannote") -> Dict:
     """Process a single episode: diarize and align with transcript
 
     Args:
@@ -451,6 +458,7 @@ def process_episode(audio_path: Path, transcript_path: Path, hf_token: str,
         num_speakers: Expected number of speakers (None = auto-detect, recommended)
         use_voice_library: Whether to use voice library for speaker identification
         hints: Optional human correction hints dict
+        episode_date: ISO date string YYYY-MM-DD of the episode (for era-weighted speaker matching)
 
     Returns:
         Enhanced transcript with speaker labels
@@ -465,13 +473,17 @@ def process_episode(audio_path: Path, transcript_path: Path, hf_token: str,
         logger.info(f"Using num_speakers_hint from hints: {num_speakers}")
 
     # Run diarization
-    diarizer = SpeakerDiarizer(hf_token, use_voice_library=use_voice_library)
+    diarizer = SpeakerDiarizer(
+        hf_token,
+        use_voice_library=use_voice_library,
+        embedding_backend=embedding_backend,
+    )
     diarization = diarizer.diarize(audio_path, num_speakers=num_speakers)
 
     # Identify speakers using voice library (if available)
     speaker_mapping = {}
     if use_voice_library and diarizer.voice_library:
-        speaker_mapping = diarizer.identify_speakers(diarization, audio_path)
+        speaker_mapping = diarizer.identify_speakers(diarization, audio_path, episode_date=episode_date)
 
     # Align with transcript
     enhanced_transcript = diarizer.align_with_transcript(
@@ -514,6 +526,11 @@ if __name__ == "__main__":
                        help="Disable voice library identification")
     parser.add_argument("--hints-file", type=Path, default=None,
                        help="JSON hints file with human corrections for re-diarization")
+    parser.add_argument("--episode-date", type=str, default=None,
+                       help="ISO date (YYYY-MM-DD) of the episode for era-aware speaker matching")
+    parser.add_argument("--embedding-backend", type=str, default="pyannote",
+                       choices=["ecapa-tdnn", "pyannote"],
+                       help="Voice embedding backend for speaker identification")
 
     args = parser.parse_args()
 
@@ -533,4 +550,6 @@ if __name__ == "__main__":
         num_speakers=args.speakers,
         use_voice_library=not args.no_voice_library,
         hints=hints,
+        episode_date=args.episode_date,
+        embedding_backend=args.embedding_backend,
     )

@@ -95,6 +95,7 @@ pub fn run() {
             // Diarization paths
             let venv_python_path = project_dir.join("venv").join("bin").join("python");
             let diarization_script_path = project_dir.join("scripts").join("speaker_diarization.py");
+            let harvest_script_path = project_dir.join("scripts").join("harvest_voice_samples.py");
 
             // Load HuggingFace token from config (optional)
             let huggingface_token = load_huggingface_token(&project_dir);
@@ -108,6 +109,7 @@ pub fn run() {
                 episodes_path,
                 venv_python_path,
                 diarization_script_path,
+                harvest_script_path,
                 huggingface_token,
             );
 
@@ -214,17 +216,26 @@ pub fn run() {
             commands::unlink_episode_speaker,
             commands::get_episode_speaker_assignments,
             commands::get_voice_library,
+            commands::get_embedding_model,
+            commands::set_embedding_model,
+            commands::compare_embedding_backends,
             commands::get_voice_sample_path,
             commands::get_voice_samples,
             commands::delete_voice_sample,
             commands::delete_voice_print,
+            commands::purge_voice_library_entry,
+            commands::rebuild_voice_print_for_speaker,
             commands::update_voice_sample_rating,
+            commands::rebuild_voice_library,
+            commands::run_voice_harvest,
+            commands::extract_voice_sample_from_segment,
             // Content commands (chapters, characters, sponsors)
             commands::get_chapter_types,
             commands::create_chapter_type,
             commands::get_episode_chapters,
             commands::create_episode_chapter,
             commands::delete_episode_chapter,
+            commands::export_sponsor_clip,
             commands::get_characters,
             commands::create_character,
             commands::update_character,
@@ -253,6 +264,7 @@ pub fn run() {
             commands::get_unresolved_flag_count,
             // Character appearances commands
             commands::get_character_appearances_for_episode,
+            commands::get_character_appearances_for_character,
             commands::delete_character_appearance,
             // Audio drops commands
             commands::get_audio_drops,
@@ -266,6 +278,7 @@ pub fn run() {
             commands::save_chapter_label_rule,
             commands::delete_chapter_label_rule,
             commands::auto_label_chapters,
+            commands::run_ai_chapter_detection,
             // Wiki lore commands
             commands::sync_wiki_episode,
             commands::get_wiki_episode_meta,
@@ -284,6 +297,11 @@ pub fn run() {
             commands::get_segment_classifications,
             commands::approve_segment_classification,
             commands::reject_segment_classification,
+            // Scoop Polish commands (transcript correction + multi-speaker detection)
+            commands::run_qwen_polish,
+            commands::get_transcript_corrections,
+            commands::approve_transcript_correction,
+            commands::reject_transcript_correction,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

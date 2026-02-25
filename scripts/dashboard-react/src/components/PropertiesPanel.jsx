@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { wikiAPI, contentAPI, isTauri } from '../services/api'
+import { wikiAPI, contentAPI, episodesAPI, speakersAPI, isTauri } from '../services/api'
 import { useTranscriptReview } from './TranscriptReviewContext'
 
 // Flag types
@@ -158,6 +158,7 @@ export default function PropertiesPanel() {
     flaggedSegments,
     characterAppearances,
     episodeChapters,
+    setEpisodeChapters,
     characters,
     chapterTypes,
     voiceLibrary,
@@ -168,6 +169,8 @@ export default function PropertiesPanel() {
     audioDrops,
     segments,
     selectedSegmentIdx,
+    polishRunning, setPolishRunning,
+    onNotification,
     // Action proxies
     deleteFlag,
     removeCharacter,
@@ -186,6 +189,14 @@ export default function PropertiesPanel() {
   const [wikiMeta, setWikiMeta] = useState(null)
   const [wikiLoading, setWikiLoading] = useState(false)
   const [wikiSyncing, setWikiSyncing] = useState(false)
+  const [wikiError, setWikiError] = useState(null)
+  const [wikiLinkCopied, setWikiLinkCopied] = useState(false)
+  const [aiChapterSuggestions, setAiChapterSuggestions] = useState([])
+  const [aiChapterLoading, setAiChapterLoading] = useState(false)
+  const [aiChapterError, setAiChapterError] = useState(null)
+  const [sponsorExporting, setSponsorExporting] = useState({})
+  const [sponsorClipNames, setSponsorClipNames] = useState({})
+  const [sponsors, setSponsors] = useState([])
 
   // Qwen classification state
   const [qwenClassifications, setQwenClassifications] = useState([])
@@ -194,14 +205,84 @@ export default function PropertiesPanel() {
   const [qwenError, setQwenError] = useState(null)
   const qwenUnlistenRef = useRef(null)
 
+  // Scoop Polish state
+  const [polishResults, setPolishResults] = useState([])
+  const [polishProgress, setPolishProgress] = useState(0)
+  const [polishError, setPolishError] = useState(null)
+  const polishUnlistenRef = useRef(null)
+
   const toggleSection = (key) => {
     setOpenSections(prev => ({ ...prev, [key]: !prev[key] }))
+  }
+
+  const runAiChapterDetection = async () => {
+    if (!episode?.id) return
+    setAiChapterLoading(true)
+    setAiChapterError(null)
+    try {
+      const result = await contentAPI.runAiChapterDetection(episode.id)
+      setAiChapterSuggestions(result || [])
+    } catch (e) {
+      setAiChapterError(e?.message || String(e))
+    } finally {
+      setAiChapterLoading(false)
+    }
+  }
+
+  const applyAiSuggestion = async (suggestion) => {
+    if (!episode?.id || !suggestion?.chapter_type_id) return
+    try {
+      await contentAPI.createEpisodeChapter(
+        episode.id,
+        suggestion.chapter_type_id,
+        null,
+        suggestion.start_time,
+        suggestion.end_time,
+        suggestion.start_segment_idx,
+        suggestion.end_segment_idx
+      )
+      const chapters = await contentAPI.getEpisodeChapters(episode.id)
+      setEpisodeChapters?.(chapters)
+      setAiChapterSuggestions(prev => prev.filter(s => s !== suggestion))
+    } catch (e) {
+      onNotification?.(`Failed to apply suggestion: ${e?.message || String(e)}`, 'error')
+    }
+  }
+
+  const applyAllAiSuggestions = async () => {
+    if (!episode?.id) return
+    for (const suggestion of aiChapterSuggestions) {
+      if (!suggestion.chapter_type_id) continue
+      await applyAiSuggestion(suggestion)
+    }
+  }
+
+  const handleExportSponsorClip = async (chapter) => {
+    if (!episode?.id || !chapter) return
+    const sponsorName = (sponsorClipNames[chapter.id] || '').trim() || chapter.chapter_type_name || 'Sponsor'
+    const clipStart = chapter.start_time || 0
+    const clipEnd = chapter.end_time != null ? chapter.end_time : clipStart + 30
+    setSponsorExporting(prev => ({ ...prev, [chapter.id]: true }))
+    try {
+      const result = await contentAPI.exportSponsorClip(
+        episode.id,
+        clipStart,
+        clipEnd,
+        sponsorName
+      )
+      onNotification?.(`Exported clip: ${result.output_path || 'done'}`, 'success')
+    } catch (e) {
+      onNotification?.(`Export failed: ${e?.message || String(e)}`, 'error')
+    } finally {
+      setSponsorExporting(prev => ({ ...prev, [chapter.id]: false }))
+    }
   }
 
   // Load wiki metadata when episode changes
   useEffect(() => {
     if (!episode?.id) {
       setWikiMeta(null)
+      setWikiError(null)
       return
     }
     let cancelled = false
@@ -220,9 +301,21 @@ export default function PropertiesPanel() {
     return () => { cancelled = true }
   }, [episode?.id])
 
+  useEffect(() => {
+    setAiChapterSuggestions([])
+    setAiChapterError(null)
+    if (!episode?.id) return
+    let cancelled = false
+    contentAPI.getSponsors()
+      .then((data) => { if (!cancelled) setSponsors(data) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [episode?.id])
+
   const handleSyncWiki = async () => {
     if (!episode?.category_number && !episode?.episode_number) return
     setWikiSyncing(true)
+    setWikiError(null)
     try {
       const epNum = episode.category_number || episode.episode_number
       await wikiAPI.syncWikiEpisode(epNum)
@@ -230,7 +323,9 @@ export default function PropertiesPanel() {
       const meta = await wikiAPI.getWikiEpisodeMeta(episode.id)
       setWikiMeta(meta)
     } catch (e) {
-      console.error('Wiki sync failed:', e)
+      const msg = e?.message || String(e)
+      setWikiError(msg)
+      console.error('Wiki sync failed:', msg)
     } finally {
       setWikiSyncing(false)
     }
@@ -290,6 +385,61 @@ export default function PropertiesPanel() {
 
     setup()
     return () => { qwenUnlistenRef.current?.() }
+  }, [episode?.id])
+
+  // Load existing corrections when episode changes
+  useEffect(() => {
+    if (!episode?.id) {
+      setPolishResults([])
+      return
+    }
+    let cancelled = false
+    contentAPI.getTranscriptCorrections(episode.id)
+      .then(list => { if (!cancelled) setPolishResults(list || []) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [episode?.id])
+
+  // Set up Tauri event listeners for Polish progress + completion
+  useEffect(() => {
+    if (!isTauri) return
+    let unlistenProgress = null
+    let unlistenComplete = null
+
+    const setup = async () => {
+      try {
+        const { listen } = await import('@tauri-apps/api/event')
+        unlistenProgress = await listen('polish_progress', (event) => {
+          if (event.payload?.episode_id === episode?.id) {
+            setPolishProgress(event.payload.progress ?? 0)
+          }
+        })
+        unlistenComplete = await listen('polish_complete', async (event) => {
+          if (event.payload?.episode_id === episode?.id) {
+            setPolishRunning(false)
+            setPolishProgress(100)
+            try {
+              const list = await contentAPI.getTranscriptCorrections(episode.id)
+              setPolishResults(list || [])
+              if (!openSections.polish) {
+                setOpenSections(prev => ({ ...prev, polish: true }))
+              }
+            } catch (e) {
+              console.error('Failed to reload polish corrections:', e)
+            }
+          }
+        })
+        polishUnlistenRef.current = () => {
+          unlistenProgress?.()
+          unlistenComplete?.()
+        }
+      } catch (e) {
+        console.error('Failed to set up Polish event listeners:', e)
+      }
+    }
+
+    setup()
+    return () => { polishUnlistenRef.current?.() }
   }, [episode?.id])
 
   const handleRunQwen = useCallback(async (mode) => {
@@ -353,12 +503,94 @@ export default function PropertiesPanel() {
     }
   }, [qwenClassifications, handleApprove])
 
+  const handleRunPolish = useCallback(async (mode) => {
+    if (!episode?.id || polishRunning) return
+    setPolishError(null)
+    setPolishRunning(true)
+    setPolishProgress(0)
+
+    let indices = []
+    if (mode === 'flagged') {
+      indices = Object.keys(flaggedSegments)
+        .filter(idx => {
+          const ft = flaggedSegments[idx]?.flag_type
+          return ft === 'multiple_speakers' || ft === 'wrong_speaker'
+        })
+        .map(Number)
+    } else if (mode === 'all' && segments) {
+      if (!window.confirm(`Run Scoop Polish on all ${segments.length} segments? This may take a while.`)) {
+        setPolishRunning(false)
+        return
+      }
+      indices = segments.map((_, i) => i)
+    }
+
+    if (indices.length === 0) {
+      setPolishError('No segments to polish. Flag segments as "Multiple Speakers" or "Wrong Speaker" first, or use "Polish All".')
+      setPolishRunning(false)
+      return
+    }
+
+    try {
+      await contentAPI.runQwenPolish(episode.id, indices)
+      // polish_complete event will handle the rest
+    } catch (e) {
+      console.error('Scoop Polish error:', e)
+      setPolishError(e?.message || String(e))
+      setPolishRunning(false)
+    }
+  }, [episode?.id, polishRunning, flaggedSegments, segments])
+
+  const handleApproveCorrection = useCallback(async (correction) => {
+    try {
+      await contentAPI.approveTranscriptCorrection(correction.id)
+      // Write corrected text to transcript JSON if it's a text change
+      if (!correction.has_multiple_speakers && correction.corrected_text !== correction.original_text) {
+        await episodesAPI.saveTranscriptEdits(episode.id, {
+          [correction.segment_idx]: { text: correction.corrected_text }
+        })
+      }
+      setPolishResults(prev =>
+        prev.map(r => r.id === correction.id ? { ...r, approved: 1 } : r)
+      )
+
+      // Fire-and-forget: extract voice sample for text-correction approvals
+      if (isTauri && !correction.has_multiple_speakers) {
+        const seg = segments?.[correction.segment_idx]
+        const diarizationLabel = seg?.speaker
+        const speakerName = diarizationLabel ? speakerNames[diarizationLabel] : null
+        if (speakerName) {
+          speakersAPI.extractVoiceSampleFromSegment(
+            episode.id, correction.segment_idx, speakerName
+          ).catch(() => {}) // best-effort, ignore errors
+        }
+      }
+    } catch (e) {
+      console.error('Failed to approve correction:', e)
+    }
+  }, [episode?.id, segments, speakerNames])
+
+  const handleRejectCorrection = useCallback(async (id) => {
+    try {
+      await contentAPI.rejectTranscriptCorrection(id)
+      setPolishResults(prev =>
+        prev.map(r => r.id === id ? { ...r, approved: -1 } : r)
+      )
+    } catch (e) {
+      console.error('Failed to reject correction:', e)
+    }
+  }, [])
+
   const flagCount = Object.keys(flaggedSegments).length
   const characterFlagCount = Object.values(flaggedSegments).filter(f => f?.flag_type === 'character_voice').length
   const characterCount = characterAppearances.length
   const chapterCount = episodeChapters.length
+  const commercialChapters = episodeChapters.filter(c =>
+    /commercial|sponsor/i.test(c.chapter_type_name || '')
+  )
   const sampleCount = Object.keys(markedSamples).length
   const qwenPendingCount = qwenClassifications.filter(c => c.approved === 0).length
+  const polishPendingCount = polishResults.filter(r => r.approved === 0).length
   // Deduplicate speakers with the same display name
   const deduplicatedSpeakers = speakers.filter((speakerId, idx) => {
     const displayName = speakerNames[speakerId]
@@ -420,9 +652,9 @@ export default function PropertiesPanel() {
   }
 
   return (
-    <div className="w-72 h-full bg-gray-50 border-l border-gray-200 flex flex-col">
+    <div className="w-72 h-full min-h-0 bg-gray-50 border-l border-gray-200 overflow-y-auto">
       {/* Header */}
-      <div className="p-3 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
+      <div className="p-3 border-b border-gray-200 flex items-center justify-between">
         <h3 className="font-semibold text-gray-700 text-sm">Properties</h3>
         <button
           onClick={() => setCollapsed(true)}
@@ -437,7 +669,7 @@ export default function PropertiesPanel() {
 
       {/* Speakers Section (always visible) */}
       {speakerCount > 0 && (
-        <div className="p-3 border-b border-gray-200 bg-purple-50 flex-shrink-0">
+        <div className="p-3 border-b border-gray-200 bg-purple-50">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-medium text-purple-800 flex items-center gap-1">
               👥 {speakerCount} speakers
@@ -476,19 +708,25 @@ export default function PropertiesPanel() {
                   {isEditing && (
                     <div className="absolute left-0 top-full z-20 mt-1 p-2 bg-white rounded-lg shadow-xl border border-gray-200 min-w-32 max-h-48 overflow-y-auto">
                       <div className="text-[10px] text-gray-500 mb-1">Speaker:</div>
-                      {voiceLibrary.map(v => (
-                        <button
-                          key={v.name}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            assignSpeakerName?.(speakerId, v.name)
-                            setEditingSpeaker(null)
-                          }}
-                          className="block w-full px-2 py-1 text-xs text-left hover:bg-yellow-50 text-yellow-800 rounded"
-                        >
-                          🎤 {v.short_name || v.name}
-                        </button>
-                      ))}
+                      {voiceLibrary.map(v => {
+                        const dbSpk = speakers?.find(s => s.name === v.name)
+                        return (
+                          <button
+                            key={v.name}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              assignSpeakerName?.(speakerId, v.name)
+                              setEditingSpeaker(null)
+                            }}
+                            className="flex w-full items-center px-2 py-1 text-xs text-left hover:bg-yellow-50 text-yellow-800 rounded gap-1"
+                          >
+                            <span className="flex-1">🎤 {v.short_name || v.name}</span>
+                            {dbSpk?.is_host && <span className="px-1 py-0.5 bg-purple-100 text-purple-700 rounded text-[9px] flex-shrink-0">Host</span>}
+                            {dbSpk?.is_guest && <span className="px-1 py-0.5 bg-amber-100 text-amber-700 rounded text-[9px] flex-shrink-0">Guest</span>}
+                            {dbSpk?.is_scoop && <span className="px-1 py-0.5 bg-indigo-100 text-indigo-700 rounded text-[9px] flex-shrink-0">Scoop</span>}
+                          </button>
+                        )
+                      })}
                       {audioDrops.length > 0 && (
                         <>
                           <div className="text-[10px] text-gray-500 mb-1 mt-2 border-t border-gray-100 pt-1">Sound Bite:</div>
@@ -524,7 +762,7 @@ export default function PropertiesPanel() {
 
 
       {/* Accordion Sections */}
-      <div className="flex-1 overflow-y-auto">
+      <div>
 
         {/* Flags Section */}
         <SectionHeader open={openSections.flags} onClick={() => toggleSection('flags')} icon="🚩" label="Flags" count={flagCount} color="red" />
@@ -670,6 +908,106 @@ export default function PropertiesPanel() {
                   </div>
                 </div>
               ))
+            )}
+
+            <div className="pt-2 border-t border-gray-200">
+              <div className="flex items-center justify-between">
+                <div className="text-xs font-medium text-gray-700">AI Chapter Suggestions</div>
+                <button
+                  onClick={runAiChapterDetection}
+                  disabled={aiChapterLoading}
+                  className="text-[11px] px-2 py-1 rounded bg-indigo-100 text-indigo-700 hover:bg-indigo-200 disabled:opacity-50"
+                >
+                  {aiChapterLoading ? 'Analyzing…' : 'Suggest'}
+                </button>
+              </div>
+              {aiChapterError && (
+                <div className="text-[11px] text-red-600 mt-1">{aiChapterError}</div>
+              )}
+              {aiChapterSuggestions.length > 0 && (
+                <div className="mt-2 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <div className="text-[10px] text-gray-500">{aiChapterSuggestions.length} suggestion(s)</div>
+                    <button
+                      onClick={applyAllAiSuggestions}
+                      className="text-[10px] px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
+                    >
+                      Apply all
+                    </button>
+                  </div>
+                  {aiChapterSuggestions.map((s, i) => (
+                    <div key={`${s.start_segment_idx}-${s.end_segment_idx}-${i}`} className="p-2 rounded border border-indigo-100 bg-indigo-50">
+                      <div className="flex items-center justify-between">
+                        <div className="text-[11px] text-indigo-800 font-medium">
+                          {s.chapter_type_name || 'Unknown type'}
+                        </div>
+                        {s.confidence != null && (
+                          <span className="text-[10px] text-indigo-600">{Math.round(s.confidence * 100)}%</span>
+                        )}
+                      </div>
+                      <div className="text-[10px] text-gray-500 mt-0.5">
+                        Segments #{s.start_segment_idx} - #{s.end_segment_idx}
+                      </div>
+                      {s.reason && (
+                        <div className="text-[10px] text-gray-600 mt-1">{s.reason}</div>
+                      )}
+                      <div className="flex gap-2 mt-2">
+                        <button
+                          onClick={() => applyAiSuggestion(s)}
+                          disabled={!s.chapter_type_id}
+                          className="text-[10px] px-2 py-1 rounded bg-indigo-600 text-white disabled:opacity-50"
+                        >
+                          Apply
+                        </button>
+                        <button
+                          onClick={() => setAiChapterSuggestions(prev => prev.filter(x => x !== s))}
+                          className="text-[10px] px-2 py-1 rounded bg-gray-100 text-gray-600"
+                        >
+                          Dismiss
+                        </button>
+                        <button
+                          onClick={() => seekToSegment?.(s.start_segment_idx)}
+                          className="text-[10px] px-2 py-1 rounded bg-white text-indigo-700 border border-indigo-200"
+                        >
+                          Jump
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {commercialChapters.length > 0 && (
+              <div className="pt-2 border-t border-gray-200">
+                <div className="text-xs font-medium text-gray-700 mb-2">Sponsor Clips</div>
+                {commercialChapters.map(chapter => (
+                  <div key={`clip-${chapter.id}`} className="p-2 rounded border border-orange-100 bg-orange-50 space-y-1">
+                    <div className="text-[11px] text-orange-700 font-medium">
+                      {chapter.chapter_type_name} · Segments #{chapter.start_segment_idx}-{chapter.end_segment_idx}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={sponsorClipNames[chapter.id] || ''}
+                        onChange={(e) => setSponsorClipNames(prev => ({ ...prev, [chapter.id]: e.target.value }))}
+                        className="flex-1 text-[11px] border border-orange-200 rounded px-2 py-1 bg-white"
+                      >
+                        <option value="">Select sponsor (optional)</option>
+                        {sponsors.map(s => (
+                          <option key={s.id} value={s.name}>{s.name}</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => handleExportSponsorClip(chapter)}
+                        disabled={sponsorExporting[chapter.id]}
+                        className="text-[11px] px-2 py-1 rounded bg-orange-500 text-white disabled:opacity-50"
+                      >
+                        {sponsorExporting[chapter.id] ? 'Exporting…' : 'Export'}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         )}
@@ -888,6 +1226,28 @@ export default function PropertiesPanel() {
                     {wikiSyncing ? 'Syncing from wiki...' : 'Fetch from Fandom Wiki'}
                   </button>
                 )}
+                {wikiError && (() => {
+                  const epNum = episode?.category_number || episode?.episode_number
+                  const notFound = wikiError.toLowerCase().includes('not found on wiki')
+                  const wikiCreateUrl = `https://heyscoops.fandom.com/wiki/Episode_${epNum}?action=edit`
+                  return (
+                    <div className="mt-2 text-[10px] text-red-500 space-y-1">
+                      <div>{wikiError}</div>
+                      {notFound && epNum && (
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(wikiCreateUrl)
+                            setWikiLinkCopied(true)
+                            setTimeout(() => setWikiLinkCopied(false), 2000)
+                          }}
+                          className="text-blue-500 hover:underline"
+                        >
+                          {wikiLinkCopied ? '✓ Copied!' : `+ Copy link to add Episode ${epNum} to wiki`}
+                        </button>
+                      )}
+                    </div>
+                  )
+                })()}
                 {!episode?.category_number && !episode?.episode_number && (
                   <p className="text-[10px] text-gray-400 mt-2">
                     Episode has no number — can't match to wiki.
@@ -991,6 +1351,156 @@ export default function PropertiesPanel() {
                 {qwenClassifications.length === 0 && !qwenRunning && (
                   <p className="text-xs text-gray-400 text-center py-2">
                     No classifications yet. Flag segments as "character_voice" then analyze.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Scoop Polish Section */}
+        {isTauri && episode?.is_downloaded && episode?.is_transcribed && (
+          <div className="border-b border-gray-100">
+            <SectionHeader
+              open={!!openSections.polish}
+              onClick={() => toggleSection('polish')}
+              icon="✨"
+              label="Scoop Polish"
+              count={polishPendingCount}
+              color="teal"
+            />
+            {openSections.polish && (
+              <div className="p-3 space-y-3">
+                {/* Run buttons */}
+                {!polishRunning ? (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleRunPolish('flagged')}
+                      disabled={polishRunning}
+                      className="flex-1 px-2 py-1.5 text-xs rounded bg-teal-100 hover:bg-teal-200 text-teal-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                      title="Polish segments flagged as Multiple Speakers or Wrong Speaker"
+                    >
+                      Polish Flagged
+                    </button>
+                    <button
+                      onClick={() => handleRunPolish('all')}
+                      disabled={polishRunning}
+                      className="flex-1 px-2 py-1.5 text-xs rounded bg-teal-50 hover:bg-teal-100 text-teal-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                      title="Run on all segments (slow)"
+                    >
+                      Polish All
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between text-xs text-teal-700">
+                      <span>Running Scoop Polish...</span>
+                      <span>{polishProgress}%</span>
+                    </div>
+                    <div className="w-full bg-teal-100 rounded-full h-1.5">
+                      <div
+                        className="bg-teal-500 h-1.5 rounded-full transition-all duration-300"
+                        style={{ width: `${polishProgress}%` }}
+                      />
+                    </div>
+                    <p className="text-[10px] text-gray-400">Model takes ~13× realtime — be patient</p>
+                  </div>
+                )}
+
+                {polishError && (
+                  <div className="p-2 rounded bg-red-50 border border-red-200">
+                    <p className="text-xs text-red-600">{polishError}</p>
+                  </div>
+                )}
+
+                {/* Pending corrections */}
+                {polishResults.filter(r => r.approved === 0).length > 0 && (
+                  <div className="space-y-2">
+                    <span className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">
+                      Pending Review ({polishPendingCount})
+                    </span>
+                    {polishResults.filter(r => r.approved === 0).map(r => {
+                      const pct = Math.round((r.confidence ?? 0) * 100)
+                      const timeStr = r.segment_start_time != null
+                        ? `${Math.floor(r.segment_start_time / 60)}:${String(Math.floor(r.segment_start_time % 60)).padStart(2, '0')}`
+                        : null
+                      const textChanged = r.corrected_text !== r.original_text
+                      return (
+                        <div key={r.id} className="rounded border border-teal-200 bg-teal-50 p-2 space-y-1.5">
+                          <div className="flex items-center justify-between gap-1">
+                            <button
+                              onClick={() => seekToSegment?.(r.segment_idx)}
+                              className="text-xs font-medium text-teal-700 hover:underline truncate flex-1 text-left"
+                            >
+                              Seg {r.segment_idx}
+                              {timeStr && <span className="ml-1 text-teal-400 font-normal">{timeStr}</span>}
+                            </button>
+                            <div className="flex items-center gap-1 flex-shrink-0">
+                              {r.has_multiple_speakers && (
+                                <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-orange-100 text-orange-700">👥 2 speakers</span>
+                              )}
+                              <span className="text-[10px] text-gray-400">{pct}%</span>
+                            </div>
+                          </div>
+
+                          {/* Text diff */}
+                          {textChanged ? (
+                            <div className="space-y-0.5">
+                              <p className="text-[11px] text-red-500 line-through line-clamp-2">"{r.original_text}"</p>
+                              <p className="text-[11px] text-green-700 line-clamp-2">"{r.corrected_text}"</p>
+                            </div>
+                          ) : (
+                            <p className="text-[11px] text-gray-400 italic">No text changes detected</p>
+                          )}
+
+                          {/* Speaker change note */}
+                          {r.speaker_change_note && (
+                            <p className="text-[10px] text-orange-600 bg-orange-50 rounded px-1.5 py-0.5 line-clamp-2">
+                              {r.speaker_change_note}
+                            </p>
+                          )}
+
+                          {/* Actions */}
+                          <div className="flex gap-1.5 pt-0.5">
+                            <button
+                              onClick={() => handleApproveCorrection(r)}
+                              className="flex-1 py-1 text-[11px] rounded bg-green-100 hover:bg-green-200 text-green-700 font-medium transition-colors"
+                            >
+                              ✓ {r.has_multiple_speakers ? 'Note speaker' : 'Apply fix'}
+                            </button>
+                            <button
+                              onClick={() => handleRejectCorrection(r.id)}
+                              className="flex-1 py-1 text-[11px] rounded bg-red-100 hover:bg-red-200 text-red-700 font-medium transition-colors"
+                            >
+                              ✗ Reject
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+
+                {/* Approved corrections */}
+                {polishResults.filter(r => r.approved === 1).length > 0 && (
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-medium text-gray-400 uppercase tracking-wider">
+                      Approved ({polishResults.filter(r => r.approved === 1).length})
+                    </span>
+                    {polishResults.filter(r => r.approved === 1).map(r => (
+                      <div key={r.id} className="px-2 py-1 rounded bg-green-50 border border-green-100 flex items-center gap-1.5">
+                        <span className="text-green-500 text-xs">✓</span>
+                        <span className="text-xs text-green-700 truncate flex-1">
+                          {r.has_multiple_speakers ? '👥 Speaker noted' : 'Text fixed'} @ seg {r.segment_idx}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {polishResults.length === 0 && !polishRunning && (
+                  <p className="text-xs text-gray-400 text-center py-2">
+                    No corrections yet. Click "Polish Flagged" to analyze flagged segments.
                   </p>
                 )}
               </div>

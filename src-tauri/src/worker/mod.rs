@@ -17,6 +17,8 @@ use diarize::{DiarizeJob, DiarizeResult};
 use download::{DownloadJob, DownloadResult};
 use transcribe::{TranscribeJob, TranscribeResult};
 
+pub const PRIORITY_REPROCESS_TOP: i32 = 10_000;
+
 /// Progress update from any pipeline stage
 pub struct ProgressUpdate {
     pub episode_id: i64,
@@ -30,6 +32,8 @@ pub struct ProgressUpdate {
 pub struct PipelineSlot {
     pub episode: EpisodeSummary,
     pub stage: String, // "downloading" | "transcribing" | "diarizing"
+    pub transcription_model: Option<String>,
+    pub embedding_backend: Option<String>,
     pub progress: Option<i32>,
     pub estimated_remaining: Option<i64>,
     pub started_at: DateTime<Utc>,
@@ -80,10 +84,14 @@ struct PipelineEntry {
     transcript_path: Option<PathBuf>,
     stage: String,
     queue_type: String, // "full" or "diarize_only"
+    transcription_model: String,
+    embedding_backend: String,
+    embedding_backend_override: Option<String>,
     entered_pipeline_at: std::time::Instant,
     stage_started_at: DateTime<Utc>, // When the current stage started
     download_duration: Option<f64>,
     transcribe_duration: Option<f64>,
+    published_date: Option<String>,
 }
 
 pub struct TranscriptionWorker {
@@ -95,10 +103,74 @@ pub struct TranscriptionWorker {
     episodes_path: PathBuf,
     venv_python_path: PathBuf,
     diarization_script_path: PathBuf,
+    harvest_script_path: PathBuf,
     huggingface_token: Option<String>,
 }
 
 impl TranscriptionWorker {
+    fn setting_is_true(&self, key: &str) -> bool {
+        self.db
+            .get_setting(key)
+            .unwrap_or(None)
+            .map(|v| v == "true")
+            .unwrap_or(false)
+    }
+
+    fn current_transcription_model(&self) -> String {
+        self.db
+            .get_setting("transcription_model")
+            .unwrap_or(None)
+            .filter(|v| !v.trim().is_empty())
+            .unwrap_or_else(|| "medium".to_string())
+    }
+
+    fn current_embedding_backend(&self) -> String {
+        self.db
+            .get_setting("embedding_model")
+            .unwrap_or(None)
+            .filter(|v| v == "ecapa-tdnn" || v == "pyannote")
+            .unwrap_or_else(|| "pyannote".to_string())
+    }
+
+    fn maybe_auto_resume_transcribe_queue(&self) {
+        let priority_mode = self
+            .db
+            .get_setting("priority_reprocess_mode")
+            .unwrap_or(None)
+            .map(|v| v == "true")
+            .unwrap_or(false);
+        if !priority_mode {
+            return;
+        }
+
+        let remaining = self
+            .db
+            .count_priority_diarization_items(PRIORITY_REPROCESS_TOP)
+            .unwrap_or(0);
+        if remaining > 0 {
+            return;
+        }
+
+        let prev_pause = self
+            .db
+            .get_setting("priority_reprocess_prev_pause_transcribe")
+            .unwrap_or(None)
+            .map(|v| v == "true")
+            .unwrap_or(false);
+
+        if let Err(e) = self.db.set_setting(
+            "pause_transcribe_queue",
+            if prev_pause { "true" } else { "false" },
+        ) {
+            log::warn!("Failed restoring pause_transcribe_queue after priority reprocess: {}", e);
+        }
+        let _ = self.db.set_setting("priority_reprocess_mode", "false");
+        let _ = self
+            .db
+            .set_setting("priority_reprocess_prev_pause_transcribe", "false");
+        log::info!("Priority reprocess complete; restored transcribe queue pause={}", prev_pause);
+    }
+
     pub fn new(
         db: Arc<Database>,
         state: Arc<RwLock<WorkerState>>,
@@ -108,6 +180,7 @@ impl TranscriptionWorker {
         episodes_path: PathBuf,
         venv_python_path: PathBuf,
         diarization_script_path: PathBuf,
+        harvest_script_path: PathBuf,
         huggingface_token: Option<String>,
     ) -> Self {
         Self {
@@ -119,6 +192,7 @@ impl TranscriptionWorker {
             episodes_path,
             venv_python_path,
             diarization_script_path,
+            harvest_script_path,
             huggingface_token,
         }
     }
@@ -356,8 +430,11 @@ impl TranscriptionWorker {
         has_diarization: bool,
         app_handle: &tauri::AppHandle,
     ) {
+        let transcribe_paused = self.setting_is_true("pause_transcribe_queue");
+        let diarize_paused = self.setting_is_true("pause_diarize_queue");
+
         // If transcribe slot is free, look for a ready item
-        if !*transcribe_busy {
+        if !*transcribe_busy && !transcribe_paused {
             // First check active entries that have been downloaded but not yet transcribed
             let ready_id = active
                 .iter()
@@ -386,6 +463,16 @@ impl TranscriptionWorker {
                 // Pull from DB queue
                 if let Ok(Some(item)) = self.db.get_next_queue_item() {
                     let episode_id = item.episode.id;
+                    let transcription_model = self.current_transcription_model();
+                    let default_embedding_backend = self.current_embedding_backend();
+                    let embedding_backend_override = self
+                        .db
+                        .get_queue_embedding_override(episode_id)
+                        .unwrap_or(None)
+                        .filter(|v| v == "ecapa-tdnn" || v == "pyannote");
+                    let resolved_embedding_backend = embedding_backend_override
+                        .clone()
+                        .unwrap_or_else(|| default_embedding_backend.clone());
 
                     // Skip if already active in pipeline
                     if active.contains_key(&episode_id) {
@@ -417,7 +504,7 @@ impl TranscriptionWorker {
                         && item.episode.transcript_path.is_some()
                     {
                         // Skip straight to diarization
-                        if has_diarization && !*diarize_busy {
+                        if has_diarization && !*diarize_busy && !diarize_paused {
                             let audio_path = item.episode.audio_file_path.clone();
                             let transcript_path =
                                 PathBuf::from(item.episode.transcript_path.as_ref().unwrap());
@@ -440,10 +527,14 @@ impl TranscriptionWorker {
                                     transcript_path: Some(transcript_path.clone()),
                                     stage: "diarizing".to_string(),
                                     queue_type,
+                                    transcription_model: transcription_model.clone(),
+                                    embedding_backend: resolved_embedding_backend.clone(),
+                                    embedding_backend_override: embedding_backend_override.clone(),
                                     entered_pipeline_at: std::time::Instant::now(),
                                     stage_started_at: Utc::now(),
                                     download_duration: None,
                                     transcribe_duration: None,
+                                    published_date: item.episode.published_date.clone(),
                                 },
                             );
 
@@ -457,6 +548,9 @@ impl TranscriptionWorker {
                                         .unwrap_or_default(),
                                     transcript_path,
                                     hints_path: hints,
+                                    embedding_backend_override: embedding_backend_override.clone(),
+                                    episode_date: item.episode.published_date.clone(),
+                                    db: self.db.clone(),
                                 })
                                 .await;
 
@@ -489,10 +583,14 @@ impl TranscriptionWorker {
                                     transcript_path: None,
                                     stage: "downloading".to_string(),
                                     queue_type,
+                                    transcription_model: transcription_model.clone(),
+                                    embedding_backend: resolved_embedding_backend.clone(),
+                                    embedding_backend_override: embedding_backend_override.clone(),
                                     entered_pipeline_at: std::time::Instant::now(),
                                     stage_started_at: Utc::now(),
                                     download_duration: None,
                                     transcribe_duration: None,
+                                    published_date: item.episode.published_date.clone(),
                                 },
                             );
                             *download_busy = true;
@@ -519,10 +617,14 @@ impl TranscriptionWorker {
                                 transcript_path: None,
                                 stage: "transcribing".to_string(),
                                 queue_type,
+                                transcription_model: transcription_model.clone(),
+                                embedding_backend: resolved_embedding_backend.clone(),
+                                embedding_backend_override: embedding_backend_override.clone(),
                                 entered_pipeline_at: std::time::Instant::now(),
                                 stage_started_at: Utc::now(),
                                 download_duration: None,
                                 transcribe_duration: None,
+                                published_date: item.episode.published_date.clone(),
                             },
                         );
                         *transcribe_busy = true;
@@ -542,7 +644,7 @@ impl TranscriptionWorker {
         }
 
         // If diarize slot is free, check for diarize_only items independently of transcribe slot
-        if !*diarize_busy && has_diarization {
+        if !*diarize_busy && has_diarization && !diarize_paused {
             // First check active entries that are downloaded diarize_only items
             let diarize_ready_id = active
                 .iter()
@@ -571,6 +673,9 @@ impl TranscriptionWorker {
                             } else {
                                 None
                             },
+                            embedding_backend_override: entry.embedding_backend_override.clone(),
+                            episode_date: entry.published_date.clone(),
+                            db: self.db.clone(),
                         })
                         .await;
                     let _ = app_handle.emit("status_update", ());
@@ -579,6 +684,16 @@ impl TranscriptionWorker {
                 // Pull diarize_only items from DB queue (independent of transcribe slot)
                 if let Ok(Some(item)) = self.db.get_next_diarize_only_item() {
                     let episode_id = item.episode.id;
+                    let transcription_model = self.current_transcription_model();
+                    let default_embedding_backend = self.current_embedding_backend();
+                    let embedding_backend_override = self
+                        .db
+                        .get_queue_embedding_override(episode_id)
+                        .unwrap_or(None)
+                        .filter(|v| v == "ecapa-tdnn" || v == "pyannote");
+                    let resolved_embedding_backend = embedding_backend_override
+                        .clone()
+                        .unwrap_or_else(|| default_embedding_backend.clone());
 
                     if !active.contains_key(&episode_id) {
                         if let Err(e) = self.db.mark_processing(episode_id) {
@@ -620,10 +735,14 @@ impl TranscriptionWorker {
                                         transcript_path: Some(transcript_path.clone()),
                                         stage: "diarizing".to_string(),
                                         queue_type: "diarize_only".to_string(),
+                                        transcription_model: transcription_model.clone(),
+                                        embedding_backend: resolved_embedding_backend.clone(),
+                                        embedding_backend_override: embedding_backend_override.clone(),
                                         entered_pipeline_at: std::time::Instant::now(),
                                         stage_started_at: Utc::now(),
                                         download_duration: None,
                                         transcribe_duration: None,
+                                        published_date: item.episode.published_date.clone(),
                                     },
                                 );
                                 *diarize_busy = true;
@@ -636,6 +755,9 @@ impl TranscriptionWorker {
                                             .unwrap_or_default(),
                                         transcript_path,
                                         hints_path: hints,
+                                        embedding_backend_override: embedding_backend_override.clone(),
+                                        episode_date: item.episode.published_date.clone(),
+                                        db: self.db.clone(),
                                     })
                                     .await;
                                 let _ = app_handle.emit("status_update", ());
@@ -649,10 +771,14 @@ impl TranscriptionWorker {
                                         transcript_path: Some(transcript_path),
                                         stage: "downloading".to_string(),
                                         queue_type: "diarize_only".to_string(),
+                                        transcription_model: transcription_model.clone(),
+                                        embedding_backend: resolved_embedding_backend.clone(),
+                                        embedding_backend_override: embedding_backend_override.clone(),
                                         entered_pipeline_at: std::time::Instant::now(),
                                         stage_started_at: Utc::now(),
                                         download_duration: None,
                                         transcribe_duration: None,
+                                        published_date: item.episode.published_date.clone(),
                                     },
                                 );
                                 *download_busy = true;
@@ -682,7 +808,7 @@ impl TranscriptionWorker {
         }
 
         // Pre-fetch: if download slot is idle and other slots are busy, pre-download next
-        if !*download_busy && (*transcribe_busy || *diarize_busy) {
+        if !*download_busy && !transcribe_paused && (*transcribe_busy || *diarize_busy) {
             if let Ok(undownloaded) = self.db.get_upcoming_undownloaded(1) {
                 if let Some(item) = undownloaded.into_iter().next() {
                     let episode_id = item.episode.id;
@@ -701,10 +827,14 @@ impl TranscriptionWorker {
                                 transcript_path: None,
                                 stage: "downloading".to_string(),
                                 queue_type: "full".to_string(),
+                                transcription_model: self.current_transcription_model(),
+                                embedding_backend: self.current_embedding_backend(),
+                                embedding_backend_override: None,
                                 entered_pipeline_at: std::time::Instant::now(),
                                 stage_started_at: Utc::now(),
                                 download_duration: None,
                                 transcribe_duration: None,
+                                published_date: item.episode.published_date.clone(),
                             },
                         );
                         *download_busy = true;
@@ -748,7 +878,10 @@ impl TranscriptionWorker {
                     entry.stage = "downloaded".to_string();
 
                     // If transcribe slot is free, send immediately
-                    if !*transcribe_busy && entry.queue_type == "full" {
+                    if !*transcribe_busy
+                        && entry.queue_type == "full"
+                        && !self.setting_is_true("pause_transcribe_queue")
+                    {
                         entry.stage = "transcribing".to_string();
                         entry.stage_started_at = Utc::now();
                         *transcribe_busy = true;
@@ -760,7 +893,10 @@ impl TranscriptionWorker {
                                 duration: entry.episode.duration,
                             })
                             .await;
-                    } else if entry.queue_type == "diarize_only" && has_diarization && !*diarize_busy
+                    } else if entry.queue_type == "diarize_only"
+                        && has_diarization
+                        && !*diarize_busy
+                        && !self.setting_is_true("pause_diarize_queue")
                     {
                         // Diarize-only with download done
                         if let Some(tp) = &entry.transcript_path {
@@ -780,6 +916,9 @@ impl TranscriptionWorker {
                                     } else {
                                         None
                                     },
+                                    embedding_backend_override: entry.embedding_backend_override.clone(),
+                                    episode_date: entry.published_date.clone(),
+                                    db: self.db.clone(),
                                 })
                                 .await;
                         }
@@ -811,6 +950,7 @@ impl TranscriptionWorker {
         app_handle: &tauri::AppHandle,
     ) {
         let episode_id = result.episode_id;
+        let diarize_paused = self.setting_is_true("pause_diarize_queue");
 
         match result.result {
             Ok(transcript_path) => {
@@ -825,7 +965,7 @@ impl TranscriptionWorker {
                     }
                 }
 
-                if has_diarization && !*diarize_busy {
+                if has_diarization && !*diarize_busy && !diarize_paused {
                     // Send to diarization
                     if let Some(entry) = active.get_mut(&episode_id) {
                         entry.transcript_path = Some(transcript_path.clone());
@@ -847,6 +987,9 @@ impl TranscriptionWorker {
                                 } else {
                                     None
                                 },
+                                embedding_backend_override: entry.embedding_backend_override.clone(),
+                                episode_date: entry.published_date.clone(),
+                                db: self.db.clone(),
                             })
                             .await;
                     }
@@ -911,6 +1054,18 @@ impl TranscriptionWorker {
                     Err(e) => log::warn!("Failed to resolve speaker flags for episode {}: {}", episode_id, e),
                 }
 
+                // Auto-create placeholder speakers for unknown diarization labels
+                match self.db.auto_create_unknown_speakers_for_episode(episode_id) {
+                    Ok(n) if n > 0 => log::info!("Auto-created {} placeholder speakers for episode {}", n, episode_id),
+                    Ok(_) => {}
+                    Err(e) => log::warn!("Failed to auto-create placeholder speakers: {}", e),
+                }
+
+                // Auto-harvest voice samples for this episode (best-effort)
+                if let Err(e) = self.run_voice_harvest_for_episode(episode_id).await {
+                    log::warn!("Voice harvest failed for episode {}: {}", episode_id, e);
+                }
+
                 // Get transcript path from entry
                 let transcript_path = active
                     .get(&episode_id)
@@ -944,8 +1099,52 @@ impl TranscriptionWorker {
             }
         }
 
+        self.maybe_auto_resume_transcribe_queue();
+
         // Check if any entries are waiting for diarize slot
         // (will be picked up in next try_fill_slots cycle via the scheduler loop)
+    }
+
+    async fn run_voice_harvest_for_episode(&self, episode_id: i64) -> Result<(), String> {
+        if !self.venv_python_path.exists() {
+            return Err("Python venv not found".to_string());
+        }
+        if !self.harvest_script_path.exists() {
+            return Err("harvest_voice_samples.py not found".to_string());
+        }
+
+        let project_dir = self
+            .episodes_path
+            .parent()
+            .and_then(|p| p.parent())
+            .ok_or("Failed to resolve project dir")?;
+
+        let db_path = project_dir.join("data").join("ice_cream_social.db");
+        let library_dir = project_dir.join("scripts").join("voice_library");
+        let audio_base = project_dir.join("scripts").join("episodes");
+
+        let output = tokio::process::Command::new(&self.venv_python_path)
+            .args([
+                self.harvest_script_path.to_str().unwrap(),
+                "--db-path",
+                db_path.to_str().unwrap(),
+                "--library-dir",
+                library_dir.to_str().unwrap(),
+                "--audio-base",
+                audio_base.to_str().unwrap(),
+                "--episode-id",
+                &episode_id.to_string(),
+            ])
+            .output()
+            .await
+            .map_err(|e| format!("Failed to spawn harvest: {}", e))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(stderr.to_string());
+        }
+
+        Ok(())
     }
 
     async fn finish_episode(
@@ -968,6 +1167,20 @@ impl TranscriptionWorker {
                 entry.download_duration,
                 entry.transcribe_duration,
             );
+        }
+
+        // Persist which pipeline identity produced this completion for stats/recent panels.
+        let (transcription_model, embedding_backend) = if let Some(entry) = active.get(&episode_id) {
+            (entry.transcription_model.clone(), entry.embedding_backend.clone())
+        } else {
+            (self.current_transcription_model(), self.current_embedding_backend())
+        };
+        if let Err(e) = self.db.update_episode_pipeline_identity(
+            episode_id,
+            &transcription_model,
+            &embedding_backend,
+        ) {
+            log::warn!("Failed to save pipeline identity for episode {}: {}", episode_id, e);
         }
 
         if let Err(e) = self.db.mark_completed(episode_id, transcript_path.to_str()) {
@@ -1020,6 +1233,8 @@ impl TranscriptionWorker {
                 PipelineSlot {
                     episode: e.episode.clone(),
                     stage: e.stage.clone(),
+                    transcription_model: Some(e.transcription_model.clone()),
+                    embedding_backend: Some(e.embedding_backend.clone()),
                     progress,
                     estimated_remaining,
                     started_at: e.stage_started_at,
@@ -1030,6 +1245,10 @@ impl TranscriptionWorker {
 
     /// Check auto-transcribe setting and add episodes if enabled
     async fn check_auto_transcribe(&self, app_handle: &tauri::AppHandle) {
+        if self.setting_is_true("pause_transcribe_queue") {
+            return;
+        }
+
         let auto_transcribe = self
             .db
             .get_setting("auto_transcribe")

@@ -19,6 +19,11 @@ function formatAudioLength(seconds) {
   return `${mins}m`
 }
 
+function formatEmbeddingModel(model) {
+  if (!model) return '-'
+  return model === 'ecapa-tdnn' ? 'ECAPA-TDNN' : model
+}
+
 const CONTEXT_COLORS = {
   download:   'bg-blue-100 text-blue-700',
   transcribe: 'bg-purple-100 text-purple-700',
@@ -188,6 +193,7 @@ function PipelineStats({ stats, currentActivity, onOpenEpisode }) {
                   <th className="px-3 py-2 text-right font-medium text-gray-500">Download</th>
                   <th className="px-3 py-2 text-right font-medium text-gray-500">Transcribe</th>
                   <th className="px-3 py-2 text-right font-medium text-gray-500">Diarize</th>
+                  <th className="px-3 py-2 text-left font-medium text-gray-500">Pipeline</th>
                   <th className="px-3 py-2 text-right font-medium text-gray-500">Total</th>
                   <th className="px-3 py-2 text-right font-medium text-gray-500">Finished</th>
                 </tr>
@@ -199,8 +205,25 @@ function PipelineStats({ stats, currentActivity, onOpenEpisode }) {
                     <td className="px-3 py-2 text-gray-900 max-w-xs truncate">{ep.title}</td>
                     <td className="px-3 py-2 text-right text-gray-600 whitespace-nowrap">{formatAudioLength(ep.audio_duration)}</td>
                     <td className="px-3 py-2 text-right text-gray-600 whitespace-nowrap">{formatDuration(ep.download_duration)}</td>
-                    <td className="px-3 py-2 text-right text-gray-600 whitespace-nowrap">{formatDuration(ep.transcribe_duration)}</td>
+                    <td className="px-3 py-2 text-right text-gray-600 whitespace-nowrap">
+                      {ep.last_queue_type === 'diarize_only' ? '-' : formatDuration(ep.transcribe_duration)}
+                    </td>
                     <td className="px-3 py-2 text-right text-gray-600 whitespace-nowrap">{formatDuration(ep.diarize_duration)}</td>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      <div className="flex items-center gap-1.5">
+                        <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 text-[10px]">
+                          {ep.transcription_model_used || '-'}
+                        </span>
+                        <span className="px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 border border-violet-200 text-[10px]">
+                          {formatEmbeddingModel(ep.embedding_backend_used)}
+                        </span>
+                        {ep.last_queue_type === 'diarize_only' && (
+                          <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200 text-[10px]">
+                            Reprocess
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td className="px-3 py-2 text-right font-medium text-gray-900 whitespace-nowrap">{formatDuration(ep.total_duration)}</td>
                     <td className="px-3 py-2 text-right text-gray-400 whitespace-nowrap">
                       {ep.completed_date ? new Date(ep.completed_date).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : '-'}

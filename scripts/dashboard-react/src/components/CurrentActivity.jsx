@@ -68,6 +68,34 @@ function CurrentActivity({ activity }) {
     }
   }
 
+  const formatEmbeddingModel = (value) => {
+    if (!value) return 'pyannote'
+    return value === 'ecapa-tdnn' ? 'ECAPA-TDNN' : value
+  }
+
+  const formatAsrModel = (value) => value || 'medium'
+
+  const getActiveIdentity = () => {
+    const slots = activity?.slots || []
+    const fallbackAsr = activity?.worker_info?.model || 'medium'
+    const fallbackEmbed = activity?.worker_info?.embedding_model || 'pyannote'
+
+    if (!slots.length) {
+      return {
+        asr: formatAsrModel(fallbackAsr),
+        embed: formatEmbeddingModel(fallbackEmbed),
+      }
+    }
+
+    const asrModels = [...new Set(slots.map(s => formatAsrModel(s.transcription_model || fallbackAsr)))]
+    const embedModels = [...new Set(slots.map(s => formatEmbeddingModel(s.embedding_backend || fallbackEmbed)))]
+
+    return {
+      asr: asrModels.length === 1 ? asrModels[0] : `mixed (${asrModels.join(' + ')})`,
+      embed: embedModels.length === 1 ? embedModels[0] : `mixed (${embedModels.join(' + ')})`,
+    }
+  }
+
   const stageConfig = {
     downloading: { icon: '📥', label: 'Downloading', color: 'amber', bgClass: 'bg-amber-50', borderClass: 'border-amber-200', textClass: 'text-amber-600', barClass: 'bg-amber-500' },
     transcribing: { icon: '🎙️', label: 'Transcribing', color: 'sky', bgClass: 'bg-sky-50', borderClass: 'border-sky-200', textClass: 'text-sky-600', barClass: 'bg-sky-500' },
@@ -79,6 +107,9 @@ function CurrentActivity({ activity }) {
     const config = stageConfig[slot.stage] || stageConfig.transcribing
     const elapsed = getElapsed(slot.episode.id, slot.elapsed_seconds)
     const progress = slot.progress || 0
+    const asrModel = formatAsrModel(slot.transcription_model || activity?.worker_info?.model)
+    const embeddingModel = formatEmbeddingModel(slot.embedding_backend || activity?.worker_info?.embedding_model)
+    const showPipelineBadges = slot.stage === 'transcribing' || slot.stage === 'diarizing'
     return (
       <div key={`${slot.episode.id}-${slot.stage}`} className={`p-4 rounded-lg border ${config.bgClass} ${config.borderClass}`}>
         <div className="flex items-center gap-2 mb-2">
@@ -88,6 +119,16 @@ function CurrentActivity({ activity }) {
         <div className="font-semibold text-gray-900 text-sm">
           {slot.episode.episode_number ? `Ep ${slot.episode.episode_number}: ` : ''}{slot.episode.title}
         </div>
+        {showPipelineBadges && (
+          <div className="mt-2 flex items-center gap-1.5 text-[10px]">
+            <span className="px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-700">
+              ASR: {asrModel}
+            </span>
+            <span className="px-1.5 py-0.5 rounded bg-violet-100 border border-violet-200 text-violet-700">
+              Embed: {embeddingModel}
+            </span>
+          </div>
+        )}
 
         {/* Progress bar - always rendered, hidden when no progress */}
         <div className={`mt-3 transition-opacity duration-300 ${progress > 0 ? 'opacity-100' : 'opacity-0 h-0 overflow-hidden'}`}>
@@ -172,7 +213,6 @@ function CurrentActivity({ activity }) {
               <div className="text-xs text-gray-500">Model</div>
             </div>
           </div>
-
           {activity.last_activity && (
             <div className="text-xs text-gray-400 text-center">
               Last completed: {formatDateTime(activity.last_activity)}
@@ -199,7 +239,6 @@ function CurrentActivity({ activity }) {
                   {slots.length} active {slots.length === 1 ? 'slot' : 'slots'}
                 </div>
               </div>
-
               {/* 4-step pipeline indicator */}
               <div className="flex items-center gap-1">
                 {['downloading', 'transcribing', 'diarizing', 'saving'].map((step, i) => {
@@ -397,6 +436,8 @@ function CurrentActivity({ activity }) {
     }
   }
 
+  const activeIdentity = getActiveIdentity()
+
   return (
     <div className="bg-white rounded-xl shadow-sm border border-cream-200 overflow-hidden">
       <div
@@ -418,6 +459,14 @@ function CurrentActivity({ activity }) {
           >
             <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
           </svg>
+        </div>
+        <div className="mt-3 flex items-center justify-center gap-2 text-xs">
+          <span className="px-2 py-1 rounded bg-white/90 border border-white/70 text-slate-800">
+            ASR: {activeIdentity.asr}
+          </span>
+          <span className="px-2 py-1 rounded bg-violet-100 border border-violet-200 text-violet-700">
+            Embed: {activeIdentity.embed}
+          </span>
         </div>
       </div>
       {!collapsed && (

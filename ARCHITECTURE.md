@@ -150,6 +150,8 @@ CREATE TABLE transcription_queue (
     episode_id INTEGER NOT NULL,
     priority INTEGER DEFAULT 0,
     status TEXT DEFAULT 'pending',
+    queue_type TEXT DEFAULT 'full', -- 'full' | 'diarize_only'
+    embedding_backend_override TEXT, -- optional per-episode diarization backend
     added_at TEXT DEFAULT CURRENT_TIMESTAMP,
     started_at TEXT,
     completed_at TEXT,

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { settingsAPI, episodesAPI, workerAPI, contentAPI } from '../services/api'
+import { settingsAPI, episodesAPI, workerAPI, contentAPI, speakersAPI } from '../services/api'
 
 // ============================================================================
 // Category Rule Card - Editable card for a single rule
@@ -709,6 +709,7 @@ export default function SettingsPanel({ onNotification }) {
   const [savingKey, setSavingKey] = useState(null)
   const [preventSleep, setPreventSleep] = useState(false)
   const [preventSleepLoading, setPreventSleepLoading] = useState(false)
+  const [embeddingModel, setEmbeddingModel] = useState('pyannote')
 
   useEffect(() => {
     loadSettings()
@@ -742,8 +743,12 @@ export default function SettingsPanel({ onNotification }) {
   const loadSettings = async () => {
     setLoading(true)
     try {
-      const data = await settingsAPI.getAllSettings()
+      const [data, model] = await Promise.all([
+        settingsAPI.getAllSettings(),
+        speakersAPI.getEmbeddingModel(),
+      ])
       setSettings(data || {})
+      setEmbeddingModel(model || 'pyannote')
     } catch (error) {
       console.error('Error loading settings:', error)
       onNotification?.('Error loading settings', 'error')
@@ -776,8 +781,46 @@ export default function SettingsPanel({ onNotification }) {
     updateSetting('enable_diarization', (!currentValue).toString())
   }
 
+  const togglePauseTranscribeQueue = () => {
+    const currentValue = settings.pause_transcribe_queue === 'true'
+    updateSetting('pause_transcribe_queue', (!currentValue).toString())
+  }
+
+  const togglePauseDiarizeQueue = () => {
+    const currentValue = settings.pause_diarize_queue === 'true'
+    updateSetting('pause_diarize_queue', (!currentValue).toString())
+  }
+
+  const togglePauseTranscribeDuringPriorityReprocess = () => {
+    const currentValue = settings.priority_reprocess_pause_transcribe === 'true'
+    updateSetting('priority_reprocess_pause_transcribe', (!currentValue).toString())
+  }
+
+  const updateEmbeddingModel = async (nextModel) => {
+    if (!nextModel || nextModel === embeddingModel) return
+    setSavingKey('embedding_model')
+    try {
+      await speakersAPI.setEmbeddingModel(nextModel)
+      setEmbeddingModel(nextModel)
+      setSettings(prev => ({ ...prev, embedding_model: nextModel }))
+      onNotification?.(
+        'Embedding backend updated. Recalibrate All in Audio ID to rebuild voice prints for this backend.',
+        'success'
+      )
+    } catch (error) {
+      onNotification?.(`Error updating embedding backend: ${error.message}`, 'error')
+    } finally {
+      setSavingKey(null)
+    }
+  }
+
+
   const isAutoTranscribeEnabled = settings.auto_transcribe === 'true'
   const isDiarizationEnabled = settings.enable_diarization === 'true'
+  const isTranscribeQueuePaused = settings.pause_transcribe_queue === 'true'
+  const isDiarizeQueuePaused = settings.pause_diarize_queue === 'true'
+  const isPriorityReprocessPauseEnabled = settings.priority_reprocess_pause_transcribe === 'true'
+  const isHfHubOfflineEnabled = settings.hf_hub_offline === 'true'
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-cream-200 overflow-hidden">
@@ -834,6 +877,40 @@ export default function SettingsPanel({ onNotification }) {
               </div>
             </div>
 
+            {/* Transcription Queue Pause Toggle */}
+            <div className="p-4 bg-indigo-50 rounded-lg border border-indigo-200">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-medium text-indigo-800">Pause Transcription Queue</h3>
+                  <p className="text-sm text-indigo-600 mt-1">
+                    Pause new transcription jobs. In-flight work continues; queued items remain pending.
+                  </p>
+                </div>
+                <button
+                  onClick={togglePauseTranscribeQueue}
+                  disabled={savingKey === 'pause_transcribe_queue'}
+                  className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors ${
+                    isTranscribeQueuePaused ? 'bg-indigo-500' : 'bg-gray-300'
+                  } ${savingKey === 'pause_transcribe_queue' ? 'opacity-50' : ''}`}
+                >
+                  <span
+                    className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-transform ${
+                      isTranscribeQueuePaused ? 'translate-x-8' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+              <div className="mt-3 flex items-center gap-2">
+                <span className={`px-2 py-1 rounded text-xs font-medium ${
+                  isTranscribeQueuePaused
+                    ? 'bg-indigo-200 text-indigo-800'
+                    : 'bg-gray-200 text-gray-600'
+                }`}>
+                  {isTranscribeQueuePaused ? 'PAUSED' : 'RUNNING'}
+                </span>
+              </div>
+            </div>
+
             {/* Diarization Toggle */}
             <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
               <div className="flex items-center justify-between">
@@ -867,6 +944,137 @@ export default function SettingsPanel({ onNotification }) {
                   {isDiarizationEnabled ? 'ON' : 'OFF'}
                 </span>
               </div>
+            </div>
+
+            {/* Diarization Queue Pause Toggle */}
+            <div className="p-4 bg-fuchsia-50 rounded-lg border border-fuchsia-200">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-medium text-fuchsia-800">Pause Diarization Queue</h3>
+                  <p className="text-sm text-fuchsia-600 mt-1">
+                    Pause new diarization jobs. Transcription can continue and wait for diarization later.
+                  </p>
+                </div>
+                <button
+                  onClick={togglePauseDiarizeQueue}
+                  disabled={savingKey === 'pause_diarize_queue'}
+                  className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors ${
+                    isDiarizeQueuePaused ? 'bg-fuchsia-500' : 'bg-gray-300'
+                  } ${savingKey === 'pause_diarize_queue' ? 'opacity-50' : ''}`}
+                >
+                  <span
+                    className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-transform ${
+                      isDiarizeQueuePaused ? 'translate-x-8' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+              <div className="mt-3 flex items-center gap-2">
+                <span className={`px-2 py-1 rounded text-xs font-medium ${
+                  isDiarizeQueuePaused
+                    ? 'bg-fuchsia-200 text-fuchsia-800'
+                    : 'bg-gray-200 text-gray-600'
+                }`}>
+                  {isDiarizeQueuePaused ? 'PAUSED' : 'RUNNING'}
+                </span>
+              </div>
+            </div>
+
+            {/* Priority Reprocess Resource Policy */}
+            <div className="p-4 bg-amber-50 rounded-lg border border-amber-200">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-medium text-amber-800">Pause Transcribe During Priority Reprocess</h3>
+                  <p className="text-sm text-amber-700 mt-1">
+                    If ON, a top-priority re-diarization temporarily blocks new transcription starts.
+                    If OFF, transcription and diarization continue concurrently.
+                  </p>
+                </div>
+                <button
+                  onClick={togglePauseTranscribeDuringPriorityReprocess}
+                  disabled={savingKey === 'priority_reprocess_pause_transcribe'}
+                  className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors ${
+                    isPriorityReprocessPauseEnabled ? 'bg-amber-500' : 'bg-gray-300'
+                  } ${savingKey === 'priority_reprocess_pause_transcribe' ? 'opacity-50' : ''}`}
+                >
+                  <span
+                    className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-transform ${
+                      isPriorityReprocessPauseEnabled ? 'translate-x-8' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+              <div className="mt-3 flex items-center gap-2">
+                <span className={`px-2 py-1 rounded text-xs font-medium ${
+                  isPriorityReprocessPauseEnabled
+                    ? 'bg-amber-200 text-amber-800'
+                    : 'bg-gray-200 text-gray-600'
+                }`}>
+                  {isPriorityReprocessPauseEnabled ? 'PAUSE ON REPROCESS' : 'CONCURRENT PIPELINE'}
+                </span>
+              </div>
+            </div>
+
+            {/* Voice Embedding Backend */}
+            <div className="p-4 bg-violet-50 rounded-lg border border-violet-200">
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <div>
+                  <h3 className="font-medium text-violet-800">Voice Embedding Backend</h3>
+                  <p className="text-sm text-violet-600 mt-1">
+                    Select the model used for speaker voice prints and diarization speaker-ID matching.
+                  </p>
+                </div>
+                <select
+                  value={embeddingModel}
+                  onChange={(e) => updateEmbeddingModel(e.target.value)}
+                  disabled={savingKey === 'embedding_model'}
+                  className="px-3 py-2 border border-violet-300 rounded-lg bg-white text-sm"
+                >
+                  <option value="ecapa-tdnn">ECAPA-TDNN</option>
+                  <option value="pyannote">pyannote/embedding</option>
+                </select>
+              </div>
+              <p className="text-xs text-violet-500 mt-2">
+                Switching backend does not retrain existing prints automatically. Use Recalibrate All in Audio ID after switching.
+              </p>
+            </div>
+
+            {/* Hugging Face Offline Mode */}
+            <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-medium text-slate-800">Hugging Face Offline Mode</h3>
+                  <p className="text-sm text-slate-600 mt-1">
+                    Force Compare/Rebuild voice-print jobs to use cached models only.
+                    Enable this after models are downloaded to avoid network/DNS failures.
+                  </p>
+                </div>
+                <button
+                  onClick={() => updateSetting('hf_hub_offline', (!isHfHubOfflineEnabled).toString())}
+                  disabled={savingKey === 'hf_hub_offline'}
+                  className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors ${
+                    isHfHubOfflineEnabled ? 'bg-slate-600' : 'bg-gray-300'
+                  } ${savingKey === 'hf_hub_offline' ? 'opacity-50' : ''}`}
+                >
+                  <span
+                    className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-transform ${
+                      isHfHubOfflineEnabled ? 'translate-x-8' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+              <div className="mt-3 flex items-center gap-2">
+                <span className={`px-2 py-1 rounded text-xs font-medium ${
+                  isHfHubOfflineEnabled
+                    ? 'bg-slate-200 text-slate-800'
+                    : 'bg-gray-200 text-gray-600'
+                }`}>
+                  {isHfHubOfflineEnabled ? 'CACHE ONLY' : 'NETWORK ALLOWED'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-2">
+                If cache is missing, compare/rebuild will fail fast instead of retrying Hugging Face endpoints.
+              </p>
             </div>
 
             {/* Prevent Sleep Toggle */}
