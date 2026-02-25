@@ -531,9 +531,13 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
       gainRef.current.gain.value = 0
 
       const data = new Uint8Array(analyserRef.current.frequencyBinCount)
-      const THRESHOLD = 15   // deviation from 128 (0-255 unsigned, 128 = silence)
-      const WARMUP = 4       // skip first N frames while audio buffer fills after seek
+      // RMS threshold: reflects sustained energy, not single-sample spikes.
+      // Brief background reactions (uh-huh, laugh) won't sustain; real speech will.
+      const RMS_THRESHOLD = 10   // out of ~128 max RMS
+      const FRAMES_NEEDED = 3    // ~48ms of sustained signal required before unmuting
+      const WARMUP = 4           // skip first N frames while audio buffer fills after seek
       let frame = 0
+      let consecutiveFrames = 0
 
       const scan = () => {
         if (!audioRef.current || audioRef.current.paused) {
@@ -556,12 +560,19 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
         }
 
         analyserRef.current.getByteTimeDomainData(data)
-        const maxDev = data.reduce((max, v) => Math.max(max, Math.abs(v - 128)), 0)
+        // RMS over the buffer: sqrt(mean(sample^2)) where sample = value - 128
+        const rms = Math.sqrt(data.reduce((sum, v) => sum + Math.pow(v - 128, 2), 0) / data.length)
 
-        if (maxDev > THRESHOLD) {
-          // Speech detected — unmute and let it play
-          gainRef.current.gain.value = 1
-          return
+        if (rms > RMS_THRESHOLD) {
+          consecutiveFrames++
+          if (consecutiveFrames >= FRAMES_NEEDED) {
+            // Sustained speech confirmed — unmute
+            gainRef.current.gain.value = 1
+            return
+          }
+        } else {
+          // Signal dropped — reset the run; a brief noise won't accumulate across a gap
+          consecutiveFrames = 0
         }
 
         onsetScanRafRef.current = requestAnimationFrame(scan)
