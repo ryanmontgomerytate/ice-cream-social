@@ -656,16 +656,25 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
 
   // Create a new speaker in the DB and assign to the diarization label
   const createSpeakerAndAssign = async (originalLabel, name) => {
-    if (!name.trim()) return
+    const trimmed = name.trim()
+    if (!trimmed) return
+    // Optimistic: assign immediately so UI updates without waiting for DB
+    handleAssignSpeakerName(originalLabel, trimmed)
+    setNewSpeakerName('')
+    // Only create if not already in the voice library (avoids duplicate error)
+    const alreadyExists = voiceLibrary.some(v => v.name === trimmed)
+    if (!alreadyExists) {
+      try {
+        await speakersAPI.createSpeaker(trimmed, null, false)
+      } catch (err) {
+        // Non-fatal: speaker name is assigned in transcript even if DB save failed
+        onNotification?.(`Could not save speaker "${trimmed}" to DB: ${err?.message || err}`, 'warning')
+      }
+    }
     try {
-      await speakersAPI.createSpeaker(name.trim(), null, false)
-      handleAssignSpeakerName(originalLabel, name.trim())
-      setNewSpeakerName('')
       const voices = await speakersAPI.getVoiceLibrary()
       setVoiceLibrary(voices)
-    } catch (err) {
-      onNotification?.(`Failed to create speaker: ${err.message}`, 'error')
-    }
+    } catch {}
   }
 
   // Voice sample operations
@@ -1361,10 +1370,12 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
     if (pickerType === 'speaker') {
       const segment = segments?.[idx]
       if (!segment) return null
+      const audioDropNames = new Set(audioDrops.map(d => d.name))
+      const speakerOnlyLibrary = voiceLibrary.filter(v => !audioDropNames.has(v.name))
       return (
         <div className="mt-2 p-2 bg-white rounded-lg border border-gray-200 shadow-sm max-h-64 overflow-y-auto">
           <div className="text-[10px] text-gray-400 uppercase tracking-wide mb-1 px-1">Assign to speaker</div>
-          {voiceLibrary.map(v => (
+          {speakerOnlyLibrary.map(v => (
             <button key={v.name} onClick={(e) => { e.stopPropagation(); handleAssignSpeakerName(segment.speaker, v.name) }} className="w-full px-2 py-1.5 text-sm text-left rounded hover:bg-yellow-50 text-yellow-800 flex items-center gap-2">
               <span>🎤</span> {v.short_name || v.name}
             </button>
