@@ -268,6 +268,10 @@ pub struct AudioDrop {
     pub category: String,
     pub created_at: Option<String>,
     pub reference_audio_path: Option<String>,
+    /// Min consecutive clips to combine when scanning for this drop (default 1)
+    pub min_window: i64,
+    /// Max consecutive clips to combine when scanning for this drop (default 4)
+    pub max_window: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

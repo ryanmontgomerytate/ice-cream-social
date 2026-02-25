@@ -646,6 +646,10 @@ Mark the start time of each segment.',
             [],
         ); // Ignore error if column already exists
 
+        // Migration: Add window matching settings to audio_drops
+        let _ = conn.execute("ALTER TABLE audio_drops ADD COLUMN min_window INTEGER DEFAULT 1", []);
+        let _ = conn.execute("ALTER TABLE audio_drops ADD COLUMN max_window INTEGER DEFAULT 4", []);
+
         // Voice samples table (saved audio clips for speaker/sound bite identification)
         conn.execute_batch(
             r#"
@@ -4045,7 +4049,7 @@ Mark the start time of each segment.',
     pub fn get_audio_drops(&self) -> Result<Vec<models::AudioDrop>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, name, transcript_text, description, category, created_at, reference_audio_path FROM audio_drops ORDER BY name"
+            "SELECT id, name, transcript_text, description, category, created_at, reference_audio_path, COALESCE(min_window, 1), COALESCE(max_window, 4) FROM audio_drops ORDER BY name"
         )?;
         let drops = stmt.query_map([], |row| {
             Ok(models::AudioDrop {
@@ -4056,6 +4060,8 @@ Mark the start time of each segment.',
                 category: row.get(4)?,
                 created_at: row.get(5)?,
                 reference_audio_path: row.get(6)?,
+                min_window: row.get(7)?,
+                max_window: row.get(8)?,
             })
         })?.filter_map(|r| r.ok()).collect();
         Ok(drops)
@@ -4081,6 +4087,15 @@ Mark the start time of each segment.',
         conn.execute(
             "UPDATE audio_drops SET transcript_text = ?1 WHERE id = ?2",
             params![text, drop_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_audio_drop_window(&self, drop_id: i64, min_window: i64, max_window: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE audio_drops SET min_window = ?1, max_window = ?2 WHERE id = ?3",
+            params![min_window, max_window, drop_id],
         )?;
         Ok(())
     }

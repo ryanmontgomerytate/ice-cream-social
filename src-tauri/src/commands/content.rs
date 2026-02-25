@@ -724,6 +724,16 @@ pub async fn update_audio_drop_transcript(
 }
 
 #[tauri::command]
+pub async fn update_audio_drop_window(
+    db: State<'_, Arc<Database>>,
+    drop_id: i64,
+    min_window: i64,
+    max_window: i64,
+) -> Result<(), AppError> {
+    db.update_audio_drop_window(drop_id, min_window, max_window).map_err(AppError::from)
+}
+
+#[tauri::command]
 pub async fn delete_audio_drop(
     db: State<'_, Arc<Database>>,
     id: i64,

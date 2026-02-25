@@ -851,7 +851,9 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
         // Skip positions already tagged with this drop
         if (audioDropInstances.some(adi => adi.audio_drop_id === drop.id && adi.segment_idx === i)) continue
         let best = { score: 0, window: 1 }
-        for (let w = 1; w <= 4 && i + w <= segments.length; w++) {
+        const wMin = drop.min_window ?? 1
+        const wMax = drop.max_window ?? 4
+        for (let w = wMin; w <= wMax && i + w <= segments.length; w++) {
           const windowWords = normalize(segments.slice(i, i + w).map(s => s.text || '').join(' '))
           const score = jaccard(windowWords, sigWords)
           if (score > best.score) best = { score, window: w }

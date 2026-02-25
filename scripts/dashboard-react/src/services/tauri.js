@@ -549,6 +549,10 @@ export const contentAPI = {
     return tauriInvoke('update_audio_drop_transcript', { dropId, text });
   },
 
+  async updateAudioDropWindow(dropId, minWindow, maxWindow) {
+    return tauriInvoke('update_audio_drop_window', { dropId, minWindow, maxWindow });
+  },
+
   async deleteAudioDrop(id) {
     return tauriInvoke('delete_audio_drop', { id });
   },
