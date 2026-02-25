@@ -8,6 +8,7 @@ const FLAG_TYPES = [
   { id: 'wrong_speaker', label: 'Wrong Speaker', icon: '👤', needsSpeaker: true },
   { id: 'character_voice', label: 'Character Voice', icon: '🎭', needsCharacter: true },
   { id: 'multiple_speakers', label: 'Multiple Speakers', icon: '👥', needsSpeakers: true },
+  { id: 'misspelling', label: 'Misspelling', icon: '✏️', needsCorrection: true },
   { id: 'audio_issue', label: 'Audio Issue', icon: '🔇' },
   { id: 'other', label: 'Other', icon: '📝', needsNotes: true },
 ]
@@ -122,6 +123,15 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
   const transcriptContainerRef = useRef(null)
   const segmentRefs = useRef({})
   const clipEndRef = useRef(null)
+  // Web Audio API refs for onset detection
+  const onsetScanRafRef = useRef(null)
+  const audioCtxRef = useRef(null)
+  const gainRef = useRef(null)
+  const analyserRef = useRef(null)
+  const mediaSourceCreated = useRef(false)
+  // Clip-mode boundary tracking
+  const clipStartRef = useRef(null)
+  const clipAutoEndingRef = useRef(false)  // true when we're auto-pausing at clip boundary
 
   const episodeImageUrl = useMemo(() => {
     if (episode?.image_url) return episode.image_url
@@ -387,16 +397,33 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
     const handleTimeUpdate = () => {
       setCurrentTime(audio.currentTime)
       if (clipEndRef.current !== null && audio.currentTime >= clipEndRef.current) {
+        // Seek back to clip start before pausing — keeps clip mode active
+        // so the next ▶ press replays the clip instead of drifting into the next one
+        clipAutoEndingRef.current = true
+        if (clipStartRef.current !== null) {
+          audio.currentTime = clipStartRef.current
+          setCurrentTime(clipStartRef.current)
+        }
         audio.pause()
-        clipEndRef.current = null
-        setPlayingClipIdx(null)
       }
     }
     const handleDurationChange = () => setDuration(audio.duration)
     const handlePlay = () => setIsPlaying(true)
     const handlePause = () => {
       setIsPlaying(false)
+      if (onsetScanRafRef.current) {
+        cancelAnimationFrame(onsetScanRafRef.current)
+        onsetScanRafRef.current = null
+      }
+      if (gainRef.current) gainRef.current.gain.value = 1
+      if (clipAutoEndingRef.current) {
+        // Natural clip end — preserve clip mode so ▶ replays the same clip
+        clipAutoEndingRef.current = false
+        return
+      }
+      // Manual pause or explicit stop — exit clip mode fully
       clipEndRef.current = null
+      clipStartRef.current = null
       setPlayingClipIdx(null)
     }
     const handleEnded = () => { setIsPlaying(false) }
@@ -420,6 +447,15 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
     }
   }, [audioPath, loading])
 
+  // Cleanup Web Audio API on unmount
+  useEffect(() => {
+    return () => {
+      if (onsetScanRafRef.current) cancelAnimationFrame(onsetScanRafRef.current)
+      if (audioCtxRef.current) { audioCtxRef.current.close(); audioCtxRef.current = null }
+      mediaSourceCreated.current = false
+    }
+  }, [])
+
   const togglePlay = () => {
     if (!audioRef.current) return
     if (isPlaying) {
@@ -438,9 +474,39 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
     setCurrentTime(time)
   }
 
+  const cancelOnsetScan = () => {
+    if (onsetScanRafRef.current) {
+      cancelAnimationFrame(onsetScanRafRef.current)
+      onsetScanRafRef.current = null
+    }
+    if (gainRef.current) gainRef.current.gain.value = 1
+  }
+
+  const initWebAudio = () => {
+    if (mediaSourceCreated.current || !audioRef.current) return
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)()
+      const source = ctx.createMediaElementSource(audioRef.current)
+      const gain = ctx.createGain()
+      const analyser = ctx.createAnalyser()
+      analyser.fftSize = 512
+      source.connect(gain)
+      gain.connect(analyser)
+      analyser.connect(ctx.destination)
+      audioCtxRef.current = ctx
+      gainRef.current = gain
+      analyserRef.current = analyser
+      mediaSourceCreated.current = true
+    } catch (e) {
+      console.warn('Web Audio API init failed:', e)
+    }
+  }
+
   const seekToSegment = (segment) => {
     const time = parseTimestampToSeconds(segment)
+    cancelOnsetScan()
     clipEndRef.current = null
+    clipStartRef.current = null
     setPlayingClipIdx(null)
     seekTo(time)
     if (!isPlaying && audioRef.current) {
@@ -451,11 +517,70 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
   const playClipOnly = (segment, idx) => {
     const startTime = parseTimestampToSeconds(segment)
     const endTime = getSegmentEndTime(segment)
+    // Don't scan for more than 1.5s or 40% of the clip — whichever is smaller
+    const maxScanSec = Math.min(1.5, (endTime - startTime) * 0.4)
+
+    cancelOnsetScan()
+    clipStartRef.current = startTime
     clipEndRef.current = endTime
     setPlayingClipIdx(idx)
-    if (audioRef.current) {
-      audioRef.current.currentTime = startTime
-      setCurrentTime(startTime)
+
+    if (!audioRef.current) return
+
+    initWebAudio()
+    audioRef.current.currentTime = startTime
+    setCurrentTime(startTime)
+
+    if (audioCtxRef.current && gainRef.current && analyserRef.current) {
+      // Mute while we scan for speech onset so user doesn't hear leading silence
+      audioCtxRef.current.resume()
+      gainRef.current.gain.value = 0
+
+      const data = new Uint8Array(analyserRef.current.frequencyBinCount)
+      const THRESHOLD = 15   // deviation from 128 (0-255 unsigned, 128 = silence)
+      const WARMUP = 4       // skip first N frames while audio buffer fills after seek
+      let frame = 0
+
+      const scan = () => {
+        if (!audioRef.current || audioRef.current.paused) {
+          if (gainRef.current) gainRef.current.gain.value = 1
+          return
+        }
+        const elapsed = audioRef.current.currentTime - startTime
+        frame++
+
+        // Timeout: never stay muted past maxScanSec
+        if (elapsed >= maxScanSec) {
+          gainRef.current.gain.value = 1
+          return
+        }
+
+        // Skip warmup frames — analyser buffer may not reflect the seeked position yet
+        if (frame <= WARMUP) {
+          onsetScanRafRef.current = requestAnimationFrame(scan)
+          return
+        }
+
+        analyserRef.current.getByteTimeDomainData(data)
+        const maxDev = data.reduce((max, v) => Math.max(max, Math.abs(v - 128)), 0)
+
+        if (maxDev > THRESHOLD) {
+          // Speech detected — unmute and let it play
+          gainRef.current.gain.value = 1
+          return
+        }
+
+        onsetScanRafRef.current = requestAnimationFrame(scan)
+      }
+
+      audioRef.current.play()
+        .then(() => { onsetScanRafRef.current = requestAnimationFrame(scan) })
+        .catch(err => {
+          if (gainRef.current) gainRef.current.gain.value = 1
+          console.error('Audio play failed:', err)
+        })
+    } else {
+      // Fallback: Web Audio API unavailable — play from startTime directly
       audioRef.current.play().catch(err => console.error('Audio play failed:', err))
     }
   }
@@ -473,6 +598,7 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
   }
 
   const pausePlaybackForReview = () => {
+    cancelOnsetScan()
     if (audioRef.current && !audioRef.current.paused) {
       audioRef.current.pause()
     }
@@ -1019,6 +1145,11 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
                 setSpeakerPickerIdx(idx)
                 setSpeakerPickerSelected([])
                 setFlagInlineInput('')
+              } else if (ft.needsCorrection) {
+                const seg = segments?.[idx]
+                setFlagInlineInput(seg?.text?.trim() || '')
+                setActivePicker('flag-misspelling')
+                if (seg) playClipOnly(seg, idx)
               } else if (ft.needsNotes) {
                 setFlagInlineInput('')
                 setActivePicker('flag-other')
@@ -1151,6 +1282,47 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
             </button>
           </div>
           <button onClick={(e) => { e.stopPropagation(); setActivePicker('flag') }} className="mt-1 text-xs text-gray-400 hover:text-gray-600">← Back</button>
+        </div>
+      )
+    }
+    if (pickerType === 'flag-misspelling') {
+      const seg = segments?.[idx]
+      const originalText = seg?.text?.trim() || ''
+      return (
+        <div className="mt-2 p-2 bg-white rounded-lg border border-amber-200 shadow-sm">
+          <div className="text-[10px] text-gray-400 uppercase tracking-wide mb-1 px-1">What should this say?</div>
+          <div className="text-[10px] text-amber-600 mb-2 px-1">▶ clip playing — listen and correct below</div>
+          <textarea
+            value={flagInlineInput}
+            onChange={(e) => setFlagInlineInput(e.target.value)}
+            onKeyDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            rows={3}
+            className="w-full px-2 py-1.5 text-sm border border-amber-200 rounded resize-none focus:outline-none focus:ring-1 focus:ring-amber-400"
+            autoFocus
+          />
+          <div className="flex gap-2 mt-1">
+            <button onClick={async (e) => {
+              e.stopPropagation()
+              const corrected = flagInlineInput.trim()
+              // Save flag with original text as the note (audit trail)
+              await createFlag(idx, 'misspelling', null, null, originalText)
+              // Apply the correction if text actually changed
+              if (corrected && corrected !== originalText) {
+                try {
+                  await episodesAPI.saveTranscriptEdits(episode.id, { [idx]: { text: corrected } })
+                  await loadTranscript()
+                  onNotification?.('Spelling corrected', 'success')
+                } catch (err) {
+                  onNotification?.(`Failed to save correction: ${err.message}`, 'error')
+                }
+              }
+              setActivePicker(null)
+            }} className="px-3 py-1 text-xs bg-amber-500 text-white rounded hover:bg-amber-600">
+              Save correction
+            </button>
+            <button onClick={(e) => { e.stopPropagation(); setActivePicker('flag') }} className="px-2 py-1 text-xs text-gray-400 hover:text-gray-600">← Back</button>
+          </div>
         </div>
       )
     }
@@ -1352,6 +1524,7 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
           <span className={`px-2 py-1 rounded text-xs font-medium cursor-pointer ${
             flag.flag_type === 'wrong_speaker' ? 'bg-red-100 text-red-700' :
             flag.flag_type === 'character_voice' ? 'bg-pink-100 text-pink-700' :
+            flag.flag_type === 'misspelling' ? 'bg-amber-100 text-amber-700' :
             'bg-yellow-100 text-yellow-700'
           }`} onClick={(e) => { e.stopPropagation(); deleteFlag(idx) }} title="Click to remove flag">
             {FLAG_TYPES.find(f => f.id === flag.flag_type)?.icon || '🚩'}{' '}
@@ -1986,7 +2159,12 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
                   onClick={(e) => {
                     e.stopPropagation()
                     if (playingClipIdx === idx) {
-                      audioRef.current?.pause()
+                      // Explicitly exit clip mode (works whether clip is playing or paused-at-start)
+                      clipEndRef.current = null
+                      clipStartRef.current = null
+                      setPlayingClipIdx(null)
+                      cancelOnsetScan()
+                      if (audioRef.current && !audioRef.current.paused) audioRef.current.pause()
                     } else {
                       playClipOnly(segment, idx)
                     }

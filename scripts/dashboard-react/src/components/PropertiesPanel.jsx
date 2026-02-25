@@ -7,6 +7,7 @@ const FLAG_TYPES = [
   { id: 'wrong_speaker', label: 'Wrong Speaker', icon: '👤', color: 'red' },
   { id: 'character_voice', label: 'Character Voice', icon: '🎭', color: 'pink' },
   { id: 'multiple_speakers', label: 'Multiple Speakers', icon: '👥', color: 'orange' },
+  { id: 'misspelling', label: 'Misspelling', icon: '✏️', color: 'amber' },
   { id: 'audio_issue', label: 'Audio Issue', icon: '🔇', color: 'gray' },
   { id: 'other', label: 'Other', icon: '📝', color: 'yellow' },
 ]
@@ -783,6 +784,7 @@ export default function PropertiesPanel() {
                       flag.flag_type === 'wrong_speaker' ? 'bg-red-50 border-red-200' :
                       flag.flag_type === 'character_voice' ? 'bg-pink-50 border-pink-200' :
                       flag.flag_type === 'multiple_speakers' ? 'bg-orange-50 border-orange-200' :
+                      flag.flag_type === 'misspelling' ? 'bg-amber-50 border-amber-200' :
                       flag.flag_type === 'audio_issue' ? 'bg-gray-50 border-gray-200' :
                       'bg-yellow-50 border-yellow-200'
                     }`}
@@ -810,7 +812,10 @@ export default function PropertiesPanel() {
                       {flag.corrected_speaker && <span className="ml-2">→ {flag.corrected_speaker}</span>}
                     </div>
                     {flag.notes && (
-                      <div className="text-xs text-gray-600 mt-1 italic">"{flag.notes}"</div>
+                      <div className="text-xs text-gray-600 mt-1 italic">
+                        {flag.flag_type === 'misspelling' ? <span className="text-amber-700">was: </span> : null}
+                        "{flag.notes}"
+                      </div>
                     )}
                   </div>
                 )
