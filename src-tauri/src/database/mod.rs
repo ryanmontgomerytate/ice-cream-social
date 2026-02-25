@@ -4076,6 +4076,15 @@ Mark the start time of each segment.',
         Ok(())
     }
 
+    pub fn update_audio_drop_transcript(&self, drop_id: i64, text: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE audio_drops SET transcript_text = ?1 WHERE id = ?2",
+            params![text, drop_id],
+        )?;
+        Ok(())
+    }
+
     pub fn update_audio_drop_reference(&self, drop_id: i64, path: &str) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(

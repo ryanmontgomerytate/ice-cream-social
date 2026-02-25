@@ -715,6 +715,15 @@ pub async fn create_audio_drop(
 }
 
 #[tauri::command]
+pub async fn update_audio_drop_transcript(
+    db: State<'_, Arc<Database>>,
+    drop_id: i64,
+    text: String,
+) -> Result<(), AppError> {
+    db.update_audio_drop_transcript(drop_id, &text).map_err(AppError::from)
+}
+
+#[tauri::command]
 pub async fn delete_audio_drop(
     db: State<'_, Arc<Database>>,
     id: i64,

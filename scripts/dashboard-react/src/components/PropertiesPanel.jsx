@@ -168,7 +168,7 @@ export default function PropertiesPanel() {
     speakers,
     speakerNames,
     audioDropInstances,
-    audioDrops,
+    audioDrops, setAudioDrops,
     segments,
     selectedSegmentIdx,
     polishRunning, setPolishRunning,
@@ -199,6 +199,11 @@ export default function PropertiesPanel() {
   const [sponsorExporting, setSponsorExporting] = useState({})
   const [sponsorClipNames, setSponsorClipNames] = useState({})
   const [sponsors, setSponsors] = useState([])
+
+  // Sound bite signature phrase editing
+  const [signatureDrafts, setSignatureDrafts] = useState({}) // { [dropId]: text }
+  const [signatureSaving, setSignatureSaving] = useState({}) // { [dropId]: bool }
+  const [showSignatures, setShowSignatures] = useState(false)
 
   // Qwen classification state
   const [qwenClassifications, setQwenClassifications] = useState([])
@@ -1022,51 +1027,114 @@ export default function PropertiesPanel() {
         {/* Drops Section */}
         <SectionHeader open={openSections.drops} onClick={() => toggleSection('drops')} icon="🔊" label="Sound Bites" count={dropCount} color="teal" />
         {openSections.drops && (
-          <div className="p-3 space-y-2 border-b border-gray-100">
-            {dropCount === 0 ? (
-              <p className="text-xs text-gray-500 text-center py-2">
-                No sound bites tagged.<br/>
-                Select a clip and use the Sound Bite action.
-              </p>
-            ) : (
-              audioDropInstances.map(instance => {
-                const sameDropInEpisode = audioDropInstances.filter(adi => adi.audio_drop_id === instance.audio_drop_id)
-                const occPosition = sameDropInEpisode.findIndex(adi => adi.id === instance.id) + 1
-                const occTotal = sameDropInEpisode.length
-
-                return (
-                  <div
-                    key={instance.id}
-                    className="p-2 rounded-lg bg-teal-50 border border-teal-200 cursor-pointer hover:shadow-sm transition-shadow"
-                    onClick={() => seekToSegment?.(instance.segment_idx)}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span>🔊</span>
-                        <span className="text-xs font-medium text-teal-800">
-                          {instance.audio_drop_name}
-                          {occTotal > 1 && <span className="text-[10px] text-teal-500 ml-1">({occPosition}/{occTotal})</span>}
-                        </span>
+          <div className="border-b border-gray-100">
+            {/* Episode instances */}
+            <div className="p-3 space-y-2">
+              {dropCount === 0 ? (
+                <p className="text-xs text-gray-500 text-center py-2">
+                  No sound bites tagged.<br/>
+                  Select a clip and use the Sound Bite action.
+                </p>
+              ) : (
+                audioDropInstances.map(instance => {
+                  const sameDropInEpisode = audioDropInstances.filter(adi => adi.audio_drop_id === instance.audio_drop_id)
+                  const occPosition = sameDropInEpisode.findIndex(adi => adi.id === instance.id) + 1
+                  const occTotal = sameDropInEpisode.length
+                  return (
+                    <div
+                      key={instance.id}
+                      className="p-2 rounded-lg bg-teal-50 border border-teal-200 cursor-pointer hover:shadow-sm transition-shadow"
+                      onClick={() => seekToSegment?.(instance.segment_idx)}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span>🔊</span>
+                          <span className="text-xs font-medium text-teal-800">
+                            {instance.audio_drop_name}
+                            {occTotal > 1 && <span className="text-[10px] text-teal-500 ml-1">({occPosition}/{occTotal})</span>}
+                          </span>
+                        </div>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); removeAudioDropInstance?.(instance.id) }}
+                          className="p-1 text-gray-400 hover:text-red-500 transition-colors"
+                        >
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
                       </div>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          removeAudioDropInstance?.(instance.id)
-                        }}
-                        className="p-1 text-gray-400 hover:text-red-500 transition-colors"
-                      >
-                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
+                      <div className="text-[10px] text-gray-500 mt-1">Clip #{instance.segment_idx}</div>
                     </div>
-                    <div className="text-[10px] text-gray-500 mt-1">
-                      Clip #{instance.segment_idx}
-                    </div>
-                  </div>
-                )
-              })
-            )}
+                  )
+                })
+              )}
+            </div>
+
+            {/* Signature Phrases — words used by 🔍 Scan for Drops */}
+            <div className="border-t border-teal-100">
+              <button
+                onClick={() => setShowSignatures(v => !v)}
+                className="w-full px-3 py-1.5 flex items-center justify-between text-[11px] font-medium text-teal-700 bg-teal-50 hover:bg-teal-100 transition-colors"
+              >
+                <span>✏️ Signature Phrases ({audioDrops?.length ?? 0} drops)</span>
+                <svg className={`w-3 h-3 transition-transform ${showSignatures ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {showSignatures && (
+                <div className="p-3 space-y-4 bg-teal-50/40">
+                  <p className="text-[10px] text-teal-600">
+                    These words are what <strong>🔍 Scan for Drops</strong> matches against the transcript. Add the exact phrase each drop says — even if spoken across multiple clips.
+                  </p>
+                  {(audioDrops ?? []).map(drop => {
+                    const draft = signatureDrafts[drop.id] ?? drop.transcript_text ?? ''
+                    const isDirty = draft !== (drop.transcript_text ?? '')
+                    const isSaving = signatureSaving[drop.id]
+                    return (
+                      <div key={drop.id}>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[11px] font-semibold text-teal-900">🔊 {drop.name}</span>
+                          {isDirty && (
+                            <button
+                              disabled={isSaving}
+                              onClick={async () => {
+                                setSignatureSaving(prev => ({ ...prev, [drop.id]: true }))
+                                try {
+                                  await contentAPI.updateAudioDropTranscript(drop.id, draft)
+                                  // Re-fetch the full drops list so transcript_text is fresh
+                                  const refreshed = await contentAPI.getAudioDrops()
+                                  setAudioDrops(refreshed)
+                                  // Clear dirty state for this drop
+                                  setSignatureDrafts(prev => { const n = { ...prev }; delete n[drop.id]; return n })
+                                  onNotification?.(`✓ Saved signature for "${drop.name}"`, 'success')
+                                } catch (err) {
+                                  onNotification?.(`Failed to save: ${err.message}`, 'error')
+                                } finally {
+                                  setSignatureSaving(prev => ({ ...prev, [drop.id]: false }))
+                                }
+                              }}
+                              className="text-[10px] px-2 py-0.5 bg-teal-600 hover:bg-teal-700 text-white rounded disabled:opacity-50"
+                            >
+                              {isSaving ? 'Saving…' : 'Save'}
+                            </button>
+                          )}
+                        </div>
+                        <textarea
+                          value={draft}
+                          onChange={e => setSignatureDrafts(prev => ({ ...prev, [drop.id]: e.target.value }))}
+                          placeholder={`Type the exact words "${drop.name}" says…`}
+                          rows={3}
+                          className="w-full text-[11px] border border-teal-200 rounded px-2 py-1.5 bg-white resize-y focus:outline-none focus:ring-1 focus:ring-teal-400 placeholder-gray-300"
+                        />
+                        {!isDirty && drop.transcript_text && (
+                          <div className="text-[10px] text-teal-500 mt-0.5">✓ Saved</div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
