@@ -131,7 +131,6 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
   const mediaSourceCreated = useRef(false)
   // Clip-mode boundary tracking
   const clipStartRef = useRef(null)
-  const clipAutoEndingRef = useRef(false)  // true when we're auto-pausing at clip boundary
 
   const episodeImageUrl = useMemo(() => {
     if (episode?.image_url) return episode.image_url
@@ -397,14 +396,14 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
     const handleTimeUpdate = () => {
       setCurrentTime(audio.currentTime)
       if (clipEndRef.current !== null && audio.currentTime >= clipEndRef.current) {
-        // Seek back to clip start before pausing — keeps clip mode active
-        // so the next ▶ press replays the clip instead of drifting into the next one
-        clipAutoEndingRef.current = true
+        // Seek back to clip start before pausing so the playhead doesn't sit at
+        // the clip boundary — pressing main ▶ after this won't drift into the next clip
         if (clipStartRef.current !== null) {
           audio.currentTime = clipStartRef.current
           setCurrentTime(clipStartRef.current)
         }
         audio.pause()
+        // handlePause will clear clip mode and reset the button to ▶ clip
       }
     }
     const handleDurationChange = () => setDuration(audio.duration)
@@ -416,12 +415,6 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
         onsetScanRafRef.current = null
       }
       if (gainRef.current) gainRef.current.gain.value = 1
-      if (clipAutoEndingRef.current) {
-        // Natural clip end — preserve clip mode so ▶ replays the same clip
-        clipAutoEndingRef.current = false
-        return
-      }
-      // Manual pause or explicit stop — exit clip mode fully
       clipEndRef.current = null
       clipStartRef.current = null
       setPlayingClipIdx(null)
