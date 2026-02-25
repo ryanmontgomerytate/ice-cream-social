@@ -1100,55 +1100,60 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
       const unassignedLabels = uniqueSpeakers.filter(label => !speakerNames[label])
       return (
         <div className="mt-2 p-2 bg-white rounded-lg border border-red-200 shadow-sm">
-          <div className="text-[10px] text-gray-400 uppercase tracking-wide mb-1 px-1">
-            Who should this be? (current: {speakerNames[segment?.speaker] || segment?.speaker})
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[10px] text-gray-400 uppercase tracking-wide px-1">
+              {speakerNames[segment?.speaker] || segment?.speaker} → ?
+            </span>
+            <button onClick={(e) => { e.stopPropagation(); setActivePicker(null) }} className="text-gray-300 hover:text-gray-500 text-sm leading-none px-1">✕</button>
           </div>
-          {unassignedLabels.length > 0 && (
-            <>
-              <div className="text-[10px] text-gray-400 uppercase tracking-wide mb-1 px-1">Unassigned Labels</div>
-              <div className="max-h-28 overflow-y-auto">
+          <div className="max-h-56 overflow-y-auto">
+            {unassignedLabels.length > 0 && (
+              <>
+                <div className="text-[10px] text-gray-400 uppercase tracking-wide mb-0.5 px-1">Unassigned</div>
                 {unassignedLabels.map(label => (
                   <button key={label} onClick={(e) => {
                     e.stopPropagation()
                     createFlag(idx, 'wrong_speaker', label)
                     setActivePicker(null)
-                  }} className="w-full px-2 py-1.5 text-sm text-left rounded hover:bg-red-50 text-red-800 flex items-center gap-2">
+                  }} className="w-full px-2 py-1 text-sm text-left rounded hover:bg-red-50 text-red-800 flex items-center gap-2">
                     <span>🏷️</span> {label}
                   </button>
                 ))}
-              </div>
-              <div className="text-[10px] text-gray-400 uppercase tracking-wide mt-2 mb-1 px-1 border-t border-gray-100 pt-2">Known Speakers</div>
-            </>
-          )}
-          <div className="max-h-48 overflow-y-auto">
-          {episodeSpeakerLibrary.map(v => (
-            <button key={v.name} onClick={(e) => {
-              e.stopPropagation()
-              createFlag(idx, 'wrong_speaker', v.name)
-              setActivePicker(null)
-            }} className="w-full px-2 py-1.5 text-sm text-left rounded hover:bg-red-50 text-red-800 flex items-center gap-2">
-              <span>🎤</span> {v.short_name || v.name}
-            </button>
-          ))}
+              </>
+            )}
+            {episodeSpeakerLibrary.length > 0 && (
+              <>
+                {unassignedLabels.length > 0 && <div className="border-t border-gray-100 my-1" />}
+                {episodeSpeakerLibrary.map(v => (
+                  <button key={v.name} onClick={(e) => {
+                    e.stopPropagation()
+                    createFlag(idx, 'wrong_speaker', v.name)
+                    setActivePicker(null)
+                  }} className="w-full px-2 py-1 text-sm text-left rounded hover:bg-red-50 text-red-800 flex items-center gap-2">
+                    <span>🎤</span> {v.short_name || v.name}
+                  </button>
+                ))}
+              </>
+            )}
+            {audioDrops.length > 0 && (
+              <>
+                <div className="border-t border-gray-100 my-1" />
+                {audioDrops.map(d => (
+                  <button key={d.id} onClick={(e) => {
+                    e.stopPropagation()
+                    createFlag(idx, 'wrong_speaker', d.name)
+                    setActivePicker(null)
+                  }} className="w-full px-2 py-1 text-sm text-left rounded hover:bg-red-50 text-red-800 flex items-center gap-2">
+                    <span>🔊</span> {d.name}
+                  </button>
+                ))}
+              </>
+            )}
           </div>
-          {audioDrops.length > 0 && (
-            <>
-              <div className="text-[10px] text-gray-400 uppercase tracking-wide mt-2 mb-1 px-1 border-t border-gray-100 pt-2">Sound Bites</div>
-              {audioDrops.map(d => (
-                <button key={d.id} onClick={(e) => {
-                  e.stopPropagation()
-                  createFlag(idx, 'wrong_speaker', d.name)
-                  setActivePicker(null)
-                }} className="w-full px-2 py-1.5 text-sm text-left rounded hover:bg-red-50 text-red-800 flex items-center gap-2">
-                  <span>🔊</span> {d.name}
-                </button>
-              ))}
-            </>
-          )}
-          <div className="flex gap-1 mt-1">
+          <div className="flex gap-1 mt-1.5 pt-1.5 border-t border-gray-100">
             <input
               type="text"
-              placeholder="Or type a name..."
+              placeholder="Or type a name…"
               value={flagInlineInput}
               onChange={(e) => setFlagInlineInput(e.target.value)}
               onKeyDown={(e) => {
@@ -1158,21 +1163,20 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
                   setActivePicker(null)
                 }
               }}
-              className="flex-1 px-2 py-1.5 text-sm border border-red-200 rounded"
+              className="flex-1 px-2 py-1 text-sm border border-red-200 rounded"
               onClick={(e) => e.stopPropagation()}
               autoFocus
             />
-            <button onClick={(e) => {
-              e.stopPropagation()
-              if (flagInlineInput.trim()) {
+            {flagInlineInput.trim() && (
+              <button onClick={(e) => {
+                e.stopPropagation()
                 createFlag(idx, 'wrong_speaker', flagInlineInput.trim())
                 setActivePicker(null)
-              }
-            }} className="px-3 py-1.5 text-xs bg-red-500 text-white rounded hover:bg-red-600">
-              Save
-            </button>
+              }} className="px-3 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600">
+                Save
+              </button>
+            )}
           </div>
-          <button onClick={(e) => { e.stopPropagation(); setActivePicker('flag') }} className="mt-1 text-xs text-gray-400 hover:text-gray-600">← Back</button>
         </div>
       )
     }
