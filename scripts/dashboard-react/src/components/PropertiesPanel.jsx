@@ -806,7 +806,7 @@ export default function PropertiesPanel() {
                       </button>
                     </div>
                     <div className="text-[10px] text-gray-500 mt-1">
-                      Segment #{idx}
+                      Clip #{idx}
                       {flag.corrected_speaker && <span className="ml-2">→ {flag.corrected_speaker}</span>}
                     </div>
                     {flag.notes && (
@@ -826,7 +826,7 @@ export default function PropertiesPanel() {
             {characterCount === 0 ? (
               <p className="text-xs text-gray-500 text-center py-2">
                 No character appearances marked.<br/>
-                Use the ... menu on segments to mark characters.
+                Use the ... menu on clips to mark characters.
               </p>
             ) : (
               characterAppearances.map(appearance => (
@@ -853,7 +853,7 @@ export default function PropertiesPanel() {
                     </button>
                   </div>
                   <div className="text-[10px] text-gray-500 mt-1">
-                    Segment #{appearance.segment_idx}
+                    Clip #{appearance.segment_idx}
                   </div>
                 </div>
               ))
@@ -868,7 +868,7 @@ export default function PropertiesPanel() {
             {chapterCount === 0 ? (
               <p className="text-xs text-gray-500 text-center py-2">
                 No chapters marked.<br/>
-                Use the ... menu on segments to mark chapters.
+                Use the ... menu on clips to mark chapters.
               </p>
             ) : (
               episodeChapters.map(chapter => (
@@ -904,7 +904,7 @@ export default function PropertiesPanel() {
                     <div className="text-xs text-gray-700 mt-1">{chapter.title}</div>
                   )}
                   <div className="text-[10px] text-gray-500 mt-1">
-                    Segments #{chapter.start_segment_idx} - #{chapter.end_segment_idx}
+                    Clips #{chapter.start_segment_idx} - #{chapter.end_segment_idx}
                   </div>
                 </div>
               ))
@@ -946,7 +946,7 @@ export default function PropertiesPanel() {
                         )}
                       </div>
                       <div className="text-[10px] text-gray-500 mt-0.5">
-                        Segments #{s.start_segment_idx} - #{s.end_segment_idx}
+                        Clips #{s.start_segment_idx} - #{s.end_segment_idx}
                       </div>
                       {s.reason && (
                         <div className="text-[10px] text-gray-600 mt-1">{s.reason}</div>
@@ -984,7 +984,7 @@ export default function PropertiesPanel() {
                 {commercialChapters.map(chapter => (
                   <div key={`clip-${chapter.id}`} className="p-2 rounded border border-orange-100 bg-orange-50 space-y-1">
                     <div className="text-[11px] text-orange-700 font-medium">
-                      {chapter.chapter_type_name} · Segments #{chapter.start_segment_idx}-{chapter.end_segment_idx}
+                      {chapter.chapter_type_name} · Clips #{chapter.start_segment_idx}-{chapter.end_segment_idx}
                     </div>
                     <div className="flex items-center gap-2">
                       <select
@@ -1019,7 +1019,7 @@ export default function PropertiesPanel() {
             {dropCount === 0 ? (
               <p className="text-xs text-gray-500 text-center py-2">
                 No sound bites tagged.<br/>
-                Select a segment and use the Sound Bite action.
+                Select a clip and use the Sound Bite action.
               </p>
             ) : (
               audioDropInstances.map(instance => {
@@ -1054,7 +1054,7 @@ export default function PropertiesPanel() {
                       </button>
                     </div>
                     <div className="text-[10px] text-gray-500 mt-1">
-                      Segment #{instance.segment_idx}
+                      Clip #{instance.segment_idx}
                     </div>
                   </div>
                 )

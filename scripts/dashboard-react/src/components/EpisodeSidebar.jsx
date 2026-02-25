@@ -1,6 +1,19 @@
 import { useState, useEffect, useCallback } from 'react'
 import { episodesAPI, queueAPI } from '../services/api'
 
+// --- Recently-viewed helpers ---
+const RECENT_KEY = 'ics_recent_episodes'
+const MAX_RECENT = 25
+
+const readRecent = () => {
+  try { return JSON.parse(localStorage.getItem(RECENT_KEY) || '[]') } catch { return [] }
+}
+const recordRecent = (episodeId) => {
+  const list = readRecent().filter(id => id !== episodeId)
+  list.unshift(episodeId)
+  localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, MAX_RECENT)))
+}
+
 const formatDuration = (seconds) => {
   if (!seconds) return 'Unknown duration'
   const hours = Math.floor(seconds / 3600)
@@ -108,6 +121,9 @@ export default function EpisodeSidebar({
     limit: 50,
     offset: 0
   })
+  const [recentOnly, setRecentOnly] = useState(false)
+  const [recentIds, setRecentIds] = useState(() => readRecent())
+  const [recentEpisodes, setRecentEpisodes] = useState([])
 
   // Load category rules on mount
   useEffect(() => {
@@ -129,6 +145,24 @@ export default function EpisodeSidebar({
     const interval = setInterval(loadQueueStatus, 5000)
     return () => clearInterval(interval)
   }, [])
+
+  // Record whenever an episode is opened (via prop from parent)
+  useEffect(() => {
+    if (!selectedEpisodeId) return
+    recordRecent(selectedEpisodeId)
+    setRecentIds(readRecent())
+  }, [selectedEpisodeId])
+
+  // Fetch recent episodes when recent-only mode is active
+  useEffect(() => {
+    if (!recentOnly) return
+    const ids = readRecent()
+    Promise.all(ids.map(id => episodesAPI.getEpisode(id).catch(() => null)))
+      .then(results => {
+        // keep the order from localStorage (most recent first), drop nulls
+        setRecentEpisodes(results.filter(Boolean))
+      })
+  }, [recentOnly, recentIds])
 
   const loadEpisodes = async () => {
     try {
@@ -401,9 +435,23 @@ export default function EpisodeSidebar({
           </div>
         )}
 
-        {/* Sort */}
-        <div className="flex items-center gap-1.5 mt-2">
+        {/* Sort + Recent */}
+        <div className="flex items-center gap-1.5 mt-2 flex-wrap">
           <span className="text-[11px] text-gray-500 font-medium">Sort:</span>
+          <button
+            onClick={() => {
+              setRecentOnly(prev => !prev)
+              setFilters(prev => ({ ...prev, offset: 0 }))
+            }}
+            className={`px-2 py-0.5 text-[11px] rounded-full transition-colors ${
+              recentOnly
+                ? 'bg-orange-500 text-white'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+            title="Show recently opened episodes"
+          >
+            🕐 Recent
+          </button>
           {sortOptions.map(opt => {
             const isActive = sortBy === opt.key
             return (
@@ -430,8 +478,15 @@ export default function EpisodeSidebar({
           })}
         </div>
 
+        {/* Recent mode count */}
+        {recentOnly && recentEpisodes.length > 0 && (
+          <div className="text-[11px] text-orange-600 mt-2">
+            {recentEpisodes.length} recently opened · most recent first
+          </div>
+        )}
+
         {/* Pagination */}
-        {total > 0 && (
+        {!recentOnly && total > 0 && (
           <div className="flex items-center justify-between mt-3">
             <div className="text-[11px] text-gray-400">
               {filters.offset + 1}–{Math.min(filters.offset + episodes.length, total)} of {total}
@@ -461,14 +516,20 @@ export default function EpisodeSidebar({
 
       {/* Episode List */}
       <div className="flex-1 overflow-y-auto">
-        {loading && episodes.length === 0 ? (
+        {recentOnly && recentEpisodes.length === 0 ? (
+          <div className="p-6 text-center text-gray-400 text-sm">
+            <div className="text-2xl mb-2">🕐</div>
+            <p>No recently opened episodes yet.</p>
+            <p className="text-xs mt-1">Episodes you view will appear here.</p>
+          </div>
+        ) : loading && episodes.length === 0 && !recentOnly ? (
           <div className="p-4 text-center text-gray-500">
             <div className="w-6 h-6 border-2 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
             Loading...
           </div>
         ) : (
           <div className="divide-y divide-gray-100">
-            {episodes.map(episode => {
+            {(recentOnly ? recentEpisodes : episodes).map(episode => {
               const queueStatus = queueMap[episode.id]
               const isSelected = selectedEpisodeId === episode.id
               const formattedDate = formatDate(episode.published_date)
@@ -599,7 +660,7 @@ export default function EpisodeSidebar({
         )}
 
         {/* Bottom Pagination */}
-        {totalPages > 1 && (
+        {!recentOnly && totalPages > 1 && (
           <div className="flex items-center justify-center gap-1 p-2 border-t border-gray-100 flex-shrink-0">
             <button
               onClick={() => goToPage(1)}

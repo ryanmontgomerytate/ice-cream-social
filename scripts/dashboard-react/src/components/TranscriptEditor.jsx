@@ -116,10 +116,12 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
   const [duration, setDuration] = useState(0)
   const [autoScroll, setAutoScroll] = useState(true)
   const [playbackRate, setPlaybackRate] = useState(1)
+  const [playingClipIdx, setPlayingClipIdx] = useState(null)
 
   const audioRef = useRef(null)
   const transcriptContainerRef = useRef(null)
   const segmentRefs = useRef({})
+  const clipEndRef = useRef(null)
 
   const episodeImageUrl = useMemo(() => {
     if (episode?.image_url) return episode.image_url
@@ -382,10 +384,21 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
     const audio = audioRef.current
     if (!audio) return
 
-    const handleTimeUpdate = () => setCurrentTime(audio.currentTime)
+    const handleTimeUpdate = () => {
+      setCurrentTime(audio.currentTime)
+      if (clipEndRef.current !== null && audio.currentTime >= clipEndRef.current) {
+        audio.pause()
+        clipEndRef.current = null
+        setPlayingClipIdx(null)
+      }
+    }
     const handleDurationChange = () => setDuration(audio.duration)
     const handlePlay = () => setIsPlaying(true)
-    const handlePause = () => setIsPlaying(false)
+    const handlePause = () => {
+      setIsPlaying(false)
+      clipEndRef.current = null
+      setPlayingClipIdx(null)
+    }
     const handleEnded = () => { setIsPlaying(false) }
 
     audio.addEventListener('timeupdate', handleTimeUpdate)
@@ -427,8 +440,22 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
 
   const seekToSegment = (segment) => {
     const time = parseTimestampToSeconds(segment)
+    clipEndRef.current = null
+    setPlayingClipIdx(null)
     seekTo(time)
     if (!isPlaying && audioRef.current) {
+      audioRef.current.play().catch(err => console.error('Audio play failed:', err))
+    }
+  }
+
+  const playClipOnly = (segment, idx) => {
+    const startTime = parseTimestampToSeconds(segment)
+    const endTime = getSegmentEndTime(segment)
+    clipEndRef.current = endTime
+    setPlayingClipIdx(idx)
+    if (audioRef.current) {
+      audioRef.current.currentTime = startTime
+      setCurrentTime(startTime)
       audioRef.current.play().catch(err => console.error('Audio play failed:', err))
     }
   }
@@ -1951,10 +1978,29 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
                       )}
                       {/* Timestamp + playing indicator */}
               <div className="flex items-center gap-3 mb-2">
+                <span className="text-[10px] text-gray-400 tabular-nums">Clip #{idx}</span>
                 <button onClick={(e) => { e.stopPropagation(); seekToSegment(segment) }} className="text-xs text-gray-400 hover:text-purple-600 font-mono">
                   {formatTimestamp(segment)}
                 </button>
-                {isCurrent && <span className="text-xs text-purple-600 font-medium animate-pulse">▶ NOW</span>}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    if (playingClipIdx === idx) {
+                      audioRef.current?.pause()
+                    } else {
+                      playClipOnly(segment, idx)
+                    }
+                  }}
+                  title={playingClipIdx === idx ? 'Stop clip' : 'Play this clip only'}
+                  className={`flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded transition-colors ${
+                    playingClipIdx === idx
+                      ? 'text-purple-700 bg-purple-100 hover:bg-purple-200'
+                      : 'text-gray-400 hover:text-purple-600 hover:bg-purple-50'
+                  }`}
+                >
+                  {playingClipIdx === idx ? '⏹ clip' : '▶ clip'}
+                </button>
+                {isCurrent && playingClipIdx !== idx && <span className="text-xs text-purple-600 font-medium animate-pulse">▶ NOW</span>}
               </div>
 
                       {/* Segment text */}
