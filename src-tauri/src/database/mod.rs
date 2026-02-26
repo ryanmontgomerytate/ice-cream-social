@@ -743,6 +743,16 @@ Mark the start time of each segment.',
             );
             CREATE INDEX IF NOT EXISTS idx_transcript_corrections_episode ON transcript_corrections(episode_id);
             CREATE INDEX IF NOT EXISTS idx_transcript_corrections_approved ON transcript_corrections(approved);
+            CREATE TABLE IF NOT EXISTS episode_interactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                episode_id INTEGER NOT NULL,
+                action TEXT NOT NULL,
+                segment_idx INTEGER,
+                metadata TEXT,
+                created_at TEXT DEFAULT (datetime('now', 'localtime')),
+                FOREIGN KEY (episode_id) REFERENCES episodes(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_interactions_episode ON episode_interactions(episode_id);
             "#,
         )?;
 
@@ -4630,6 +4640,42 @@ Mark the start time of each segment.',
             [episode_id],
         )?;
         Ok(n)
+    }
+
+    // =========================================================================
+    // Episode Interaction Analytics
+    // =========================================================================
+
+    pub fn log_episode_interaction(
+        &self,
+        episode_id: i64,
+        action: &str,
+        segment_idx: Option<i64>,
+        metadata: Option<&str>,
+    ) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO episode_interactions (episode_id, action, segment_idx, metadata) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![episode_id, action, segment_idx, metadata],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_episode_interaction_summary(
+        &self,
+        episode_id: i64,
+    ) -> Result<Vec<models::EpisodeInteractionSummary>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT action, COUNT(*) as count FROM episode_interactions WHERE episode_id = ?1 GROUP BY action ORDER BY count DESC",
+        )?;
+        let rows = stmt.query_map([episode_id], |row| {
+            Ok(models::EpisodeInteractionSummary {
+                action: row.get(0)?,
+                count: row.get(1)?,
+            })
+        })?;
+        Ok(rows.filter_map(|r| r.ok()).collect())
     }
 
 }

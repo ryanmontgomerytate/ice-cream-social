@@ -1599,3 +1599,25 @@ pub async fn reject_all_corrections_for_episode(
     log::info!("Rejecting all pending corrections for episode {}", episode_id);
     db.reject_all_pending_corrections_for_episode(episode_id).map_err(AppError::from)
 }
+
+/// Log a single editor interaction with an episode (fire-and-forget analytics).
+#[tauri::command]
+pub async fn log_episode_interaction(
+    db: State<'_, Arc<Database>>,
+    episode_id: i64,
+    action: String,
+    segment_idx: Option<i64>,
+    metadata: Option<String>,
+) -> Result<(), AppError> {
+    db.log_episode_interaction(episode_id, &action, segment_idx, metadata.as_deref())
+        .map_err(AppError::from)
+}
+
+/// Get a summary of editor interactions for an episode, grouped by action type.
+#[tauri::command]
+pub async fn get_episode_interaction_summary(
+    db: State<'_, Arc<Database>>,
+    episode_id: i64,
+) -> Result<Vec<crate::database::models::EpisodeInteractionSummary>, AppError> {
+    db.get_episode_interaction_summary(episode_id).map_err(AppError::from)
+}

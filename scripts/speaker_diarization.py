@@ -274,9 +274,16 @@ class SpeakerDiarizer:
 
         try:
             logger.info("Identifying speakers using voice library...")
+            print("VOICE_ID_PROGRESS: 0", flush=True)
+
+            def voice_id_progress(pct: int) -> None:
+                print(f"VOICE_ID_PROGRESS: {pct}", flush=True)
+
             mapping = self.voice_library.identify_speakers_in_diarization(
-                diarization, audio_path, return_scores=True, episode_date=episode_date
+                diarization, audio_path, return_scores=True, episode_date=episode_date,
+                progress_callback=voice_id_progress,
             )
+            print("VOICE_ID_PROGRESS: 100", flush=True)
             return mapping
         except Exception as e:
             logger.warning(f"Voice library identification failed: {e}")

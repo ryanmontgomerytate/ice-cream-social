@@ -158,11 +158,26 @@ async fn diarize_with_progress(
                     Ok(Some(line)) => {
                         if line.starts_with("DIARIZATION_PROGRESS:") {
                             if let Some(progress_str) = line.split(':').nth(1) {
-                                if let Ok(progress) = progress_str.trim().parse::<i32>() {
+                                if let Ok(raw) = progress_str.trim().parse::<i32>() {
+                                    // Pyannote = 0–70% of the unified progress bar
+                                    let combined = raw * 70 / 100;
                                     let _ = progress_tx.send(ProgressUpdate {
                                         episode_id: job.episode_id,
                                         stage: "diarizing".to_string(),
-                                        progress: Some(progress),
+                                        progress: Some(combined),
+                                        estimated_remaining: None,
+                                    }).await;
+                                }
+                            }
+                        } else if line.starts_with("VOICE_ID_PROGRESS:") {
+                            if let Some(progress_str) = line.split(':').nth(1) {
+                                if let Ok(raw) = progress_str.trim().parse::<i32>() {
+                                    // Voice ID = 70–100% of the unified progress bar
+                                    let combined = 70 + raw * 30 / 100;
+                                    let _ = progress_tx.send(ProgressUpdate {
+                                        episode_id: job.episode_id,
+                                        stage: "identifying".to_string(),
+                                        progress: Some(combined),
                                         estimated_remaining: None,
                                     }).await;
                                 }

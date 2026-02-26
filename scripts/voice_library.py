@@ -326,6 +326,7 @@ class VoiceLibrary:
         audio_path: Path,
         return_scores: bool = False,
         episode_date: Optional[str] = None,
+        progress_callback=None,
     ) -> Dict[str, Any]:
         if not self.embeddings:
             print("No speakers in voice library")
@@ -349,7 +350,11 @@ class VoiceLibrary:
         speaker_mapping: Dict[str, str] = {}
         speaker_scores: Dict[str, float] = {}
 
-        for speaker_label, segments in speaker_segments.items():
+        speaker_labels = list(speaker_segments.keys())
+        total = len(speaker_labels)
+
+        for i, speaker_label in enumerate(speaker_labels):
+            segments = speaker_segments[speaker_label]
             segments.sort(key=lambda s: s.get("end", 0) - s.get("start", 0), reverse=True)
             top_segments = segments[:5]
 
@@ -374,6 +379,9 @@ class VoiceLibrary:
                     print(f"  {speaker_label} -> {match} (confidence: {score:.2f})")
                 else:
                     print(f"  {speaker_label} -> Unknown (best score: {score:.2f})")
+
+            if progress_callback is not None and total > 0:
+                progress_callback(int((i + 1) / total * 100))
 
         if return_scores:
             return {

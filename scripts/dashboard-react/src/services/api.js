@@ -8,6 +8,20 @@ import * as tauriAPI from './tauri.js';
 // Check if running in Tauri
 export const isTauri = tauriAPI.isTauri;
 
+// ============================================================================
+// STATIC CACHE - For rarely-changing global data (chapter types, characters, audio drops)
+// ============================================================================
+const _staticCache = new Map();
+
+function _cachedFetch(key, fetchFn) {
+  if (_staticCache.has(key)) return Promise.resolve(_staticCache.get(key));
+  return fetchFn().then(result => { _staticCache.set(key, result); return result });
+}
+
+export function invalidateStaticCache(key) {
+  if (key) _staticCache.delete(key); else _staticCache.clear();
+}
+
 const API_BASE = '/api/v2';
 
 class APIError extends Error {
@@ -768,31 +782,38 @@ export const speakersAPI = {
 export const contentAPI = {
   // Chapter Types
   async getChapterTypes() {
-    if (isTauri) {
-      try {
-        return await tauriAPI.contentAPI.getChapterTypes();
-      } catch (e) {
-        console.error('Tauri getChapterTypes failed:', e);
-        return [];
+    return _cachedFetch('chapterTypes', () => {
+      if (isTauri) {
+        return tauriAPI.contentAPI.getChapterTypes().catch(e => { console.error('Tauri getChapterTypes failed:', e); return []; });
       }
-    }
-    return [];
+      return Promise.resolve([]);
+    });
   },
 
   async createChapterType(name, description, color, icon) {
     if (isTauri) {
-      return await tauriAPI.contentAPI.createChapterType(name, description, color, icon);
+      const result = await tauriAPI.contentAPI.createChapterType(name, description, color, icon);
+      invalidateStaticCache('chapterTypes');
+      return result;
     }
     throw new Error('Content only available in Tauri mode');
   },
 
   async updateChapterType(id, name, description, color, icon, sortOrder) {
-    if (isTauri) return await tauriAPI.contentAPI.updateChapterType(id, name, description, color, icon, sortOrder);
+    if (isTauri) {
+      const result = await tauriAPI.contentAPI.updateChapterType(id, name, description, color, icon, sortOrder);
+      invalidateStaticCache('chapterTypes');
+      return result;
+    }
     throw new Error('Content only available in Tauri mode');
   },
 
   async deleteChapterType(id) {
-    if (isTauri) return await tauriAPI.contentAPI.deleteChapterType(id);
+    if (isTauri) {
+      const result = await tauriAPI.contentAPI.deleteChapterType(id);
+      invalidateStaticCache('chapterTypes');
+      return result;
+    }
     throw new Error('Content only available in Tauri mode');
   },
 
@@ -841,34 +862,37 @@ export const contentAPI = {
 
   // Characters
   async getCharacters() {
-    if (isTauri) {
-      try {
-        return await tauriAPI.contentAPI.getCharacters();
-      } catch (e) {
-        console.error('Tauri getCharacters failed:', e);
-        return [];
+    return _cachedFetch('characters', () => {
+      if (isTauri) {
+        return tauriAPI.contentAPI.getCharacters().catch(e => { console.error('Tauri getCharacters failed:', e); return []; });
       }
-    }
-    return [];
+      return Promise.resolve([]);
+    });
   },
 
   async createCharacter(name, shortName, description, catchphrase, speakerId = null) {
     if (isTauri) {
-      return await tauriAPI.contentAPI.createCharacter(name, shortName, description, catchphrase, speakerId);
+      const result = await tauriAPI.contentAPI.createCharacter(name, shortName, description, catchphrase, speakerId);
+      invalidateStaticCache('characters');
+      return result;
     }
     throw new Error('Content only available in Tauri mode');
   },
 
   async updateCharacter(id, name, shortName, description, catchphrase, speakerId = null) {
     if (isTauri) {
-      return await tauriAPI.contentAPI.updateCharacter(id, name, shortName, description, catchphrase, speakerId);
+      const result = await tauriAPI.contentAPI.updateCharacter(id, name, shortName, description, catchphrase, speakerId);
+      invalidateStaticCache('characters');
+      return result;
     }
     throw new Error('Content only available in Tauri mode');
   },
 
   async deleteCharacter(id) {
     if (isTauri) {
-      return await tauriAPI.contentAPI.deleteCharacter(id);
+      const result = await tauriAPI.contentAPI.deleteCharacter(id);
+      invalidateStaticCache('characters');
+      return result;
     }
     throw new Error('Content only available in Tauri mode');
   },
@@ -913,20 +937,19 @@ export const contentAPI = {
 
   // Audio Drops
   async getAudioDrops() {
-    if (isTauri) {
-      try {
-        return await tauriAPI.contentAPI.getAudioDrops();
-      } catch (e) {
-        console.error('Tauri getAudioDrops failed:', e);
-        return [];
+    return _cachedFetch('audioDrops', () => {
+      if (isTauri) {
+        return tauriAPI.contentAPI.getAudioDrops().catch(e => { console.error('Tauri getAudioDrops failed:', e); return []; });
       }
-    }
-    return [];
+      return Promise.resolve([]);
+    });
   },
 
   async createAudioDrop(name, transcriptText = null, description = null, category = null) {
     if (isTauri) {
-      return await tauriAPI.contentAPI.createAudioDrop(name, transcriptText, description, category);
+      const result = await tauriAPI.contentAPI.createAudioDrop(name, transcriptText, description, category);
+      invalidateStaticCache('audioDrops');
+      return result;
     }
     throw new Error('Content only available in Tauri mode');
   },
@@ -947,7 +970,9 @@ export const contentAPI = {
 
   async deleteAudioDrop(id) {
     if (isTauri) {
-      return await tauriAPI.contentAPI.deleteAudioDrop(id);
+      const result = await tauriAPI.contentAPI.deleteAudioDrop(id);
+      invalidateStaticCache('audioDrops');
+      return result;
     }
     throw new Error('Content only available in Tauri mode');
   },
@@ -1150,6 +1175,25 @@ export const contentAPI = {
   async rejectAllCorrectionsForEpisode(episodeId) {
     if (isTauri) return await tauriAPI.contentAPI.rejectAllCorrectionsForEpisode(episodeId);
     throw new Error('Scoop Polish only available in Tauri mode');
+  },
+
+  // Episode Interaction Analytics
+  logEpisodeInteraction(episodeId, action, segmentIdx = null, metadata = null) {
+    if (!isTauri) return; // no-op in browser mode
+    tauriAPI.contentAPI.logEpisodeInteraction(episodeId, action, segmentIdx, metadata)
+      .catch(() => {}); // fire-and-forget, suppress errors
+  },
+
+  async getEpisodeInteractionSummary(episodeId) {
+    if (isTauri) {
+      try {
+        return await tauriAPI.contentAPI.getEpisodeInteractionSummary(episodeId);
+      } catch (e) {
+        console.error('Tauri getEpisodeInteractionSummary failed:', e);
+        return [];
+      }
+    }
+    return [];
   },
 };
 

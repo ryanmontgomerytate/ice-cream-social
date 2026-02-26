@@ -480,6 +480,438 @@ function CategoryRulesSection({ onNotification }) {
 
 const DEFAULT_COLORS = ['#22c55e', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#14b8a6', '#f97316', '#64748b']
 
+// ============================================================================
+// Chapter Management Section (replaces ChapterTypesSection + ChapterLabelRulesSection)
+// ============================================================================
+
+const MATCH_TYPES = [
+  { value: 'contains', label: 'Contains' },
+  { value: 'starts_with', label: 'Starts with' },
+  { value: 'regex', label: 'Regex' },
+]
+
+function ChapterRuleInlineRow({ rule, onSave, onDelete }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState({ ...rule })
+  const [saving, setSaving] = useState(false)
+
+  const handleSave = async () => {
+    setSaving(true)
+    try {
+      await onSave(draft)
+      setEditing(false)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!editing) {
+    return (
+      <div className="flex items-center gap-2 px-2 py-1.5 rounded border bg-white border-gray-100 text-xs">
+        <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 flex-shrink-0">{MATCH_TYPES.find(m => m.value === rule.match_type)?.label || rule.match_type}</span>
+        <span className="font-mono text-gray-600 flex-1 truncate">{rule.pattern}</span>
+        <span className="text-gray-400 flex-shrink-0">p{rule.priority}</span>
+        {!rule.enabled && <span className="text-gray-400 flex-shrink-0">(off)</span>}
+        <button onClick={() => setEditing(true)} className="text-blue-500 hover:text-blue-700 flex-shrink-0">Edit</button>
+        <button onClick={() => onDelete(rule.id)} className="text-red-400 hover:text-red-600 flex-shrink-0">✕</button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="p-2 rounded border border-blue-200 bg-blue-50 space-y-1.5 text-xs">
+      <div className="flex gap-2 flex-wrap">
+        <select
+          value={draft.match_type}
+          onChange={e => setDraft(d => ({ ...d, match_type: e.target.value }))}
+          className="border border-gray-300 rounded px-2 py-1 flex-shrink-0"
+        >
+          {MATCH_TYPES.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+        </select>
+        <input
+          value={draft.pattern}
+          onChange={e => setDraft(d => ({ ...d, pattern: e.target.value }))}
+          placeholder="Pattern to match..."
+          className="border border-gray-300 rounded px-2 py-1 flex-1 min-w-[120px] font-mono"
+        />
+        <input
+          type="number"
+          value={draft.priority}
+          onChange={e => setDraft(d => ({ ...d, priority: parseInt(e.target.value) || 0 }))}
+          className="border border-gray-300 rounded px-2 py-1 w-14"
+          title="Priority (higher runs first)"
+        />
+      </div>
+      <div className="flex items-center gap-3">
+        <label className="flex items-center gap-1 text-gray-600">
+          <input type="checkbox" checked={draft.enabled} onChange={e => setDraft(d => ({ ...d, enabled: e.target.checked }))} />
+          Enabled
+        </label>
+        <div className="flex-1" />
+        <button onClick={() => setEditing(false)} className="text-gray-500 hover:text-gray-700">Cancel</button>
+        <button onClick={handleSave} disabled={saving || !draft.pattern} className="bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600 disabled:opacity-50">
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function ChapterTypeCard({ type, rules, onSaveType, onDeleteType, onSaveRule, onDeleteRule, onAddRule }) {
+  const [expanded, setExpanded] = useState(false)
+  const [editingType, setEditingType] = useState(false)
+  const [draft, setDraft] = useState({ ...type })
+  const [saving, setSaving] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [addingRule, setAddingRule] = useState(false)
+  const [newRule, setNewRule] = useState({ pattern: '', match_type: 'contains', priority: 0, enabled: true })
+  const [addingSaving, setAddingSaving] = useState(false)
+
+  const handleSaveType = async () => {
+    setSaving(true)
+    try {
+      await onSaveType(draft)
+      setEditingType(false)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDelete = () => {
+    if (!confirmDelete) { setConfirmDelete(true); return }
+    onDeleteType(type.id)
+  }
+
+  const handleAddRule = async () => {
+    if (!newRule.pattern.trim()) return
+    setAddingSaving(true)
+    try {
+      await onAddRule(type.id, newRule)
+      setNewRule({ pattern: '', match_type: 'contains', priority: 0, enabled: true })
+      setAddingRule(false)
+    } finally {
+      setAddingSaving(false)
+    }
+  }
+
+  const typeRules = rules.filter(r => r.chapter_type_id === type.id)
+
+  return (
+    <div className="border rounded-lg overflow-hidden" style={{ borderColor: type.color || '#e5e7eb' }}>
+      {/* Summary row */}
+      <div
+        className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-gray-50 bg-white"
+        onClick={() => { if (!editingType) setExpanded(e => !e) }}
+      >
+        <span className="text-base w-6 text-center flex-shrink-0">{type.icon || '📑'}</span>
+        <span className="inline-block w-3 h-3 rounded-full flex-shrink-0" style={{ background: type.color }} />
+        <span className="text-sm font-medium text-gray-800 flex-1" style={{ color: type.color }}>{type.name}</span>
+        {typeRules.length > 0 && (
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-600 flex-shrink-0">
+            {typeRules.length} rule{typeRules.length !== 1 ? 's' : ''}
+          </span>
+        )}
+        <svg
+          className={`w-3.5 h-3.5 text-gray-400 transition-transform flex-shrink-0 ${expanded ? 'rotate-180' : ''}`}
+          fill="none" stroke="currentColor" viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </div>
+
+      {/* Expanded content */}
+      {expanded && (
+        <div className="border-t px-3 py-3 space-y-3 bg-gray-50" style={{ borderColor: type.color || '#e5e7eb' }}>
+          {/* Type edit fields */}
+          {editingType ? (
+            <div className="space-y-2">
+              <div className="flex gap-2 flex-wrap">
+                <input
+                  value={draft.icon || ''}
+                  onChange={e => setDraft(d => ({ ...d, icon: e.target.value }))}
+                  placeholder="🎬"
+                  className="text-sm border border-gray-300 rounded px-2 py-1 w-14 text-center"
+                  title="Emoji icon"
+                />
+                <input
+                  value={draft.name}
+                  onChange={e => setDraft(d => ({ ...d, name: e.target.value }))}
+                  placeholder="Chapter name"
+                  className="text-xs border border-gray-300 rounded px-2 py-1 flex-1 min-w-[120px]"
+                />
+                <input
+                  value={draft.color}
+                  onChange={e => setDraft(d => ({ ...d, color: e.target.value }))}
+                  type="color"
+                  className="h-8 w-10 rounded border border-gray-300 cursor-pointer p-0.5"
+                  title="Color"
+                />
+                <input
+                  type="number"
+                  value={draft.sort_order}
+                  onChange={e => setDraft(d => ({ ...d, sort_order: parseInt(e.target.value) || 0 }))}
+                  className="text-xs border border-gray-300 rounded px-2 py-1 w-16"
+                  title="Sort order"
+                />
+              </div>
+              <div className="flex gap-1 flex-wrap">
+                {DEFAULT_COLORS.map(c => (
+                  <button key={c} onClick={() => setDraft(d => ({ ...d, color: c }))}
+                    className={`w-5 h-5 rounded-full border-2 ${draft.color === c ? 'border-blue-500' : 'border-transparent'}`}
+                    style={{ background: c }} />
+                ))}
+              </div>
+              <input
+                value={draft.description || ''}
+                onChange={e => setDraft(d => ({ ...d, description: e.target.value }))}
+                placeholder="Description (optional)"
+                className="text-xs border border-gray-300 rounded px-2 py-1 w-full"
+              />
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleDelete}
+                  className={`text-xs px-2 py-1 rounded border ${confirmDelete ? 'bg-red-600 text-white border-red-600' : 'text-red-500 border-red-200 hover:bg-red-50'}`}
+                >
+                  {confirmDelete ? 'Confirm delete?' : 'Delete type'}
+                </button>
+                <div className="flex-1" />
+                <button onClick={() => { setEditingType(false); setDraft({ ...type }); setConfirmDelete(false) }} className="text-xs text-gray-500 hover:text-gray-700">Cancel</button>
+                <button onClick={handleSaveType} disabled={saving || !draft.name} className="text-xs bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 disabled:opacity-50">
+                  {saving ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              {type.description && <span className="text-xs text-gray-500 flex-1">{type.description}</span>}
+              {!type.description && <span className="text-xs text-gray-400 flex-1 italic">No description</span>}
+              <button onClick={() => { setEditingType(true); setExpanded(true) }} className="text-xs text-blue-500 hover:text-blue-700">Edit type</button>
+            </div>
+          )}
+
+          {/* Rules for this type */}
+          <div>
+            <div className="text-[10px] text-gray-400 uppercase tracking-wide mb-1.5">Rules ({typeRules.length})</div>
+            {typeRules.length === 0 && !addingRule && (
+              <p className="text-xs text-gray-400 italic">No rules yet — auto-labeling won't fire for this type.</p>
+            )}
+            <div className="space-y-1">
+              {typeRules.map(rule => (
+                <ChapterRuleInlineRow
+                  key={rule.id}
+                  rule={rule}
+                  onSave={onSaveRule}
+                  onDelete={onDeleteRule}
+                />
+              ))}
+            </div>
+
+            {/* Add rule form */}
+            {addingRule ? (
+              <div className="mt-2 p-2 rounded border border-indigo-200 bg-indigo-50 space-y-1.5 text-xs">
+                <div className="flex gap-2 flex-wrap">
+                  <select
+                    value={newRule.match_type}
+                    onChange={e => setNewRule(d => ({ ...d, match_type: e.target.value }))}
+                    className="border border-gray-300 rounded px-2 py-1 flex-shrink-0"
+                  >
+                    {MATCH_TYPES.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                  </select>
+                  <input
+                    value={newRule.pattern}
+                    onChange={e => setNewRule(d => ({ ...d, pattern: e.target.value }))}
+                    onKeyDown={e => e.key === 'Enter' && handleAddRule()}
+                    placeholder="Pattern to match..."
+                    className="border border-gray-300 rounded px-2 py-1 flex-1 min-w-[120px] font-mono"
+                    autoFocus
+                  />
+                  <input
+                    type="number"
+                    value={newRule.priority}
+                    onChange={e => setNewRule(d => ({ ...d, priority: parseInt(e.target.value) || 0 }))}
+                    className="border border-gray-300 rounded px-2 py-1 w-14"
+                    title="Priority"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="flex items-center gap-1 text-gray-600">
+                    <input type="checkbox" checked={newRule.enabled} onChange={e => setNewRule(d => ({ ...d, enabled: e.target.checked }))} />
+                    Enabled
+                  </label>
+                  <div className="flex-1" />
+                  <button onClick={() => setAddingRule(false)} className="text-gray-500 hover:text-gray-700">Cancel</button>
+                  <button onClick={handleAddRule} disabled={addingSaving || !newRule.pattern.trim()} className="bg-indigo-500 text-white px-2 py-1 rounded hover:bg-indigo-600 disabled:opacity-50">
+                    {addingSaving ? 'Adding…' : 'Add Rule'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button onClick={() => setAddingRule(true)} className="mt-1.5 text-xs text-indigo-500 hover:text-indigo-700">+ Add Rule</button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ChapterManagementSection({ onNotification }) {
+  const [types, setTypes] = useState([])
+  const [rules, setRules] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [adding, setAdding] = useState(false)
+  const [newType, setNewType] = useState({ name: '', description: '', color: '#3b82f6', icon: '', sort_order: 99 })
+  const [addingSaving, setAddingSaving] = useState(false)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const [t, r] = await Promise.all([contentAPI.getChapterTypes(), contentAPI.getChapterLabelRules()])
+      setTypes(t)
+      setRules(r)
+    } catch (e) {
+      onNotification?.(`Error loading chapter data: ${e.message}`, 'error')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  const handleSaveType = async (type) => {
+    try {
+      await contentAPI.updateChapterType(type.id, type.name, type.description || null, type.color, type.icon || null, type.sort_order)
+      await load()
+      onNotification?.('Chapter type saved', 'success')
+    } catch (e) {
+      onNotification?.(`Save failed: ${e.message}`, 'error')
+      throw e
+    }
+  }
+
+  const handleDeleteType = async (id) => {
+    try {
+      await contentAPI.deleteChapterType(id)
+      setTypes(t => t.filter(x => x.id !== id))
+      setRules(r => r.filter(x => x.chapter_type_id !== id))
+      onNotification?.('Chapter type deleted', 'success')
+    } catch (e) {
+      onNotification?.(`Delete failed: ${e.message}`, 'error')
+    }
+  }
+
+  const handleAddType = async () => {
+    if (!newType.name.trim()) return
+    setAddingSaving(true)
+    try {
+      await contentAPI.createChapterType(newType.name.trim(), newType.description || null, newType.color, newType.icon || null)
+      await load()
+      setNewType({ name: '', description: '', color: '#3b82f6', icon: '', sort_order: 99 })
+      setAdding(false)
+      onNotification?.('Chapter type created', 'success')
+    } catch (e) {
+      onNotification?.(`Create failed: ${e.message}`, 'error')
+    } finally {
+      setAddingSaving(false)
+    }
+  }
+
+  const handleSaveRule = async (rule) => {
+    try {
+      await contentAPI.saveChapterLabelRule(rule.id, rule.chapter_type_id, rule.pattern, rule.match_type, rule.priority, rule.enabled)
+      await load()
+      onNotification?.('Rule saved', 'success')
+    } catch (e) {
+      onNotification?.(`Save failed: ${e.message}`, 'error')
+      throw e
+    }
+  }
+
+  const handleDeleteRule = async (id) => {
+    try {
+      await contentAPI.deleteChapterLabelRule(id)
+      setRules(r => r.filter(x => x.id !== id))
+      onNotification?.('Rule deleted', 'success')
+    } catch (e) {
+      onNotification?.(`Delete failed: ${e.message}`, 'error')
+    }
+  }
+
+  const handleAddRule = async (chapterTypeId, rule) => {
+    try {
+      await contentAPI.saveChapterLabelRule(null, chapterTypeId, rule.pattern, rule.match_type, rule.priority, rule.enabled)
+      await load()
+      onNotification?.('Rule added', 'success')
+    } catch (e) {
+      onNotification?.(`Add failed: ${e.message}`, 'error')
+      throw e
+    }
+  }
+
+  return (
+    <div className="p-4 bg-white rounded-lg border border-gray-200">
+      <div className="flex items-center justify-between mb-3">
+        <div>
+          <h3 className="font-medium text-gray-800 text-sm">Chapter Management</h3>
+          <p className="text-xs text-gray-500 mt-0.5">Expand a type to edit it or manage its auto-label rules.</p>
+        </div>
+        <button onClick={() => setAdding(a => !a)} className="text-xs bg-indigo-500 text-white px-3 py-1.5 rounded hover:bg-indigo-600">+ Add Type</button>
+      </div>
+
+      {adding && (
+        <div className="p-3 rounded border border-indigo-200 bg-indigo-50 space-y-2 mb-3">
+          <div className="flex gap-2 flex-wrap">
+            <input value={newType.icon} onChange={e => setNewType(d => ({ ...d, icon: e.target.value }))}
+              placeholder="🎬" className="text-sm border border-gray-300 rounded px-2 py-1 w-14 text-center" title="Emoji icon" />
+            <input value={newType.name} onChange={e => setNewType(d => ({ ...d, name: e.target.value }))}
+              onKeyDown={e => e.key === 'Enter' && handleAddType()}
+              placeholder="Chapter type name" className="text-xs border border-gray-300 rounded px-2 py-1 flex-1 min-w-[140px]" />
+            <input value={newType.color} onChange={e => setNewType(d => ({ ...d, color: e.target.value }))}
+              type="color" className="h-8 w-10 rounded border border-gray-300 cursor-pointer p-0.5" />
+          </div>
+          <div className="flex gap-1 flex-wrap">
+            {DEFAULT_COLORS.map(c => (
+              <button key={c} onClick={() => setNewType(d => ({ ...d, color: c }))}
+                className={`w-5 h-5 rounded-full border-2 ${newType.color === c ? 'border-indigo-500' : 'border-transparent'}`}
+                style={{ background: c }} />
+            ))}
+          </div>
+          <input value={newType.description} onChange={e => setNewType(d => ({ ...d, description: e.target.value }))}
+            placeholder="Description (optional)" className="text-xs border border-gray-300 rounded px-2 py-1 w-full" />
+          <div className="flex items-center gap-2 justify-end">
+            <button onClick={() => setAdding(false)} className="text-xs text-gray-500 hover:text-gray-700">Cancel</button>
+            <button onClick={handleAddType} disabled={addingSaving || !newType.name.trim()} className="text-xs bg-indigo-500 text-white px-3 py-1 rounded hover:bg-indigo-600 disabled:opacity-50">
+              {addingSaving ? 'Creating…' : 'Create'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {loading ? (
+        <p className="text-xs text-gray-400 py-2">Loading…</p>
+      ) : types.length === 0 ? (
+        <p className="text-xs text-gray-400 py-2">No chapter types. Add one above.</p>
+      ) : (
+        <div className="space-y-2">
+          {types.map(t => (
+            <ChapterTypeCard
+              key={t.id}
+              type={t}
+              rules={rules}
+              onSaveType={handleSaveType}
+              onDeleteType={handleDeleteType}
+              onSaveRule={handleSaveRule}
+              onDeleteRule={handleDeleteRule}
+              onAddRule={handleAddRule}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// (Legacy components below — kept as stubs so no references break, but no longer rendered)
 function ChapterTypeRow({ type, onSave, onDelete }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState({ ...type })
@@ -685,14 +1117,8 @@ function ChapterTypesSection({ onNotification }) {
   )
 }
 
-// Chapter Label Rules Section
+// Chapter Label Rules Section (legacy — no longer rendered)
 // ============================================================================
-
-const MATCH_TYPES = [
-  { value: 'contains', label: 'Contains' },
-  { value: 'starts_with', label: 'Starts with' },
-  { value: 'regex', label: 'Regex' },
-]
 
 function ChapterLabelRuleRow({ rule, chapterTypes, onSave, onDelete }) {
   const [editing, setEditing] = useState(false)
@@ -1537,11 +1963,8 @@ export default function SettingsPanel({ onNotification }) {
             {/* Category Rules Section */}
             <CategoryRulesSection onNotification={onNotification} />
 
-            {/* Chapter Types Section */}
-            <ChapterTypesSection onNotification={onNotification} />
-
-            {/* Chapter Label Rules Section */}
-            <ChapterLabelRulesSection onNotification={onNotification} />
+            {/* Chapter Management (types + rules, merged) */}
+            <ChapterManagementSection onNotification={onNotification} />
 
             {/* Scoop Polish Corrections Bulk Review */}
             <CorrectionsReviewSection onNotification={onNotification} />

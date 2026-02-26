@@ -653,6 +653,14 @@ export const contentAPI = {
   async rejectAllCorrectionsForEpisode(episodeId) {
     return tauriInvoke('reject_all_corrections_for_episode', { episodeId });
   },
+
+  async logEpisodeInteraction(episodeId, action, segmentIdx = null, metadata = null) {
+    return tauriInvoke('log_episode_interaction', { episodeId, action, segmentIdx, metadata });
+  },
+
+  async getEpisodeInteractionSummary(episodeId) {
+    return tauriInvoke('get_episode_interaction_summary', { episodeId });
+  },
 };
 
 // ============================================================================

@@ -447,6 +447,24 @@ pub struct TranscriptCorrection {
     pub segment_start_time: Option<f64>,
 }
 
+/// A single logged editor interaction with an episode
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EpisodeInteraction {
+    pub id: i64,
+    pub episode_id: i64,
+    pub action: String,
+    pub segment_idx: Option<i64>,
+    pub metadata: Option<String>,
+    pub created_at: Option<String>,
+}
+
+/// Aggregated count of interactions by action type for an episode
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EpisodeInteractionSummary {
+    pub action: String,
+    pub count: i64,
+}
+
 /// TranscriptCorrection enriched with episode metadata for cross-episode review
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TranscriptCorrectionWithEpisode {

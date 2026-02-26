@@ -100,6 +100,7 @@ function CurrentActivity({ activity }) {
     downloading: { icon: '📥', label: 'Downloading', color: 'amber', bgClass: 'bg-amber-50', borderClass: 'border-amber-200', textClass: 'text-amber-600', barClass: 'bg-amber-500' },
     transcribing: { icon: '🎙️', label: 'Transcribing', color: 'sky', bgClass: 'bg-sky-50', borderClass: 'border-sky-200', textClass: 'text-sky-600', barClass: 'bg-sky-500' },
     diarizing: { icon: '👥', label: 'Diarizing', color: 'purple', bgClass: 'bg-purple-50', borderClass: 'border-purple-300', textClass: 'text-purple-600', barClass: 'bg-gradient-to-r from-purple-500 to-purple-600' },
+    identifying: { icon: '🔍', label: 'Identifying Speakers', color: 'purple', bgClass: 'bg-purple-50', borderClass: 'border-purple-300', textClass: 'text-purple-600', barClass: 'bg-gradient-to-r from-purple-500 to-purple-600' },
     saving: { icon: '💾', label: 'Saving', color: 'green', bgClass: 'bg-green-50', borderClass: 'border-green-200', textClass: 'text-green-600', barClass: 'bg-green-500' },
   }
 
@@ -109,7 +110,7 @@ function CurrentActivity({ activity }) {
     const progress = slot.progress || 0
     const asrModel = formatAsrModel(slot.transcription_model || activity?.worker_info?.model)
     const embeddingModel = formatEmbeddingModel(slot.embedding_backend || activity?.worker_info?.embedding_model)
-    const showPipelineBadges = slot.stage === 'transcribing' || slot.stage === 'diarizing'
+    const showPipelineBadges = slot.stage === 'transcribing' || slot.stage === 'diarizing' || slot.stage === 'identifying'
     return (
       <div key={`${slot.episode.id}-${slot.stage}`} className={`p-4 rounded-lg border ${config.bgClass} ${config.borderClass}`}>
         <div className="flex items-center gap-2 mb-2">

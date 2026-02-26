@@ -210,6 +210,7 @@ export default function PropertiesPanel() {
   const [polishResults, setPolishResults] = useState([])
   const [polishProgress, setPolishProgress] = useState(0)
   const [polishError, setPolishError] = useState(null)
+  const [interactionSummary, setInteractionSummary] = useState([])
   const polishUnlistenRef = useRef(null)
 
   const toggleSection = (key) => {
@@ -341,6 +342,15 @@ export default function PropertiesPanel() {
     let cancelled = false
     contentAPI.getSegmentClassifications(episode.id)
       .then(list => { if (!cancelled) setQwenClassifications(list || []) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [episode?.id])
+
+  useEffect(() => {
+    if (!episode?.id) { setInteractionSummary([]); return }
+    let cancelled = false
+    contentAPI.getEpisodeInteractionSummary(episode.id)
+      .then(list => { if (!cancelled) setInteractionSummary(list || []) })
       .catch(() => {})
     return () => { cancelled = true }
   }, [episode?.id])
@@ -1516,6 +1526,11 @@ export default function PropertiesPanel() {
           <div className="text-xs text-gray-500 truncate" title={episode.title}>
             {episode.title}
           </div>
+          {interactionSummary.length > 0 && (
+            <div className="text-[10px] text-gray-400 mt-1 truncate" title="Editor interactions logged for this episode">
+              {interactionSummary.map(s => `${s.count} ${s.action.replace(/_/g, ' ')}`).join(' · ')}
+            </div>
+          )}
         </div>
       )}
     </div>

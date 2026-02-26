@@ -144,6 +144,11 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
     }, 4000)
   }, [])
 
+  const logInteraction = useCallback((action, segmentIdx = null, metadata = null) => {
+    if (!episode?.id || !isTauri) return
+    contentAPI.logEpisodeInteraction(episode.id, action, segmentIdx, metadata ? JSON.stringify(metadata) : null)
+  }, [episode?.id])
+
   useEffect(() => {
     return () => {
       if (savedToastTimerRef.current) clearTimeout(savedToastTimerRef.current)
@@ -218,9 +223,8 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
       setLoading(true)
       setError(null)
 
-      const [data, voices, types, chapters, flags, charAppearances, allCharacters, drops, dropInstances, speakerAssignments] = await Promise.all([
+      const [data, types, chapters, flags, charAppearances, allCharacters, drops, dropInstances, speakerAssignments] = await Promise.all([
         episodesAPI.getTranscript(episode.id),
-        speakersAPI.getVoiceLibrary().catch(() => []),
         contentAPI.getChapterTypes().catch(() => []),
         contentAPI.getEpisodeChapters(episode.id).catch(() => []),
         contentAPI.getFlaggedSegments(episode.id).catch(() => []),
@@ -233,11 +237,15 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
 
       setTranscript(data)
       onTranscriptLoaded?.(true)
-      setVoiceLibrary(voices)
       setChapterTypes(types)
       setCharacters(allCharacters)
       setAudioDrops(drops)
       setAudioDropInstances(dropInstances)
+
+      // Lazy-load voice library (not blocking transcript display)
+      if (voiceLibrary.length === 0) {
+        speakersAPI.getVoiceLibrary().then(setVoiceLibrary).catch(() => {})
+      }
 
       setEpisodeChapters(chapters)
       setCharacterAppearances(charAppearances)
@@ -519,6 +527,7 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
       setSpeakerPickerIdx(null)
       setSpeakerPickerSelected([])
       flashSavedToast('✓ Flag saved')
+      logInteraction('segment_flagged', idx, { flag_type: flagType, corrected_speaker: correctedSpeaker })
     } catch (err) {
       onNotification?.(`Failed to create flag: ${err.message}`, 'error')
     }
@@ -605,6 +614,7 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
       setChapterRangeType(null)
       setChapterRangeEndInput('')
       flashSavedToast('✓ Chapter saved')
+      logInteraction('chapter_created', segmentIdx, { chapter_type_id: chapterTypeId, end_segment_idx: endIdx })
     } catch (err) {
       onNotification?.(`Failed to create chapter: ${err.message}`, 'error')
     }
@@ -784,6 +794,7 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
     setSpeakerNames(prev => ({ ...prev, [originalLabel]: displayName }))
     setHasUnsavedChanges(true)
     setActivePicker(null)
+    logInteraction('speaker_corrected', null, { original_label: originalLabel, display_name: displayName })
   }
 
   // Audio drop assignment to diarization label (from TranscriptEditor's own picker)
@@ -1362,16 +1373,18 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
       return (
         <div className="mt-2 p-2 bg-white rounded-lg border border-gray-200 shadow-sm">
           <div className="text-[10px] text-gray-400 uppercase tracking-wide mb-1 px-1">Chapter type</div>
-          {chapterTypes.map(ct => (
-            <button key={ct.id} onClick={(e) => {
-              e.stopPropagation()
-              setChapterRangeStart(idx)
-              setChapterRangeType(ct.id)
-              setChapterRangeEndInput(String(idx))
-            }} className="w-full px-2 py-1.5 text-sm text-left rounded hover:bg-indigo-50 flex items-center gap-2">
-              <span>{ct.icon}</span> <span style={{ color: ct.color }}>{ct.name}</span>
-            </button>
-          ))}
+          <div className="max-h-48 overflow-y-auto">
+            {chapterTypes.map(ct => (
+              <button key={ct.id} onClick={(e) => {
+                e.stopPropagation()
+                setChapterRangeStart(idx)
+                setChapterRangeType(ct.id)
+                setChapterRangeEndInput(String(idx))
+              }} className="w-full px-2 py-1.5 text-sm text-left rounded hover:bg-indigo-50 flex items-center gap-2">
+                <span>{ct.icon}</span> <span style={{ color: ct.color }}>{ct.name}</span>
+              </button>
+            ))}
+          </div>
           {chapterRangeStart === idx && chapterRangeType && (
             <div className="mt-2 p-2 rounded border border-indigo-200 bg-indigo-50">
               <div className="text-xs text-indigo-700">Start segment: #{chapterRangeStart}</div>
@@ -2051,6 +2064,7 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
                 const nextRate = rates[(rates.indexOf(playbackRate) + 1) % rates.length]
                 setPlaybackRate(nextRate)
                 if (audioRef.current) audioRef.current.playbackRate = nextRate
+                logInteraction('playback_speed_changed', null, { speed: nextRate })
               }} className="px-2 py-1 text-xs font-medium text-gray-600 bg-white rounded border">
                 {playbackRate}x
               </button>

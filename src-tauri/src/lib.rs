@@ -307,6 +307,8 @@ pub fn run() {
             commands::get_all_pending_corrections,
             commands::approve_all_corrections_for_episode,
             commands::reject_all_corrections_for_episode,
+            commands::log_episode_interaction,
+            commands::get_episode_interaction_summary,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
