@@ -1,214 +1,249 @@
-# Ice Cream Social App - Architecture Specification
+# Architecture
+
+## Purpose
+
+This file is the repository-level architecture source of truth for `ice-cream-social-app`.
+It describes the current implemented system (desktop-first Tauri app) and the key storage/runtime boundaries that matter for ongoing development and future web/mobile migration.
+
+Last updated: February 26, 2026
 
 ## System Overview
 
-The Ice Cream Social App is a podcast transcription and search system for the "Matt and Mattingly's Ice Cream Social" podcast, optimized for Apple Silicon (M3/M4).
+`ice-cream-social-app` is a desktop-first podcast transcription, diarization, indexing, and review application for "Matt and Mattingly's Ice Cream Social" (ICS).
 
-## Technology Stack
+Current architecture:
+- Frontend: React + Vite (`scripts/dashboard-react`)
+- App shell / backend: Tauri v2 + Rust (`src-tauri`)
+- Primary database: SQLite (`data/ice_cream_social.db`) via `rusqlite`
+- Audio/transcription/diarization workers: Rust orchestrates Python scripts and native CLIs
+- Native transcription: `whisper.cpp` CLI
+- Diarization + speaker ID: Python (`pyannote`, `speechbrain` ECAPA) + local voice library
 
-### Current Architecture (Tauri/Rust)
+## High-Level Runtime Architecture
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     Tauri App (Rust)                        │
-├─────────────────────────────────────────────────────────────┤
-│  React Frontend (webview)                                   │
-│    - Vite build system                                      │
-│    - TailwindCSS styling                                    │
-│    - Tauri IPC for backend communication                    │
-├─────────────────────────────────────────────────────────────┤
-│  Rust Backend                                               │
-│    ├─ Tauri commands (replaces Flask REST API)              │
-│    ├─ SQLite database (rusqlite)                            │
-│    ├─ Tokio async runtime                                   │
-│    └─ Subprocess calls to:                                  │
-│        - whisper-cli (transcription)                        │
-│        - Python venv (diarization only, when needed)        │
-└─────────────────────────────────────────────────────────────┘
-```
+## 1) Tauri Desktop App (entrypoint)
 
-### Core Components
+File: `src-tauri/src/lib.rs`
 
-**Frontend**
-- React 18 with Vite
-- TailwindCSS for styling
-- Tauri IPC (`invoke()`) for backend communication
-- Real-time updates via Tauri events
+Responsibilities:
+- Initialize SQLite database and run schema creation/migrations
+- Start background worker (`TranscriptionWorker`)
+- Register Tauri commands (IPC API for frontend)
+- Spawn scheduled sub-agents (quality scan, extraction coordinator, wiki sync, hints prefetch)
 
-**Backend (Rust)**
-- Tauri v2 framework
-- rusqlite for SQLite database access
-- tokio for async operations
-- reqwest for HTTP (RSS fetching)
-- feed-rs for RSS parsing
+Important current constraint:
+- Several paths are currently hardcoded relative to the user home/Desktop project path (Mac-local workflow).
 
-**Transcription Engine**
-- Primary: `whisper.cpp` CLI (`whisper-cli`)
-- Model: Whisper medium (configurable)
-- Path: `~/bin/whisper-cpp/whisper.cpp/build/bin/whisper-cli`
+## 2) React Frontend
 
-**Speaker Diarization**
-- `MLX-Pyannote` (Python subprocess when needed)
-- Uses Apple's MLX for M-series optimization
+Path: `scripts/dashboard-react/`
 
-**Database**
-- SQLite with rusqlite
-- Path: `data/ice_cream_social.db`
+Responsibilities:
+- Episode browser, transcript editor/review UI, queue/status views, settings
+- Calls backend through `scripts/dashboard-react/src/services/api.js`
+- Auto-detects Tauri vs HTTP via `scripts/dashboard-react/src/services/tauri.js`
 
-## Project Structure
+Current state:
+- Tauri IPC is the primary integration path
+- Some HTTP fallback exists, but many flows are Tauri-only (editing, diarization, voice samples, etc.)
 
-```
-ice-cream-social-app/
-├── CLAUDE.md              # Core instructions for Claude
-├── SESSIONS.md            # Development log
-├── ARCHITECTURE.md        # This file
-├── config.yaml            # Configuration file
-│
-├── src-tauri/             # Tauri/Rust backend
-│   ├── Cargo.toml
-│   ├── tauri.conf.json
-│   └── src/
-│       ├── lib.rs         # App initialization
-│       ├── commands/      # Tauri IPC commands
-│       │   ├── episodes.rs
-│       │   ├── queue.rs
-│       │   ├── stats.rs
-│       │   └── worker.rs
-│       ├── database/      # SQLite operations
-│       │   ├── mod.rs
-│       │   └── models.rs
-│       └── worker/        # Background transcription
-│           └── mod.rs
-│
-├── scripts/
-│   ├── dashboard-react/   # React frontend
-│   │   ├── src/
-│   │   │   ├── components/
-│   │   │   │   ├── CurrentActivity.jsx
-│   │   │   │   ├── EpisodesBrowser.jsx
-│   │   │   │   ├── EpisodeCard.jsx
-│   │   │   │   ├── EpisodeFeed.jsx
-│   │   │   │   └── QueuePanel.jsx
-│   │   │   └── services/
-│   │   │       ├── api.js     # Auto-detects Tauri vs HTTP
-│   │   │       └── tauri.js   # Tauri IPC wrapper
-│   │   └── package.json
-│   ├── episodes/          # Downloaded audio files
-│   └── transcripts/       # Transcription outputs
-│
-├── data/
-│   └── ice_cream_social.db  # SQLite database
-│
-└── docs/
-    └── archive/           # Archived documentation
-```
+## 3) Rust Command Layer (Tauri IPC)
 
-## Tauri Commands (API)
+Path: `src-tauri/src/commands/`
 
-| Command | Description |
-|---------|-------------|
-| `get_episodes` | List episodes with filters, search, pagination |
-| `get_episode` | Get single episode by ID |
-| `get_feed_sources` | List available podcast feeds |
-| `refresh_feed` | Fetch new episodes from RSS |
-| `get_transcript` | Get transcript for episode |
-| `get_queue` | List transcription queue |
-| `add_to_queue` | Add episode to transcription queue |
-| `remove_from_queue` | Remove episode from queue |
-| `get_worker_status` | Get transcription worker status |
-| `stop_current_transcription` | Stop active transcription |
-| `get_stats` | Get dashboard statistics |
+Major domains:
+- `episodes.rs`: feed refresh, transcript fetch/edit, diarization reprocess, voice sample save
+- `content.rs`: chapters, characters, flags, audio drops, indexing, classification helpers
+- `speakers.rs`: speaker CRUD, voice library UI integration, rebuild/harvest commands
+- `queue.rs`, `worker.rs`, `stats.rs`, `settings.rs`, `wiki.rs`, `diagnostics.rs`, `extraction.rs`
 
-## Database Schema
+This layer is the application API boundary for the frontend.
 
-```sql
--- Episodes table
-CREATE TABLE episodes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    episode_number TEXT,
-    title TEXT NOT NULL,
-    description TEXT,
-    audio_url TEXT NOT NULL,
-    duration REAL,
-    file_size INTEGER,
-    published_date TEXT,
-    feed_source TEXT DEFAULT 'patreon',
-    is_downloaded INTEGER DEFAULT 0,
-    is_transcribed INTEGER DEFAULT 0,
-    is_in_queue INTEGER DEFAULT 0,
-    download_path TEXT,
-    transcript_path TEXT,
-    transcribed_date TEXT,
-    transcription_status TEXT DEFAULT 'pending',
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
+## 4) Worker / Processing Pipeline
 
--- Transcription queue
-CREATE TABLE transcription_queue (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    episode_id INTEGER NOT NULL,
-    priority INTEGER DEFAULT 0,
-    status TEXT DEFAULT 'pending',
-    queue_type TEXT DEFAULT 'full', -- 'full' | 'diarize_only'
-    embedding_backend_override TEXT, -- optional per-episode diarization backend
-    added_at TEXT DEFAULT CURRENT_TIMESTAMP,
-    started_at TEXT,
-    completed_at TEXT,
-    error_message TEXT,
-    FOREIGN KEY (episode_id) REFERENCES episodes(id)
-);
+Rust worker paths:
+- `src-tauri/src/worker/mod.rs`
+- `src-tauri/src/worker/diarize.rs`
+- `src-tauri/src/worker/transcribe.rs`
+- `src-tauri/src/worker/subagents.rs`
 
--- Transcripts table
-CREATE TABLE transcripts (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    episode_id INTEGER NOT NULL,
-    full_text TEXT NOT NULL,
-    segments_json TEXT,
-    language TEXT,
-    model_used TEXT,
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (episode_id) REFERENCES episodes(id)
-);
-```
+Pipeline pattern:
+1. Fetch/download episode audio
+2. Transcribe with `whisper.cpp`
+3. Index transcript segments into SQLite FTS
+4. Diarize with Python (`speaker_diarization.py`)
+5. Optionally apply voice-library speaker identification
+6. Persist transcript/segments/metadata/status
+7. Surface progress to UI via Tauri events
 
-## Data Flow
+## Primary Data Architecture
 
-### 1. Episode Discovery
-```
-RSS Feed → refresh_feed command → Parse with feed-rs → Upsert to SQLite
-```
+## SQLite (canonical app data)
 
-### 2. Transcription Pipeline
-```
-Add to Queue → Worker picks up → Download audio → whisper-cli → Store transcript
-```
+File: `data/ice_cream_social.db`
 
-### 3. Frontend Updates
-```
-React → invoke() → Rust command → SQLite → Response → React state
-```
+Core domains currently in SQLite:
+- Episodes and variants (`episodes`, cross-feed linking)
+- Transcripts and segments (`transcripts`, `transcript_segments`, `segments_fts`)
+- Queue and worker state (`transcription_queue`)
+- Speakers and diarization mapping (`speakers`, `episode_speakers`)
+- Content modeling (`chapter_types`, `episode_chapters`, `characters`, `character_appearances`, `audio_drops`, `audio_drop_instances`)
+- Review/correction workflows (`flagged_segments`, `transcript_corrections`, `segment_classifications`)
+- Wiki/lore enrichment (`wiki_lore`, `wiki_episode_meta`, `wiki_lore_mentions`)
+- Settings and diagnostics (`app_settings`, `pipeline_errors`)
+- Voice sample clip metadata (`voice_samples`)
 
-## Performance Targets
+### Search
 
-- **Transcription**: ~5-10 min per hour of audio (medium model)
-- **Memory**: Peak < 8GB during transcription
-- **UI Response**: < 100ms for all operations
-- **Database**: Handles 1000+ episodes efficiently
+- Transcript full-text search is implemented with SQLite FTS5 (`segments_fts`) and triggers that mirror `transcript_segments`.
 
-## Critical Paths
+## Filesystem Data (local media + artifacts)
 
-| Resource | Path |
-|----------|------|
-| whisper-cli | `~/bin/whisper-cpp/whisper.cpp/build/bin/whisper-cli` |
-| Models | `~/bin/whisper-cpp/whisper.cpp/models/` |
-| Database | `data/ice_cream_social.db` |
-| Episodes | `scripts/episodes/` |
-| Transcripts | `scripts/transcripts/` |
-| Config | `config.yaml` |
+Key directories:
+- `scripts/episodes/` - downloaded episode audio files
+- `scripts/transcripts/` - transcript and diarization JSON files
+- `scripts/voice_library/` - speaker/sound-bite samples, embeddings, model cache links
 
----
+The filesystem currently stores operational artifacts that are referenced by DB rows (for example `audio_file_path`, `voice_samples.file_path`).
 
-*Last Updated: January 28, 2026*
-*Status: Tauri/Rust replatform in progress*
- 
+## Voice Library Architecture (Current + Migration Direction)
+
+Primary implementation file:
+- `scripts/voice_library.py`
+
+Consumers:
+- `scripts/speaker_diarization.py` (speaker identification after diarization)
+- Tauri speaker/episode commands (`src-tauri/src/commands/speakers.rs`, `src-tauri/src/commands/episodes.rs`)
+
+### Voice Library Files (current layout)
+
+- `scripts/voice_library/samples/` - per-speaker sample audio clips
+- `scripts/voice_library/sound_bites/` - non-person audio drops / recurring bites
+- `scripts/voice_library/embeddings_pyannote.json` - pyannote centroids (legacy-compatible JSON)
+- `scripts/voice_library/embeddings_ecapa.json` - ECAPA centroids (legacy-compatible JSON)
+- `scripts/voice_library/embeddings.json` - legacy fallback file
+- `scripts/voice_library/models/speechbrain_ecapa` - local cache path (symlinked into HF cache in current setup)
+
+### Voice Library Storage Model (updated Feb 26, 2026)
+
+The app now supports a SQLite-backed embedding store in addition to JSON files.
+
+Implemented changes:
+- `voice_library.py` supports `--store-mode auto|json|sqlite`
+- Embedding metadata and vectors can be stored in SQLite (binary `float32` blobs)
+- JSON files remain dual-written for compatibility/fallback
+- `save_voice_samples` now passes sample metadata to `voice_library.py add` (voice sample id, episode id, segment idx, sample type, sample date)
+
+New SQLite tables (created in `src-tauri/src/database/mod.rs`):
+- `voice_embedding_models`
+- `voice_embedding_samples`
+- `voice_embedding_centroids`
+
+### Current Voice Embedding Data Model
+
+Canonical direction:
+- Raw sample media stays on filesystem (`samples/`, `sound_bites/`)
+- Embeddings and embedding metadata move into SQLite
+- JSON embeddings become compatibility/export artifacts (not long-term source of truth)
+
+Rationale:
+- Reduces drift between sample files / DB / JSON
+- Supports per-sample embeddings (not just averaged centroids)
+- Improves future matching quality and hosting portability
+- Enables future vector indexing (`sqlite-vec` local, `pgvector` hosted)
+
+## API / Integration Boundaries
+
+## Frontend -> Backend
+
+Primary path:
+- Tauri IPC commands (`tauri::command`) invoked from `scripts/dashboard-react/src/services/tauri.js`
+
+Secondary path (legacy/dev):
+- HTTP endpoints in Python Flask mode (`scripts/api_episodes.py`, `scripts/dashboard_server.py`)
+
+Current practical truth:
+- Desktop Tauri path is the active/authoritative workflow
+- HTTP fallback is partial and not feature-complete for newer review/editor functions
+
+## Rust -> Python / CLI tools
+
+Rust invokes:
+- `whisper-cli` (`whisper.cpp`) for transcription
+- `speaker_diarization.py` for diarization + speaker mapping
+- `voice_library.py` for embedding add/rebuild/info/compare
+- `harvest_voice_samples.py` for sample harvesting
+- optional other extraction/classification scripts
+
+This means Python scripts are part of the runtime architecture, not just dev tooling.
+
+## Domain Model Highlights (ICS-specific today)
+
+The app is still ICS-first and contains ICS-specific concepts in schema and UI workflows:
+- recurring chapter types (Scoop Mail, Jock vs Nerd, etc.)
+- characters and character appearances
+- sponsor/commercial/audio drop detection
+- wiki sync to heyscoops fandom pages
+
+This is acceptable for the current product stage, but future multi-show support should isolate:
+- show-level configuration
+- content visibility/rights policy
+- taxonomy (chapters, entities, tags)
+
+## Reliability / Performance Patterns
+
+Implemented patterns:
+- SQLite WAL mode for concurrent reads
+- FTS indexing for transcript search
+- Background worker with queue/state tracking
+- Lazy model loading in `voice_library.py`
+- Tauri event-based progress updates for long-running tasks
+
+Known performance constraints:
+- Voice library speaker matching is still exact linear scan over centroid embeddings
+- Some Tauri commands call Python subprocesses synchronously on-demand
+- Path assumptions and local filesystem coupling limit portability
+
+## Security and Secrets
+
+Rules (also reflected in `CLAUDE.md` / `AGENTS.md`):
+- Do not hardcode tokens
+- Use environment variables / `.env` (local only)
+- `.env` and secret files are not to be read or committed
+
+Current runtime note:
+- HuggingFace token is used for pyannote model access
+- Patreon feed access currently relies on local/private feed tokens at ingest time (no user entitlement/auth model in desktop app)
+
+## Testing and SDLC State (Current)
+
+Available coverage:
+- Rust unit tests in `src-tauri/src/database/tests.rs` (DB/search/content logic)
+- Minimal frontend tests in `scripts/dashboard-react/src/__tests__/`
+- Playwright tests exist but CI workflow is currently disabled on push/PR (`.github/workflows/playwright.yml`)
+
+Current gap:
+- No architecture doc was present before this file was recreated
+- CI and API-contract coverage need strengthening before hosted deployment work
+
+## Target Direction (Short Version)
+
+Near-term (desktop quality):
+- Continue stabilizing transcript review, diarization, and voice library workflows
+- Complete voice embedding migration from JSON-centric to SQLite-centric storage
+- Reduce hardcoded path coupling
+
+Mid-term (hosted web/mobile migration):
+- Reuse React UI concepts/components with a hosted API
+- Introduce user/auth/roles/moderation and rights-aware content visibility
+- Move from local-only storage assumptions to hosted DB/object storage
+- Keep heavy transcription/diarization hybrid/offline initially
+
+## Change Management Rules for This File
+
+Update `ARCHITECTURE.md` immediately when any of the following change:
+- database schema (new tables/columns used by app logic)
+- core pipeline stages (transcription/diarization/embedding/reprocess flow)
+- primary frontend/backend boundary (Tauri IPC vs HTTP/API changes)
+- storage source of truth (DB vs filesystem vs JSON/cache)
+- deployment/runtime topology (desktop-only vs hosted services)

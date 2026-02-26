@@ -35,3 +35,12 @@ Constraints: [limits, do/don'ts, stack rules]
 ## Logging
 - Every completed task ends with a `SESSIONS.md` update.
 - If you change architecture or schema, update `ARCHITECTURE.md` immediately.
+
+## Testing (Required)
+- Do not consider a task complete until relevant tests/checks are run, or an explicit blocker is reported.
+- Every completed coding task must include a `Tests Run` summary with:
+  - exact command(s) run
+  - pass/fail result
+  - short output summary (or blocker explanation)
+- Minimum default backend unit test command for this repo (when relevant): `cargo test --manifest-path src-tauri/Cargo.toml`
+- If only a subset is run for speed, state why that subset is sufficient.

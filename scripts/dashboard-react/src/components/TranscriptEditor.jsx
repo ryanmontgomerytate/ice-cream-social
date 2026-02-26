@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { episodesAPI, speakersAPI, contentAPI, isTauri } from '../services/api'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import { useTranscriptReview } from './TranscriptReviewContext'
+import { buildResolvedSpeakerNames } from '../services/speakerNameResolver'
 
 // Flag types for segment issues
 const FLAG_TYPES = [
@@ -276,31 +277,7 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
         setMarkedSamples(samplesMap)
       }
 
-      // Build speaker names: start from JSON, then overlay DB assignments
-      const names = { ...(data.speaker_names || {}) }
-
-      // Literal speaker names baked into segment JSON (e.g. "Jacob Smith" instead
-      // of SPEAKER_XX) from older transcripts need to map to themselves so that
-      // displayName is truthy. Without this, the ! badge appears and deduplication
-      // fails when the same person also has a SPEAKER_XX → name DB mapping.
-      if (data.segments_json) {
-        try {
-          JSON.parse(data.segments_json).forEach(seg => {
-            if (seg.speaker && seg.speaker !== 'UNKNOWN' && !seg.speaker.match(/^SPEAKER_\d+$/) && !names[seg.speaker]) {
-              names[seg.speaker] = seg.speaker
-            }
-          })
-        } catch (_) {}
-      }
-
-      for (const assignment of speakerAssignments) {
-        if (assignment.speaker_name) {
-          names[assignment.diarization_label] = assignment.speaker_name
-        } else if (assignment.audio_drop_name) {
-          names[assignment.diarization_label] = assignment.audio_drop_name
-        }
-      }
-      setSpeakerNames(names)
+      setSpeakerNames(buildResolvedSpeakerNames(data, speakerAssignments))
     } catch (err) {
       console.error('Error loading transcript:', err)
       setError(err.message || 'Failed to load transcript')
@@ -489,8 +466,9 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
   }
 
   const playClipOnly = (segment, idx) => {
-    const startTime = parseTimestampToSeconds(segment)
-    const endTime = getSegmentEndTime(segment)
+    const isTrimmed = sampleTrimmer?.idx === idx
+    const startTime = isTrimmed ? sampleTrimmer.inPoint : parseTimestampToSeconds(segment)
+    const endTime = isTrimmed ? sampleTrimmer.outPoint : getSegmentEndTime(segment)
     clipStartRef.current = startTime
     clipEndRef.current = endTime
     setPlayingClipIdx(idx)
@@ -724,6 +702,17 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
     }
   }
 
+  // Returns the effective speaker name for a segment, accounting for wrong-speaker flags and audio drops.
+  const getEffectiveSpeakerName = useCallback((segIdx) => {
+    const segment = segments?.[segIdx]
+    if (!segment) return ''
+    const segDrops = getDropsForSegment(segIdx)
+    const primaryDrop = segDrops?.[0] ?? null
+    if (primaryDrop?.audio_drop_name) return primaryDrop.audio_drop_name
+    const wrongSpeakerFlag = (flaggedSegments[segIdx] || []).find(f => f.flag_type === 'wrong_speaker')
+    return wrongSpeakerFlag?.corrected_speaker || speakerNames[segment.speaker] || segment.speaker
+  }, [segments, flaggedSegments, speakerNames, getDropsForSegment])
+
   // Voice sample operations
   const toggleVoiceSample = (idx) => {
     if (markedSamples[idx]) {
@@ -879,7 +868,7 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
           const primaryDrop = segDrops[0] ?? null
           return {
             speaker: segment.speaker,
-            speakerName: primaryDrop?.audio_drop_name || flaggedSegments[segIdx]?.corrected_speaker || speakerNames[segment.speaker] || segment.speaker,
+            speakerName: getEffectiveSpeakerName(segIdx),
             startTime: trim?.startTime ?? parseTimestampToSeconds(segment),
             endTime: trim?.endTime ?? getSegmentEndTime(segment),
             text: segment.text,
@@ -1643,6 +1632,10 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
                   <span className="text-green-700">In: {formatTime(sampleTrimmer.inPoint)}</span>
                   <span className="text-gray-400">{trimDuration}s selected</span>
                   <span className="text-red-700">Out: {formatTime(sampleTrimmer.outPoint)}</span>
+                </div>
+                {/* Attribution */}
+                <div className="text-[10px] text-gray-600 mb-2 px-0.5">
+                  Will save as: <span className="font-semibold text-gray-900">{getEffectiveSpeakerName(sampleTrimmer.idx)}</span>
                 </div>
                 {/* Controls */}
                 <div className="flex items-center gap-1.5">

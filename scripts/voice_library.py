@@ -10,6 +10,7 @@ import io
 import json
 import math
 import os
+import sqlite3
 import warnings
 from datetime import date, datetime
 from pathlib import Path
@@ -26,11 +27,29 @@ EMBEDDINGS_PYANNOTE_FILE = LIBRARY_DIR / "embeddings_pyannote.json"
 EMBEDDINGS_ECAPA_FILE = LIBRARY_DIR / "embeddings_ecapa.json"
 SAMPLES_DIR = LIBRARY_DIR / "samples"
 SOUND_BITES_DIR = LIBRARY_DIR / "sound_bites"
+DEFAULT_DB_PATH = Path(__file__).parent.parent / "data" / "ice_cream_social.db"
+STORE_AUTO = "auto"
+STORE_JSON = "json"
+STORE_SQLITE = "sqlite"
 
 BACKEND_PYANNOTE = "pyannote"
 BACKEND_ECAPA = "ecapa-tdnn"
 SUPPORTED_BACKENDS = [BACKEND_ECAPA, BACKEND_PYANNOTE]
 DEFAULT_BACKEND = BACKEND_PYANNOTE
+MODEL_META = {
+    BACKEND_PYANNOTE: {
+        "model_id": "pyannote/embedding",
+        "embedding_dim": 512,
+        "dtype": "float32",
+        "version_tag": "voice-lib-v1",
+    },
+    BACKEND_ECAPA: {
+        "model_id": "speechbrain/spkrec-ecapa-voxceleb",
+        "embedding_dim": 192,
+        "dtype": "float32",
+        "version_tag": "voice-lib-v1",
+    },
+}
 
 # Ensure directories exist
 LIBRARY_DIR.mkdir(exist_ok=True)
@@ -66,6 +85,361 @@ except ImportError:
     ECAPA_AVAILABLE = False
 
 
+def _normalize_sample_date(sample_date: Optional[str]) -> Optional[str]:
+    if not sample_date:
+        return None
+    s = str(sample_date).strip()
+    if not s:
+        return None
+    # Accept full timestamps and normalize to YYYY-MM-DD when possible.
+    if len(s) >= 10:
+        prefix = s[:10]
+        try:
+            datetime.strptime(prefix, "%Y-%m-%d")
+            return prefix
+        except ValueError:
+            pass
+    for fmt in ("%Y-%m-%d", "%Y/%m/%d"):
+        try:
+            return datetime.strptime(s, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    return None
+
+
+def _resolve_sample_type(
+    sample_type: Optional[str],
+    audio_path: Path,
+    file_path: Optional[str],
+) -> str:
+    if sample_type in ("speaker", "sound_bite"):
+        return sample_type
+    for p in (file_path, str(audio_path)):
+        if p and "sound_bites" in p:
+            return "sound_bite"
+    return "speaker"
+
+
+def _pack_embedding_blob(embedding: np.ndarray) -> Tuple[bytes, int]:
+    arr = np.asarray(embedding, dtype=np.float32).flatten()
+    return arr.tobytes(), int(arr.shape[0])
+
+
+def _unpack_embedding_blob(blob: bytes, dim: int) -> np.ndarray:
+    arr = np.frombuffer(blob, dtype=np.float32)
+    if dim and arr.shape[0] > dim:
+        arr = arr[:dim]
+    return arr.copy()
+
+
+class SqliteVoiceEmbeddingStore:
+    def __init__(self, db_path: Path, quiet: bool = False):
+        self.db_path = Path(db_path)
+        self.quiet = quiet
+        self._ensure_schema()
+
+    def _connect(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(str(self.db_path))
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    def _ensure_schema(self):
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        with self._connect() as conn:
+            conn.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS voice_embedding_models (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    backend TEXT NOT NULL,
+                    model_id TEXT NOT NULL,
+                    embedding_dim INTEGER NOT NULL,
+                    dtype TEXT NOT NULL DEFAULT 'float32',
+                    version_tag TEXT NOT NULL DEFAULT 'voice-lib-v1',
+                    created_at TEXT DEFAULT (datetime('now', 'localtime')),
+                    is_active INTEGER DEFAULT 1,
+                    UNIQUE(backend, model_id, embedding_dim, dtype, version_tag)
+                );
+
+                CREATE TABLE IF NOT EXISTS voice_embedding_samples (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    sample_key TEXT NOT NULL UNIQUE,
+                    speaker_name TEXT NOT NULL,
+                    sample_type TEXT NOT NULL DEFAULT 'speaker',
+                    voice_sample_id INTEGER,
+                    episode_id INTEGER,
+                    segment_idx INTEGER,
+                    file_path TEXT,
+                    sample_date TEXT,
+                    start_time REAL,
+                    end_time REAL,
+                    source TEXT DEFAULT 'manual',
+                    backend_model_id INTEGER NOT NULL,
+                    embedding_blob BLOB NOT NULL,
+                    embedding_norm REAL,
+                    created_at TEXT DEFAULT (datetime('now', 'localtime')),
+                    updated_at TEXT DEFAULT (datetime('now', 'localtime')),
+                    FOREIGN KEY (backend_model_id) REFERENCES voice_embedding_models(id),
+                    FOREIGN KEY (voice_sample_id) REFERENCES voice_samples(id) ON DELETE SET NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_voice_embedding_samples_speaker
+                    ON voice_embedding_samples(speaker_name, sample_type);
+                CREATE INDEX IF NOT EXISTS idx_voice_embedding_samples_backend
+                    ON voice_embedding_samples(backend_model_id);
+
+                CREATE TABLE IF NOT EXISTS voice_embedding_centroids (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    speaker_name TEXT NOT NULL,
+                    sample_type TEXT NOT NULL DEFAULT 'speaker',
+                    short_name TEXT,
+                    sample_file TEXT,
+                    sample_count INTEGER NOT NULL DEFAULT 0,
+                    sample_dates_json TEXT,
+                    centroid_blob BLOB NOT NULL,
+                    embedding_dim INTEGER NOT NULL,
+                    dtype TEXT NOT NULL DEFAULT 'float32',
+                    backend_model_id INTEGER NOT NULL,
+                    updated_at TEXT DEFAULT (datetime('now', 'localtime')),
+                    FOREIGN KEY (backend_model_id) REFERENCES voice_embedding_models(id),
+                    UNIQUE(speaker_name, sample_type, backend_model_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_voice_embedding_centroids_backend
+                    ON voice_embedding_centroids(backend_model_id);
+                """
+            )
+
+    def _model_row_id(self, conn: sqlite3.Connection, backend: str, embedding_dim: int) -> int:
+        meta = MODEL_META.get(backend, {})
+        model_id = str(meta.get("model_id", backend))
+        dtype = str(meta.get("dtype", "float32"))
+        version_tag = str(meta.get("version_tag", "voice-lib-v1"))
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO voice_embedding_models
+                (backend, model_id, embedding_dim, dtype, version_tag, is_active)
+            VALUES (?, ?, ?, ?, ?, 1)
+            """,
+            (backend, model_id, embedding_dim, dtype, version_tag),
+        )
+        row = conn.execute(
+            """
+            SELECT id FROM voice_embedding_models
+            WHERE backend = ? AND model_id = ? AND embedding_dim = ? AND dtype = ? AND version_tag = ?
+            LIMIT 1
+            """,
+            (backend, model_id, embedding_dim, dtype, version_tag),
+        ).fetchone()
+        if row is None:
+            raise RuntimeError(f"Failed to resolve voice embedding model row for backend={backend}")
+        return int(row["id"])
+
+    def load_centroids(self, backend: str) -> Dict[str, Dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT c.speaker_name, c.sample_type, c.short_name, c.sample_file, c.sample_count,
+                       c.sample_dates_json, c.centroid_blob, c.embedding_dim, c.dtype
+                FROM voice_embedding_centroids c
+                JOIN voice_embedding_models m ON m.id = c.backend_model_id
+                WHERE m.backend = ? AND m.is_active = 1
+                ORDER BY c.speaker_name COLLATE NOCASE
+                """,
+                (backend,),
+            ).fetchall()
+
+        result: Dict[str, Dict[str, Any]] = {}
+        for row in rows:
+            speaker_name = str(row["speaker_name"])
+            emb = _unpack_embedding_blob(row["centroid_blob"], int(row["embedding_dim"] or 0))
+            sample_dates = []
+            raw_dates = row["sample_dates_json"]
+            if raw_dates:
+                try:
+                    parsed = json.loads(raw_dates)
+                    if isinstance(parsed, list):
+                        sample_dates = [str(d) for d in parsed if d]
+                except Exception:
+                    sample_dates = []
+            result[speaker_name] = {
+                "embedding": emb.tolist(),
+                "short_name": row["short_name"] or speaker_name.split()[0],
+                "sample_file": row["sample_file"],
+                "sample_count": int(row["sample_count"] or 0),
+                "sample_dates": sample_dates,
+                "sample_type": row["sample_type"] or "speaker",
+            }
+        return result
+
+    def replace_centroids(self, backend: str, embeddings: Dict[str, Dict[str, Any]]):
+        if not embeddings:
+            with self._connect() as conn:
+                conn.execute(
+                    """
+                    DELETE FROM voice_embedding_centroids
+                    WHERE backend_model_id IN (
+                        SELECT id FROM voice_embedding_models WHERE backend = ?
+                    )
+                    """,
+                    (backend,),
+                )
+            return
+
+        first = next(iter(embeddings.values()))
+        dim = len(first.get("embedding", [])) or int(MODEL_META.get(backend, {}).get("embedding_dim", 0))
+        with self._connect() as conn:
+            model_id = self._model_row_id(conn, backend, dim)
+            conn.execute("DELETE FROM voice_embedding_centroids WHERE backend_model_id = ?", (model_id,))
+            for speaker_name, data in embeddings.items():
+                emb_arr = np.asarray(data.get("embedding", []), dtype=np.float32).flatten()
+                if emb_arr.size == 0:
+                    continue
+                blob, emb_dim = _pack_embedding_blob(emb_arr)
+                sample_type = data.get("sample_type") or "speaker"
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO voice_embedding_centroids
+                        (speaker_name, sample_type, short_name, sample_file, sample_count, sample_dates_json,
+                         centroid_blob, embedding_dim, dtype, backend_model_id, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'float32', ?, datetime('now', 'localtime'))
+                    """,
+                    (
+                        speaker_name,
+                        sample_type,
+                        data.get("short_name"),
+                        data.get("sample_file"),
+                        int(data.get("sample_count", 0) or 0),
+                        json.dumps(data.get("sample_dates", [])),
+                        blob,
+                        emb_dim,
+                        model_id,
+                    ),
+                )
+
+    def _sample_key(
+        self,
+        backend: str,
+        speaker_name: str,
+        sample_type: str,
+        file_path: Optional[str],
+        episode_id: Optional[int],
+        segment_idx: Optional[int],
+        start_time: Optional[float],
+        end_time: Optional[float],
+        voice_sample_id: Optional[int],
+    ) -> str:
+        parts = [
+            backend,
+            speaker_name,
+            sample_type,
+            str(file_path or ""),
+            str(episode_id if episode_id is not None else ""),
+            str(segment_idx if segment_idx is not None else ""),
+            "" if start_time is None else f"{float(start_time):.3f}",
+            "" if end_time is None else f"{float(end_time):.3f}",
+            str(voice_sample_id if voice_sample_id is not None else ""),
+        ]
+        return "|".join(parts)
+
+    def upsert_sample_embedding(
+        self,
+        *,
+        backend: str,
+        speaker_name: str,
+        embedding: np.ndarray,
+        sample_type: str,
+        voice_sample_id: Optional[int],
+        episode_id: Optional[int],
+        segment_idx: Optional[int],
+        file_path: Optional[str],
+        sample_date: Optional[str],
+        start_time: Optional[float],
+        end_time: Optional[float],
+        source: str,
+    ):
+        blob, dim = _pack_embedding_blob(embedding)
+        norm = float(np.linalg.norm(np.asarray(embedding, dtype=np.float32)))
+        sample_key = self._sample_key(
+            backend,
+            speaker_name,
+            sample_type,
+            file_path,
+            episode_id,
+            segment_idx,
+            start_time,
+            end_time,
+            voice_sample_id,
+        )
+        with self._connect() as conn:
+            model_id = self._model_row_id(conn, backend, dim)
+            conn.execute(
+                """
+                INSERT INTO voice_embedding_samples
+                    (sample_key, speaker_name, sample_type, voice_sample_id, episode_id, segment_idx,
+                     file_path, sample_date, start_time, end_time, source, backend_model_id,
+                     embedding_blob, embedding_norm, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'))
+                ON CONFLICT(sample_key) DO UPDATE SET
+                    voice_sample_id = excluded.voice_sample_id,
+                    episode_id = excluded.episode_id,
+                    segment_idx = excluded.segment_idx,
+                    file_path = excluded.file_path,
+                    sample_date = excluded.sample_date,
+                    start_time = excluded.start_time,
+                    end_time = excluded.end_time,
+                    source = excluded.source,
+                    backend_model_id = excluded.backend_model_id,
+                    embedding_blob = excluded.embedding_blob,
+                    embedding_norm = excluded.embedding_norm,
+                    updated_at = datetime('now', 'localtime')
+                """,
+                (
+                    sample_key,
+                    speaker_name,
+                    sample_type,
+                    voice_sample_id,
+                    episode_id,
+                    segment_idx,
+                    file_path,
+                    sample_date,
+                    start_time,
+                    end_time,
+                    source,
+                    model_id,
+                    blob,
+                    norm,
+                ),
+            )
+
+    def delete_speaker(self, backend: str, speaker_name: str):
+        with self._connect() as conn:
+            conn.execute(
+                """
+                DELETE FROM voice_embedding_samples
+                WHERE speaker_name = ?
+                  AND backend_model_id IN (SELECT id FROM voice_embedding_models WHERE backend = ?)
+                """,
+                (speaker_name, backend),
+            )
+            conn.execute(
+                """
+                DELETE FROM voice_embedding_centroids
+                WHERE speaker_name = ?
+                  AND backend_model_id IN (SELECT id FROM voice_embedding_models WHERE backend = ?)
+                """,
+                (speaker_name, backend),
+            )
+
+    def clear_speaker_samples(self, backend: str, speaker_name: str):
+        with self._connect() as conn:
+            conn.execute(
+                """
+                DELETE FROM voice_embedding_samples
+                WHERE speaker_name = ?
+                  AND backend_model_id IN (SELECT id FROM voice_embedding_models WHERE backend = ?)
+                """,
+                (speaker_name, backend),
+            )
+
+
 class VoiceLibrary:
     """Manages voice embeddings for known speakers"""
 
@@ -74,6 +448,8 @@ class VoiceLibrary:
         hf_token: Optional[str] = None,
         quiet: bool = False,
         backend: str = DEFAULT_BACKEND,
+        db_path: Optional[Path] = None,
+        store_mode: str = STORE_AUTO,
     ):
         if backend not in SUPPORTED_BACKENDS:
             raise ValueError(f"Unsupported backend: {backend}")
@@ -84,7 +460,27 @@ class VoiceLibrary:
         self.inference = None
         self.hf_token = hf_token
         self.stored_backend = backend
+        self.db_path = Path(db_path) if db_path else DEFAULT_DB_PATH
+        self.store_mode = store_mode
+        self.sqlite_store: Optional[SqliteVoiceEmbeddingStore] = None
+        self._init_store(quiet=quiet)
         self._load_embeddings(quiet=quiet)
+
+    def _init_store(self, quiet: bool = False):
+        if self.store_mode not in (STORE_AUTO, STORE_JSON, STORE_SQLITE):
+            raise ValueError(f"Unsupported store mode: {self.store_mode}")
+        if self.store_mode == STORE_JSON:
+            return
+        if self.store_mode == STORE_AUTO and not self.db_path.exists():
+            return
+        try:
+            self.sqlite_store = SqliteVoiceEmbeddingStore(self.db_path, quiet=quiet)
+        except Exception as e:
+            if not quiet:
+                import sys
+
+                print(f"SQLite embedding store unavailable: {e}", file=sys.stderr)
+            self.sqlite_store = None
 
     def _embeddings_file(self, backend: Optional[str] = None) -> Path:
         b = backend or self.backend
@@ -94,6 +490,25 @@ class VoiceLibrary:
 
     def _load_embeddings(self, quiet: bool = False):
         """Load saved embeddings for the active backend from disk."""
+        if self.sqlite_store is not None:
+            try:
+                loaded = self.sqlite_store.load_centroids(self.backend)
+                if loaded:
+                    self.embeddings = loaded
+                    self.stored_backend = self.backend
+                    if not quiet:
+                        import sys
+
+                        print(
+                            f"Loaded {len(self.embeddings)} speaker embeddings ({self.backend}) from sqlite",
+                            file=sys.stderr,
+                        )
+                    return
+            except Exception as e:
+                if not quiet:
+                    import sys
+
+                    print(f"Failed loading sqlite embeddings ({self.backend}): {e}", file=sys.stderr)
         target = self._embeddings_file()
         data = None
 
@@ -126,6 +541,8 @@ class VoiceLibrary:
         }
         with open(self._embeddings_file(), "w") as f:
             json.dump(payload, f, indent=2)
+        if self.sqlite_store is not None:
+            self.sqlite_store.replace_centroids(self.backend, self.embeddings)
 
     def _init_model(self):
         """Initialize the embedding model (lazy loading)."""
@@ -193,6 +610,11 @@ class VoiceLibrary:
         end_time: Optional[float] = None,
         update_existing: bool = True,
         sample_date: Optional[str] = None,
+        sample_type: Optional[str] = None,
+        voice_sample_id: Optional[int] = None,
+        episode_id: Optional[int] = None,
+        segment_idx: Optional[int] = None,
+        file_path: Optional[str] = None,
     ) -> bool:
         """Add a speaker to the library from an audio sample or segment."""
         audio_path = Path(audio_path)
@@ -203,6 +625,24 @@ class VoiceLibrary:
         try:
             print(f"Extracting voice embedding for {name} ({self.backend})...")
             new_embedding = self.extract_embedding(audio_path, start_time, end_time)
+            normalized_sample_date = _normalize_sample_date(sample_date)
+            resolved_sample_type = _resolve_sample_type(sample_type, audio_path, file_path)
+
+            if self.sqlite_store is not None:
+                self.sqlite_store.upsert_sample_embedding(
+                    backend=self.backend,
+                    speaker_name=name,
+                    embedding=new_embedding,
+                    sample_type=resolved_sample_type,
+                    voice_sample_id=voice_sample_id,
+                    episode_id=episode_id,
+                    segment_idx=segment_idx,
+                    file_path=file_path or str(audio_path),
+                    sample_date=normalized_sample_date,
+                    start_time=start_time,
+                    end_time=end_time,
+                    source="manual",
+                )
 
             if name in self.embeddings and update_existing:
                 existing = np.array(self.embeddings[name]["embedding"])
@@ -218,9 +658,9 @@ class VoiceLibrary:
                 combined = (existing * sample_count + new_embedding) / (sample_count + 1)
                 self.embeddings[name]["embedding"] = combined.tolist()
                 self.embeddings[name]["sample_count"] = sample_count + 1
-                if sample_date:
+                if normalized_sample_date:
                     dates = self.embeddings[name].get("sample_dates", [])
-                    dates.append(sample_date)
+                    dates.append(normalized_sample_date)
                     self.embeddings[name]["sample_dates"] = dates[-100:]
                 print(f"✓ Updated {name}'s embedding (now {sample_count + 1} samples)")
             else:
@@ -229,7 +669,7 @@ class VoiceLibrary:
                     "short_name": short_name or name.split()[0],
                     "sample_file": str(audio_path.name),
                     "sample_count": 1,
-                    "sample_dates": [sample_date] if sample_date else [],
+                    "sample_dates": [normalized_sample_date] if normalized_sample_date else [],
                 }
                 print(f"✓ Added {name} to voice library")
 
@@ -246,6 +686,8 @@ class VoiceLibrary:
         if name in self.embeddings:
             del self.embeddings[name]
             self._save_embeddings()
+            if self.sqlite_store is not None:
+                self.sqlite_store.delete_speaker(self.backend, name)
             print(f"✓ Removed {name} from voice library ({self.backend})")
             return True
         print(f"Speaker not found: {name}")
@@ -475,6 +917,21 @@ def add_backend_arg(parser):
     )
 
 
+def add_store_args(parser):
+    parser.add_argument(
+        "--db-path",
+        type=str,
+        default=str(DEFAULT_DB_PATH),
+        help="SQLite DB path for embedding store (default: ../data/ice_cream_social.db)",
+    )
+    parser.add_argument(
+        "--store-mode",
+        choices=[STORE_AUTO, STORE_JSON, STORE_SQLITE],
+        default=STORE_AUTO,
+        help=f"Embedding metadata store mode (default: {STORE_AUTO})",
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description="Voice Library - Speaker Recognition")
     subparsers = parser.add_subparsers(dest="command", help="Command")
@@ -485,36 +942,50 @@ def main():
     add_parser.add_argument("start_time", nargs="?", type=float, help="Start time in seconds (optional)")
     add_parser.add_argument("end_time", nargs="?", type=float, help="End time in seconds (optional)")
     add_parser.add_argument("--short", help="Short name (default: first name)")
+    add_parser.add_argument("--sample-type", choices=["speaker", "sound_bite"], default=None)
+    add_parser.add_argument("--voice-sample-id", type=int, default=None)
+    add_parser.add_argument("--episode-id", type=int, default=None)
+    add_parser.add_argument("--segment-idx", type=int, default=None)
+    add_parser.add_argument("--file-path", type=str, default=None)
+    add_parser.add_argument("--sample-date", type=str, default=None, help="YYYY-MM-DD (or timestamp)")
     add_parser.add_argument("--overwrite", action="store_true", help="Overwrite existing instead of averaging")
     add_backend_arg(add_parser)
+    add_store_args(add_parser)
 
     remove_parser = subparsers.add_parser("remove", help="Remove a speaker")
     remove_parser.add_argument("name", help="Speaker's name")
     add_backend_arg(remove_parser)
+    add_store_args(remove_parser)
 
     list_parser = subparsers.add_parser("list", help="List all speakers in library")
     add_backend_arg(list_parser)
+    add_store_args(list_parser)
 
     identify_parser = subparsers.add_parser("identify", help="Identify speakers in a diarized transcript")
     identify_parser.add_argument("transcript", help="Path to _with_speakers.json file")
     identify_parser.add_argument("audio", help="Path to original audio file")
     identify_parser.add_argument("--episode-date", type=str, default=None)
     add_backend_arg(identify_parser)
+    add_store_args(identify_parser)
 
     info_parser = subparsers.add_parser("info", help="Get voice library info as JSON")
     add_backend_arg(info_parser)
+    add_store_args(info_parser)
 
     rebuild_parser = subparsers.add_parser("rebuild", help="Rebuild embeddings by scanning samples directory")
     add_backend_arg(rebuild_parser)
+    add_store_args(rebuild_parser)
 
     rebuild_one_parser = subparsers.add_parser("rebuild-speaker", help="Rebuild embeddings for one speaker")
     rebuild_one_parser.add_argument("name", help="Speaker's full name")
     add_backend_arg(rebuild_one_parser)
+    add_store_args(rebuild_one_parser)
 
     compare_parser = subparsers.add_parser("compare", help="Compare ECAPA and pyannote on one diarized episode")
     compare_parser.add_argument("--diarization-json", required=True, help="Path to transcript or diarization JSON")
     compare_parser.add_argument("--audio", required=True, help="Path to original audio file")
     compare_parser.add_argument("--episode-date", type=str, default=None, help="Episode date YYYY-MM-DD")
+    add_store_args(compare_parser)
 
     args = parser.parse_args()
 
@@ -540,7 +1011,15 @@ def main():
         return
 
     quiet = args.command in ("info", "rebuild", "rebuild-speaker")
-    library = VoiceLibrary(hf_token=hf_token, quiet=quiet, backend=args.backend)
+    db_path = Path(getattr(args, "db_path", str(DEFAULT_DB_PATH)))
+    store_mode = getattr(args, "store_mode", STORE_AUTO)
+    library = VoiceLibrary(
+        hf_token=hf_token,
+        quiet=quiet,
+        backend=args.backend,
+        db_path=db_path,
+        store_mode=store_mode,
+    )
 
     if args.command == "add":
         library.add_speaker(
@@ -550,6 +1029,12 @@ def main():
             start_time=args.start_time,
             end_time=args.end_time,
             update_existing=not args.overwrite,
+            sample_date=args.sample_date,
+            sample_type=args.sample_type,
+            voice_sample_id=args.voice_sample_id,
+            episode_id=args.episode_id,
+            segment_idx=args.segment_idx,
+            file_path=args.file_path,
         )
 
     elif args.command == "remove":
@@ -661,6 +1146,8 @@ def main():
 
             if speaker_name in library.embeddings:
                 del library.embeddings[speaker_name]
+            if library.sqlite_store is not None:
+                library.sqlite_store.clear_speaker_samples(library.backend, speaker_name)
 
             for audio_file in audio_files:
                 ok = library.add_speaker(speaker_name, audio_file, update_existing=True)
@@ -702,7 +1189,9 @@ def main():
         if not speaker_dir.exists():
             if speaker_name in library.embeddings:
                 del library.embeddings[speaker_name]
-                library._save_embeddings()
+            if library.sqlite_store is not None:
+                library.sqlite_store.clear_speaker_samples(library.backend, speaker_name)
+            library._save_embeddings()
             print(
                 json.dumps(
                     {
@@ -724,7 +1213,9 @@ def main():
             if not audio_files:
                 if speaker_name in library.embeddings:
                     del library.embeddings[speaker_name]
-                    library._save_embeddings()
+                if library.sqlite_store is not None:
+                    library.sqlite_store.clear_speaker_samples(library.backend, speaker_name)
+                library._save_embeddings()
                 print(
                     json.dumps(
                         {
@@ -738,6 +1229,8 @@ def main():
             else:
                 if speaker_name in library.embeddings:
                     del library.embeddings[speaker_name]
+                if library.sqlite_store is not None:
+                    library.sqlite_store.clear_speaker_samples(library.backend, speaker_name)
                 rebuilt = 0
                 for audio_file in audio_files:
                     ok = library.add_speaker(speaker_name, audio_file, update_existing=True)

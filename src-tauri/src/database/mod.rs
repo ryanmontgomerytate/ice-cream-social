@@ -720,6 +720,73 @@ Mark the start time of each segment.',
             [],
         );
 
+        // Voice embedding storage (SQLite-backed metadata + vectors; samples remain on disk)
+        conn.execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS voice_embedding_models (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                backend TEXT NOT NULL,
+                model_id TEXT NOT NULL,
+                embedding_dim INTEGER NOT NULL,
+                dtype TEXT NOT NULL DEFAULT 'float32',
+                version_tag TEXT NOT NULL DEFAULT 'voice-lib-v1',
+                created_at TEXT DEFAULT (datetime('now', 'localtime')),
+                is_active INTEGER DEFAULT 1,
+                UNIQUE(backend, model_id, embedding_dim, dtype, version_tag)
+            );
+            CREATE INDEX IF NOT EXISTS idx_voice_embedding_models_backend
+                ON voice_embedding_models(backend, is_active);
+
+            CREATE TABLE IF NOT EXISTS voice_embedding_samples (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sample_key TEXT NOT NULL UNIQUE,
+                speaker_name TEXT NOT NULL,
+                sample_type TEXT NOT NULL DEFAULT 'speaker',
+                voice_sample_id INTEGER,
+                episode_id INTEGER,
+                segment_idx INTEGER,
+                file_path TEXT,
+                sample_date TEXT,
+                start_time REAL,
+                end_time REAL,
+                source TEXT DEFAULT 'manual',
+                backend_model_id INTEGER NOT NULL,
+                embedding_blob BLOB NOT NULL,
+                embedding_norm REAL,
+                created_at TEXT DEFAULT (datetime('now', 'localtime')),
+                updated_at TEXT DEFAULT (datetime('now', 'localtime')),
+                FOREIGN KEY (backend_model_id) REFERENCES voice_embedding_models(id),
+                FOREIGN KEY (voice_sample_id) REFERENCES voice_samples(id) ON DELETE SET NULL,
+                FOREIGN KEY (episode_id) REFERENCES episodes(id) ON DELETE SET NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_voice_embedding_samples_speaker
+                ON voice_embedding_samples(speaker_name, sample_type);
+            CREATE INDEX IF NOT EXISTS idx_voice_embedding_samples_backend
+                ON voice_embedding_samples(backend_model_id);
+            CREATE INDEX IF NOT EXISTS idx_voice_embedding_samples_voice_sample
+                ON voice_embedding_samples(voice_sample_id);
+
+            CREATE TABLE IF NOT EXISTS voice_embedding_centroids (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                speaker_name TEXT NOT NULL,
+                sample_type TEXT NOT NULL DEFAULT 'speaker',
+                short_name TEXT,
+                sample_file TEXT,
+                sample_count INTEGER NOT NULL DEFAULT 0,
+                sample_dates_json TEXT,
+                centroid_blob BLOB NOT NULL,
+                embedding_dim INTEGER NOT NULL,
+                dtype TEXT NOT NULL DEFAULT 'float32',
+                backend_model_id INTEGER NOT NULL,
+                updated_at TEXT DEFAULT (datetime('now', 'localtime')),
+                FOREIGN KEY (backend_model_id) REFERENCES voice_embedding_models(id),
+                UNIQUE(speaker_name, sample_type, backend_model_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_voice_embedding_centroids_backend
+                ON voice_embedding_centroids(backend_model_id);
+            "#,
+        )?;
+
         // Pipeline error log — persists across restarts for post-crash debugging
         conn.execute_batch(
             r#"

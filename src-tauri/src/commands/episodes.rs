@@ -1463,6 +1463,12 @@ pub async fn save_voice_samples(
 
     let voice_library_script = project_dir.join("scripts").join("voice_library.py");
     let venv_python = project_dir.join("venv").join("bin").join("python");
+    let db_path = project_dir.join("data").join("ice_cream_social.db");
+    let episode_sample_date = episode
+        .published_date
+        .as_ref()
+        .map(|s| s.chars().take(10).collect::<String>())
+        .filter(|s| s.len() == 10);
 
     // Sound bite samples directory
     let sound_bites_dir = project_dir.join("scripts").join("voice_library").join("sound_bites");
@@ -1534,7 +1540,7 @@ pub async fn save_voice_samples(
                 let _ = db.update_audio_drop_reference(drop_id, &path_str);
 
                 // Insert DB record for this voice sample
-                let _ = db.insert_voice_sample(
+                let voice_sample_id = db.insert_voice_sample(
                     &sample.speaker_name,
                     Some(episode_id),
                     sample.segment_idx,
@@ -1543,21 +1549,38 @@ pub async fn save_voice_samples(
                     Some(&sample.text),
                     &path_str,
                     Some("manual"),
-                );
+                ).ok();
 
                 // Train the voice embedding immediately from the extracted WAV so the
                 // user doesn't have to manually hit "Recalibrate All".
                 // Pass the already-extracted WAV as the audio source (no timestamps needed).
-                let embed_result = std::process::Command::new(&venv_python)
-                    .args([
-                        voice_library_script.to_str().unwrap(),
-                        "add",
-                        &sample.speaker_name,
-                        sample_path.to_str().unwrap(),
-                        "--backend",
-                        &embedding_backend,
-                    ])
-                    .output();
+                let mut embed_cmd = std::process::Command::new(&venv_python);
+                embed_cmd.args([
+                    voice_library_script.to_str().unwrap(),
+                    "add",
+                    &sample.speaker_name,
+                    sample_path.to_str().unwrap(),
+                    "--backend",
+                    &embedding_backend,
+                    "--db-path",
+                    db_path.to_str().unwrap(),
+                    "--sample-type",
+                    "sound_bite",
+                    "--episode-id",
+                    &episode_id.to_string(),
+                    "--file-path",
+                    &path_str,
+                ]);
+                if let Some(seg_idx) = sample.segment_idx {
+                    embed_cmd.args(["--segment-idx", &seg_idx.to_string()]);
+                }
+                if let Some(id) = voice_sample_id {
+                    embed_cmd.args(["--voice-sample-id", &id.to_string()]);
+                }
+                if let Some(ref d) = episode_sample_date {
+                    embed_cmd.args(["--sample-date", d.as_str()]);
+                }
+                let embed_result = embed_cmd.output();
                 match embed_result {
                     Ok(o) if o.status.success() => {
                         log::info!("Trained sound bite embedding for '{}'", sample.speaker_name);
@@ -1594,6 +1617,8 @@ pub async fn save_voice_samples(
                 .map_err(|e| format!("Failed to create speaker samples dir: {}", e))?;
 
             let sample_path = speaker_samples_dir.join(&sample_filename);
+            let path_str = sample_path.to_string_lossy().to_string();
+            let mut voice_sample_id: Option<i64> = None;
 
             let ffmpeg_output = std::process::Command::new("ffmpeg")
                 .args([
@@ -1609,11 +1634,10 @@ pub async fn save_voice_samples(
                 .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
 
             if ffmpeg_output.status.success() {
-                let path_str = sample_path.to_string_lossy().to_string();
                 log::info!("Extracted speaker audio to '{}'", path_str);
 
                 // Insert DB record for this voice sample
-                let _ = db.insert_voice_sample(
+                voice_sample_id = db.insert_voice_sample(
                     &sample.speaker_name,
                     Some(episode_id),
                     sample.segment_idx,
@@ -1622,24 +1646,42 @@ pub async fn save_voice_samples(
                     Some(&sample.text),
                     &path_str,
                     Some("manual"),
-                );
+                ).ok();
             } else {
                 let stderr = String::from_utf8_lossy(&ffmpeg_output.stderr);
                 log::error!("Failed to extract audio for '{}': {}", sample.speaker_name, stderr);
             }
 
             // 2. Also add to voice library for embedding (existing flow)
-            let output = std::process::Command::new(&venv_python)
-                .args([
-                    voice_library_script.to_str().unwrap(),
-                    "add",
-                    &sample.speaker_name,
-                    audio_path.as_str(),
-                    &format!("{:.3}", sample.start_time),
-                    &format!("{:.3}", sample.end_time),
-                    "--backend",
-                    &embedding_backend,
-                ])
+            let mut add_cmd = std::process::Command::new(&venv_python);
+            add_cmd.args([
+                voice_library_script.to_str().unwrap(),
+                "add",
+                &sample.speaker_name,
+                audio_path.as_str(),
+                &format!("{:.3}", sample.start_time),
+                &format!("{:.3}", sample.end_time),
+                "--backend",
+                &embedding_backend,
+                "--db-path",
+                db_path.to_str().unwrap(),
+                "--sample-type",
+                "speaker",
+                "--episode-id",
+                &episode_id.to_string(),
+                "--file-path",
+                &path_str,
+            ]);
+            if let Some(seg_idx) = sample.segment_idx {
+                add_cmd.args(["--segment-idx", &seg_idx.to_string()]);
+            }
+            if let Some(id) = voice_sample_id {
+                add_cmd.args(["--voice-sample-id", &id.to_string()]);
+            }
+            if let Some(ref d) = episode_sample_date {
+                add_cmd.args(["--sample-date", d.as_str()]);
+            }
+            let output = add_cmd
                 .output()
                 .map_err(|e| format!("Failed to run voice library script: {}", e))?;
 

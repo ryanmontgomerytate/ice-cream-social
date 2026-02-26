@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
-import { episodesAPI, speakersAPI, contentAPI, searchAPI } from '../services/api'
+import { episodesAPI, speakersAPI, contentAPI, searchAPI, isTauri } from '../services/api'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import { useConfirm } from '../hooks/useConfirm'
+import { buildResolvedSpeakerNames } from '../services/speakerNameResolver'
 
 // Flag types for segment issues
 const FLAG_TYPES = [
@@ -77,6 +78,7 @@ export default function TranscriptModal({ episode, onClose }) {
   const [detectedContent, setDetectedContent] = useState(null) // Results from content analysis
   const [showContentPanel, setShowContentPanel] = useState(false) // Show detected content panel
   const [newCharacterName, setNewCharacterName] = useState('') // For quick character creation
+  const [episodeSpeakerAssignments, setEpisodeSpeakerAssignments] = useState([]) // Authoritative DB mapping
 
   // Audio player state
   const [isPlaying, setIsPlaying] = useState(false)
@@ -101,15 +103,16 @@ export default function TranscriptModal({ episode, onClose }) {
       setLoading(true)
       setError(null)
 
-      // Load transcript, voice library, chapter types, episode chapters, flagged segments, and characters in parallel
-      const [data, voices, types, chapters, flags, charAppearances, allCharacters] = await Promise.all([
+      // Load transcript plus DB speaker assignments; DB mapping is authoritative for merged labels
+      const [data, voices, types, chapters, flags, charAppearances, allCharacters, speakerAssignments] = await Promise.all([
         episodesAPI.getTranscript(episode.id),
         speakersAPI.getVoiceLibrary().catch(() => []),
         contentAPI.getChapterTypes().catch(() => []),
         contentAPI.getEpisodeChapters(episode.id).catch(() => []),
         contentAPI.getFlaggedSegments(episode.id).catch(() => []),
         contentAPI.getCharacterAppearancesForEpisode(episode.id).catch(() => []),
-        contentAPI.getCharacters().catch(() => [])
+        contentAPI.getCharacters().catch(() => []),
+        speakersAPI.getEpisodeSpeakerAssignments(episode.id).catch(() => [])
       ])
 
       setTranscript(data)
@@ -118,6 +121,7 @@ export default function TranscriptModal({ episode, onClose }) {
       setEpisodeChapters(chapters)
       setCharacterAppearances(charAppearances)
       setCharacters(allCharacters)
+      setEpisodeSpeakerAssignments(speakerAssignments)
 
       // Convert flags array to map by segment_idx for easy lookup
       const flagsMap = {}
@@ -126,9 +130,7 @@ export default function TranscriptModal({ episode, onClose }) {
       })
       setFlaggedSegments(flagsMap)
 
-      if (data.speaker_names) {
-        setSpeakerNames(data.speaker_names)
-      }
+      setSpeakerNames(buildResolvedSpeakerNames(data, speakerAssignments))
     } catch (err) {
       console.error('Error loading transcript:', err)
       setError(err.message || 'Failed to load transcript')
@@ -136,6 +138,20 @@ export default function TranscriptModal({ episode, onClose }) {
       setLoading(false)
     }
   }
+
+  // Refresh after diarization/reprocess completion so labels stay in sync with Episodes tab
+  useEffect(() => {
+    if (!isTauri || !episode?.id) return
+    let unlisten
+    import('@tauri-apps/api/event').then(({ listen }) => {
+      listen('transcription_complete', (event) => {
+        if (event.payload === episode.id) {
+          loadTranscript()
+        }
+      }).then(fn => { unlisten = fn })
+    }).catch(() => {})
+    return () => { if (unlisten) unlisten() }
+  }, [episode?.id])
 
   // Parse segments from JSON
   const segments = useMemo(() => {
@@ -276,6 +292,7 @@ export default function TranscriptModal({ episode, onClose }) {
     try {
       setSavingNames(true)
       await episodesAPI.updateSpeakerNames(episode.id, speakerNames)
+      await loadTranscript()
       setEditingSpeakers(false)
     } catch (err) {
       console.error('Failed to save speaker names:', err)
@@ -617,7 +634,7 @@ export default function TranscriptModal({ episode, onClose }) {
       setHasUnsavedChanges(false)
       setSegmentEdits({})
       setMarkedSamples({})
-      loadTranscript()
+      await loadTranscript()
     } catch (err) {
       console.error('Failed to save edits:', err)
       alert('Failed to save edits: ' + err.message)

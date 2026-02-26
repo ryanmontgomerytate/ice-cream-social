@@ -1,0 +1,32 @@
+#!/bin/bash
+# Ice Cream Social App — git pre-commit hook
+# Install: bash scripts/install-hooks.sh
+set -e
+
+STAGED=$(git diff --cached --name-only)
+
+# ── Rust checks (only when src-tauri files are staged) ──────────────────────
+if echo "$STAGED" | grep -q "^src-tauri/"; then
+  echo "→ Rust: cargo fmt --check"
+  (cd src-tauri && cargo fmt --check) || {
+    echo "  ✗ Format issues found. Run: cd src-tauri && cargo fmt"
+    exit 1
+  }
+
+  echo "→ Rust: cargo clippy"
+  (cd src-tauri && cargo clippy -- -D warnings 2>&1 | head -40) || {
+    echo "  ✗ Clippy warnings found. Fix them before committing."
+    exit 1
+  }
+fi
+
+# ── React checks (only when dashboard src files are staged) ─────────────────
+if echo "$STAGED" | grep -q "^scripts/dashboard-react/src/"; then
+  echo "→ React: npm run build"
+  (cd scripts/dashboard-react && npm run build 2>&1 | tail -10) || {
+    echo "  ✗ React build failed. Fix errors before committing."
+    exit 1
+  }
+fi
+
+echo "✓ Pre-commit checks passed."

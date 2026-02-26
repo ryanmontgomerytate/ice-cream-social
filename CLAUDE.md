@@ -52,7 +52,8 @@ For every request from the user, follow these steps:
 1. **Validate**: Verify health of `whisper-cli` and Python venv.
 2. **Memory Audit**: Report current RSS memory usage; if system RAM usage is >18GB, warn the user before loading models.
 3. **Propose & Execute**: Prioritize Rust-native commands (`src-tauri/src/commands/`) over Python glue. Use `sqlite-vec` for all semantic search logic.
-4. **Log & Sync**: Update `SESSIONS.md`. If the schema changes, update `ARCHITECTURE.md` immediately.
+4. **Test & Verify**: Run relevant tests/checks (or explicitly report why they could not be run). Every completed coding task must include a `Tests Run` summary with exact command(s), pass/fail result, and short output summary.
+5. **Log & Sync**: Update `SESSIONS.md`. If the schema changes, update `ARCHITECTURE.md` immediately.
 
 ## 5. Security & Isolation
 
@@ -167,6 +168,38 @@ This starts:
 **Database:** `data/ice_cream_social.db` (917 episodes)
 
 **Stop the app:** Press `Ctrl+C` in the terminal
+
+### What To Run Besides `cargo tauri dev` (Recommended)
+
+`cargo tauri dev` is the main way to run the app, but it is not a test/verification step by itself.
+
+Use these commands depending on what changed:
+
+**Rust backend / Tauri command changes**
+```bash
+# Fast compile check (good first pass)
+cargo check --manifest-path src-tauri/Cargo.toml
+
+# Unit tests (default backend test command)
+cargo test --manifest-path src-tauri/Cargo.toml
+```
+
+**Frontend (React) changes**
+```bash
+# Production build check (catches syntax/import issues)
+npm --prefix scripts/dashboard-react run build
+```
+
+**Python script changes (e.g., diarization / voice library)**
+```bash
+# Syntax check for a specific script
+python3 -m py_compile scripts/voice_library.py
+```
+
+**Typical workflow**
+1. `cargo tauri dev` to test the feature manually in the app
+2. Run the relevant check(s) above for files you changed
+3. Report a `Tests Run` summary in the final response / session handoff
 
 ### Legacy: Python/Flask Mode (Deprecated)
 
