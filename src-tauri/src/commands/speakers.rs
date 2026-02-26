@@ -7,7 +7,6 @@ use tauri::{Emitter, State};
 
 const EMBEDDING_BACKEND_ECAPA: &str = "ecapa-tdnn";
 const EMBEDDING_BACKEND_PYANNOTE: &str = "pyannote";
-const HF_HUB_OFFLINE_SETTING: &str = "hf_hub_offline";
 
 fn normalize_embedding_backend(raw: Option<String>) -> String {
     match raw.as_deref() {
@@ -21,37 +20,17 @@ fn configured_embedding_backend(db: &Arc<Database>) -> String {
     normalize_embedding_backend(db.get_setting("embedding_model").unwrap_or(None))
 }
 
-fn hf_hub_offline_enabled(db: &Arc<Database>) -> bool {
-    db.get_setting(HF_HUB_OFFLINE_SETTING)
-        .ok()
-        .flatten()
-        .map(|v| v == "true")
-        .unwrap_or(false)
-}
-
-fn should_force_hf_offline(db: &Arc<Database>, force_offline: bool) -> bool {
-    force_offline || hf_hub_offline_enabled(db)
-}
-
-fn apply_hf_runtime_env_std(
-    cmd: &mut std::process::Command,
-    db: &Arc<Database>,
-    force_offline: bool,
-) {
+fn apply_hf_runtime_env_std(cmd: &mut std::process::Command, offline: bool) {
     cmd.env("HF_HUB_DISABLE_TELEMETRY", "1");
-    if should_force_hf_offline(db, force_offline) {
+    if offline {
         cmd.env("HF_HUB_OFFLINE", "1");
         cmd.env("TRANSFORMERS_OFFLINE", "1");
     }
 }
 
-fn apply_hf_runtime_env_tokio(
-    cmd: &mut tokio::process::Command,
-    db: &Arc<Database>,
-    force_offline: bool,
-) {
+fn apply_hf_runtime_env_tokio(cmd: &mut tokio::process::Command, offline: bool) {
     cmd.env("HF_HUB_DISABLE_TELEMETRY", "1");
-    if should_force_hf_offline(db, force_offline) {
+    if offline {
         cmd.env("HF_HUB_OFFLINE", "1");
         cmd.env("TRANSFORMERS_OFFLINE", "1");
     }
@@ -536,7 +515,7 @@ pub async fn delete_voice_sample(
                 "--backend",
                 &backend,
             ]);
-        apply_hf_runtime_env_std(&mut cmd, db.inner(), false);
+        apply_hf_runtime_env_std(&mut cmd, false);
         let _ = cmd.output();
     }
 
@@ -576,7 +555,7 @@ pub async fn delete_voice_print(
             "--backend",
             &backend,
         ]);
-    apply_hf_runtime_env_std(&mut cmd, db.inner(), false);
+    apply_hf_runtime_env_std(&mut cmd, false);
     let output = cmd
         .output()
         .map_err(|e| format!("Failed to run voice_library.py: {}", e))?;
@@ -621,7 +600,7 @@ pub async fn rebuild_voice_print_for_speaker(
             "--backend",
             &backend,
         ]);
-    apply_hf_runtime_env_std(&mut cmd, db.inner(), false);
+    apply_hf_runtime_env_std(&mut cmd, false);
     let output = cmd
         .output()
         .map_err(|e| format!("Failed to run voice_library.py: {}", e))?;
@@ -823,7 +802,7 @@ pub async fn purge_voice_library_entry(
             "--backend",
             &backend,
         ]);
-        apply_hf_runtime_env_std(&mut cmd, db.inner(), false);
+        apply_hf_runtime_env_std(&mut cmd, false);
         let _ = cmd.output();
     }
 
@@ -906,7 +885,7 @@ pub async fn rebuild_voice_library(
     cmd.args([script.to_str().unwrap(), "rebuild", "--backend", &backend])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
-    apply_hf_runtime_env_tokio(&mut cmd, db.inner(), false);
+    apply_hf_runtime_env_tokio(&mut cmd, false);
     let mut child = cmd
         .spawn()
         .map_err(|e| format!("Failed to spawn voice_library.py rebuild: {}", e))?;
@@ -1160,15 +1139,15 @@ pub async fn compare_embedding_backends(
         if let Some(ref date) = episode_date {
             cmd.args(["--episode-date", date]);
         }
-        apply_hf_runtime_env_std(&mut cmd, db.inner(), force_offline);
+        apply_hf_runtime_env_std(&mut cmd, force_offline);
         cmd.output()
             .map_err(|e| AppError::from(format!("Failed to run voice_library compare: {}", e)))
     };
 
-    let initial_offline = hf_hub_offline_enabled(db.inner());
-    let mut output = run_compare_once(initial_offline)?;
+    // Always start with network access; auto-retry in offline mode if a DNS/timeout error occurs.
+    let mut output = run_compare_once(false)?;
 
-    if !output.status.success() && !initial_offline {
+    if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         if looks_like_hf_network_failure(&stderr) {
             log::warn!("compare_embedding_backends: retrying in HF offline mode after network failure");
@@ -1185,14 +1164,12 @@ pub async fn compare_embedding_backends(
     match serde_json::from_str::<serde_json::Value>(&stdout) {
         Ok(parsed) => Ok(parsed),
         Err(first_err) => {
-            if !initial_offline {
-                // One retry in offline mode if stdout was polluted due upstream warnings.
-                let retry = run_compare_once(true)?;
-                if retry.status.success() {
-                    let retry_stdout = String::from_utf8_lossy(&retry.stdout);
-                    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&retry_stdout) {
-                        return Ok(parsed);
-                    }
+            // One retry in offline mode if stdout was polluted by upstream warnings.
+            let retry = run_compare_once(true)?;
+            if retry.status.success() {
+                let retry_stdout = String::from_utf8_lossy(&retry.stdout);
+                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&retry_stdout) {
+                    return Ok(parsed);
                 }
             }
             Err(AppError::from(format!("Failed to parse compare JSON: {}", first_err)))

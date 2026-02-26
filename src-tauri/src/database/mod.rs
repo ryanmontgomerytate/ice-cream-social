@@ -461,6 +461,50 @@ Mark the start time of each segment.',
             [],
         ); // Ignore error if column already exists
 
+        // Migration: Widen flagged_segments UNIQUE constraint from (episode_id, segment_idx)
+        // to (episode_id, segment_idx, flag_type) so multiple flag types per clip are allowed.
+        {
+            let schema_sql: String = conn
+                .query_row(
+                    "SELECT COALESCE(sql, '') FROM sqlite_master WHERE type='table' AND name='flagged_segments'",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap_or_default();
+            // Only migrate if the UNIQUE constraint doesn't yet include flag_type
+            if !schema_sql.to_lowercase().contains("flag_type") {
+                conn.execute_batch(
+                    r#"
+                    CREATE TABLE IF NOT EXISTS flagged_segments_v2 (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        episode_id INTEGER NOT NULL,
+                        segment_idx INTEGER NOT NULL,
+                        flag_type TEXT NOT NULL,
+                        corrected_speaker TEXT,
+                        character_id INTEGER,
+                        notes TEXT,
+                        speaker_ids TEXT,
+                        resolved INTEGER DEFAULT 0,
+                        created_at TEXT DEFAULT (datetime('now', 'localtime')),
+                        FOREIGN KEY (episode_id) REFERENCES episodes(id) ON DELETE CASCADE,
+                        FOREIGN KEY (character_id) REFERENCES characters(id),
+                        UNIQUE(episode_id, segment_idx, flag_type)
+                    );
+                    INSERT OR IGNORE INTO flagged_segments_v2
+                        (id, episode_id, segment_idx, flag_type, corrected_speaker, character_id, notes, speaker_ids, resolved, created_at)
+                        SELECT id, episode_id, segment_idx, flag_type, corrected_speaker, character_id, notes, speaker_ids, resolved, created_at
+                        FROM flagged_segments;
+                    DROP TABLE flagged_segments;
+                    ALTER TABLE flagged_segments_v2 RENAME TO flagged_segments;
+                    CREATE INDEX IF NOT EXISTS idx_flagged_segments_episode ON flagged_segments(episode_id);
+                    CREATE INDEX IF NOT EXISTS idx_flagged_segments_type ON flagged_segments(flag_type);
+                    CREATE INDEX IF NOT EXISTS idx_flagged_segments_resolved ON flagged_segments(resolved);
+                    "#,
+                )?;
+                log::info!("Migrated flagged_segments UNIQUE constraint to include flag_type");
+            }
+        }
+
         // Migration: Add queue_type column to transcription_queue (idempotent)
         let _ = conn.execute(
             "ALTER TABLE transcription_queue ADD COLUMN queue_type TEXT DEFAULT 'full'",
@@ -799,6 +843,7 @@ Mark the start time of each segment.',
         offset: i64,
         category: Option<&str>,
         include_variants: bool,
+        has_pending_work_only: bool,
     ) -> Result<(Vec<Episode>, i64)> {
         let conn = self.conn.lock().unwrap();
 
@@ -833,6 +878,13 @@ Mark the start time of each segment.',
         if diarized_only {
             conditions.push("has_diarization = 1".to_string());
         }
+        if has_pending_work_only {
+            conditions.push(
+                "(id IN (SELECT DISTINCT episode_id FROM flagged_segments WHERE resolved = 0) \
+                  OR id IN (SELECT DISTINCT episode_id FROM transcript_corrections WHERE approved = 0))"
+                    .to_string(),
+            );
+        }
         if let Some(search_term) = search {
             if !search_term.is_empty() {
                 conditions.push(format!(
@@ -865,16 +917,21 @@ Mark the start time of each segment.',
         let count_sql = format!("SELECT COUNT(*) FROM episodes {}", where_clause);
         let total: i64 = conn.query_row(&count_sql, [], |row| row.get(0))?;
 
-        // Get episodes
+        // Get episodes (with LEFT JOINs to compute pending-work counts)
         let sql = format!(
-            "SELECT id, episode_number, title, description, audio_url, audio_file_path,
-                    duration, file_size, published_date, added_date, downloaded_date,
-                    transcribed_date, is_downloaded, is_transcribed, is_in_queue,
-                    transcript_path, transcription_status, transcription_error,
-                    processing_time, feed_source, metadata_json, has_diarization, num_speakers,
-                    category, category_number, sub_series, canonical_id,
-                    download_duration, transcribe_duration, diarize_duration, diarized_date
-             FROM episodes {}
+            "SELECT e.id, e.episode_number, e.title, e.description, e.audio_url, e.audio_file_path,
+                    e.duration, e.file_size, e.published_date, e.added_date, e.downloaded_date,
+                    e.transcribed_date, e.is_downloaded, e.is_transcribed, e.is_in_queue,
+                    e.transcript_path, e.transcription_status, e.transcription_error,
+                    e.processing_time, e.feed_source, e.metadata_json, e.has_diarization, e.num_speakers,
+                    e.category, e.category_number, e.sub_series, e.canonical_id,
+                    e.download_duration, e.transcribe_duration, e.diarize_duration, e.diarized_date,
+                    COALESCE(fs.unresolved_count, 0) AS unresolved_flag_count,
+                    COALESCE(tc.pending_count, 0) AS pending_correction_count
+             FROM episodes e
+             LEFT JOIN (SELECT episode_id, COUNT(*) AS unresolved_count FROM flagged_segments WHERE resolved = 0 GROUP BY episode_id) fs ON e.id = fs.episode_id
+             LEFT JOIN (SELECT episode_id, COUNT(*) AS pending_count FROM transcript_corrections WHERE approved = 0 GROUP BY episode_id) tc ON e.id = tc.episode_id
+             {}
              ORDER BY {} {}
              LIMIT ? OFFSET ?",
             where_clause, sort_column, sort_direction
@@ -918,6 +975,8 @@ Mark the start time of each segment.',
                     transcribe_duration: row.get(28)?,
                     diarize_duration: row.get(29)?,
                     diarized_date: row.get(30)?,
+                    unresolved_flag_count: row.get(31)?,
+                    pending_correction_count: row.get(32)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -928,14 +987,18 @@ Mark the start time of each segment.',
     pub fn get_episode_by_id(&self, id: i64) -> Result<Option<Episode>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, episode_number, title, description, audio_url, audio_file_path,
-                    duration, file_size, published_date, added_date, downloaded_date,
-                    transcribed_date, is_downloaded, is_transcribed, is_in_queue,
-                    transcript_path, transcription_status, transcription_error,
-                    processing_time, feed_source, metadata_json, has_diarization, num_speakers,
-                    category, category_number, sub_series, canonical_id,
-                    download_duration, transcribe_duration, diarize_duration, diarized_date
-             FROM episodes WHERE id = ?",
+            "SELECT e.id, e.episode_number, e.title, e.description, e.audio_url, e.audio_file_path,
+                    e.duration, e.file_size, e.published_date, e.added_date, e.downloaded_date,
+                    e.transcribed_date, e.is_downloaded, e.is_transcribed, e.is_in_queue,
+                    e.transcript_path, e.transcription_status, e.transcription_error,
+                    e.processing_time, e.feed_source, e.metadata_json, e.has_diarization, e.num_speakers,
+                    e.category, e.category_number, e.sub_series, e.canonical_id,
+                    e.download_duration, e.transcribe_duration, e.diarize_duration, e.diarized_date,
+                    COALESCE(fs.unresolved_count, 0), COALESCE(tc.pending_count, 0)
+             FROM episodes e
+             LEFT JOIN (SELECT episode_id, COUNT(*) AS unresolved_count FROM flagged_segments WHERE resolved = 0 GROUP BY episode_id) fs ON e.id = fs.episode_id
+             LEFT JOIN (SELECT episode_id, COUNT(*) AS pending_count FROM transcript_corrections WHERE approved = 0 GROUP BY episode_id) tc ON e.id = tc.episode_id
+             WHERE e.id = ?",
         )?;
 
         let episode = stmt
@@ -975,6 +1038,8 @@ Mark the start time of each segment.',
                     transcribe_duration: row.get(28)?,
                     diarize_duration: row.get(29)?,
                     diarized_date: row.get(30)?,
+                    unresolved_flag_count: row.get(31)?,
+                    pending_correction_count: row.get(32)?,
                 })
             })
             .ok();
@@ -1186,6 +1251,8 @@ Mark the start time of each segment.',
                     transcribe_duration: row.get(28)?,
                     diarize_duration: row.get(29)?,
                     diarized_date: row.get(30)?,
+                    unresolved_flag_count: 0,
+                    pending_correction_count: 0,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -1442,6 +1509,8 @@ Mark the start time of each segment.',
                         transcribe_duration: row.get(38)?,
                         diarize_duration: row.get(39)?,
                         diarized_date: row.get(40)?,
+                        unresolved_flag_count: 0,
+                        pending_correction_count: 0,
                     },
                 })
             })?
@@ -1587,6 +1656,8 @@ Mark the start time of each segment.',
                         transcribe_duration: row.get(38)?,
                         diarize_duration: row.get(39)?,
                         diarized_date: row.get(40)?,
+                        unresolved_flag_count: 0,
+                        pending_correction_count: 0,
                     },
                 })
             })
@@ -1667,6 +1738,8 @@ Mark the start time of each segment.',
                         transcribe_duration: row.get(38)?,
                         diarize_duration: row.get(39)?,
                         diarized_date: row.get(40)?,
+                        unresolved_flag_count: 0,
+                        pending_correction_count: 0,
                     },
                 })
             })
@@ -1930,6 +2003,8 @@ Mark the start time of each segment.',
                         transcribe_duration: row.get(38)?,
                         diarize_duration: row.get(39)?,
                         diarized_date: row.get(40)?,
+                        unresolved_flag_count: 0,
+                        pending_correction_count: 0,
                     },
                 })
             })?
@@ -2771,6 +2846,8 @@ Mark the start time of each segment.',
                 transcribe_duration: row.get(28)?,
                 diarize_duration: row.get(29)?,
                 diarized_date: row.get(30)?,
+                unresolved_flag_count: 0,
+                pending_correction_count: 0,
             })
         });
         match episode {
@@ -3381,6 +3458,8 @@ Mark the start time of each segment.',
                 transcribe_duration: row.get(28)?,
                 diarize_duration: row.get(29)?,
                 diarized_date: row.get(30)?,
+                unresolved_flag_count: 0,
+                pending_correction_count: 0,
             })
         })?.filter_map(|r| r.ok()).collect();
 

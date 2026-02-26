@@ -250,8 +250,14 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
       setEpisodeChapters(chapters)
       setCharacterAppearances(charAppearances)
 
+      // flaggedSegments: { [segment_idx]: FlaggedSegment[] } — multiple flag types per segment
       const flagsMap = {}
-      flags.forEach(flag => { if (!flag.resolved) flagsMap[flag.segment_idx] = flag })
+      flags.forEach(flag => {
+        if (!flag.resolved) {
+          if (!flagsMap[flag.segment_idx]) flagsMap[flag.segment_idx] = []
+          flagsMap[flag.segment_idx].push(flag)
+        }
+      })
       setFlaggedSegments(flagsMap)
 
       setEpisodeSpeakerAssignments(speakerAssignments)
@@ -398,12 +404,12 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
     return -1
   }, [segments, currentTime, parseTimestampToSeconds, getSegmentEndTime])
 
-  // Auto-scroll to current segment
+  // Auto-scroll to current segment — pauses when user has manually selected a clip
   useEffect(() => {
-    if (autoScroll && currentSegmentIdx >= 0 && segmentRefs.current[currentSegmentIdx]) {
+    if (autoScroll && selectedSegmentIdx === null && currentSegmentIdx >= 0 && segmentRefs.current[currentSegmentIdx]) {
       segmentRefs.current[currentSegmentIdx].scrollIntoView({ behavior: 'smooth', block: 'center' })
     }
-  }, [currentSegmentIdx, autoScroll])
+  }, [currentSegmentIdx, autoScroll, selectedSegmentIdx])
 
   // Audio controls — re-attach when audioPath changes OR when loading finishes
   useEffect(() => {
@@ -518,11 +524,10 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
     try {
       const speakerIdsJson = speakerIds ? JSON.stringify(speakerIds) : null
       const id = await contentAPI.createFlaggedSegment(episode.id, idx, flagType, correctedSpeaker, characterId, notes, speakerIdsJson)
-      const newFlags = {
-        ...flaggedSegments,
-        [idx]: { id, episode_id: episode.id, segment_idx: idx, flag_type: flagType, corrected_speaker: correctedSpeaker, character_id: characterId, notes, speaker_ids: speakerIdsJson, resolved: false }
-      }
-      setFlaggedSegments(newFlags)
+      const newFlag = { id, episode_id: episode.id, segment_idx: idx, flag_type: flagType, corrected_speaker: correctedSpeaker, character_id: characterId, notes, speaker_ids: speakerIdsJson, resolved: false }
+      // Replace any existing flag of the same type, then append the new one
+      const existing = (flaggedSegments[idx] || []).filter(f => f.flag_type !== flagType)
+      setFlaggedSegments({ ...flaggedSegments, [idx]: [...existing, newFlag] })
       setActivePicker(null)
       setSpeakerPickerIdx(null)
       setSpeakerPickerSelected([])
@@ -544,13 +549,13 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
     }
   }
 
-  const deleteFlag = async (idx) => {
-    const flag = flaggedSegments[idx]
-    if (!flag) return
+  const deleteFlag = async (idx, flagId) => {
     try {
-      await contentAPI.deleteFlaggedSegment(flag.id)
+      await contentAPI.deleteFlaggedSegment(flagId)
+      const remaining = (flaggedSegments[idx] || []).filter(f => f.id !== flagId)
       const newFlags = { ...flaggedSegments }
-      delete newFlags[idx]
+      if (remaining.length === 0) delete newFlags[idx]
+      else newFlags[idx] = remaining
       setFlaggedSegments(newFlags)
       flashSavedToast('✓ Flag removed')
     } catch (err) {
@@ -1023,28 +1028,37 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
               <button onClick={(e) => { e.stopPropagation(); setSpeakerPickerIdx(null); setActivePicker('flag') }} className="text-xs text-gray-400 hover:text-gray-600">← Back</button>
             </div>
             <div className="max-h-48 overflow-y-auto">
-            {uniqueSpeakers.map(spk => {
-              const displayName = speakerNames[spk] || spk
-              const isSelected = speakerPickerSelected.includes(spk)
-              const color = getSpeakerColor(spk)
-              return (
-                <label key={spk} className="flex items-center gap-2 px-2 py-1.5 text-sm rounded hover:bg-gray-50 cursor-pointer" onClick={(e) => e.stopPropagation()}>
-                  <input
-                    type="checkbox"
-                    checked={isSelected}
-                    onChange={(e) => {
-                      e.stopPropagation()
-                      setSpeakerPickerSelected(prev =>
-                        isSelected ? prev.filter(s => s !== spk) : [...prev, spk]
-                      )
-                    }}
-                    className="rounded"
-                  />
-                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: color.hex }} />
-                  <span>{displayName}</span>
-                </label>
-              )
-            })}
+            {(() => {
+              // Deduplicate by resolved display name — multiple SPEAKER_XX labels that map
+              // to the same name should appear as a single row in the picker
+              const seen = new Set()
+              const deduped = []
+              uniqueSpeakers.forEach(spk => {
+                const name = speakerNames[spk] || spk
+                if (!seen.has(name)) { seen.add(name); deduped.push({ name, spk }) }
+              })
+              return deduped.map(({ name, spk }) => {
+                const isSelected = speakerPickerSelected.includes(name)
+                const color = getSpeakerColor(spk)
+                return (
+                  <label key={name} className="flex items-center gap-2 px-2 py-1.5 text-sm rounded hover:bg-gray-50 cursor-pointer" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={(e) => {
+                        e.stopPropagation()
+                        setSpeakerPickerSelected(prev =>
+                          isSelected ? prev.filter(s => s !== name) : [...prev, name]
+                        )
+                      }}
+                      className="rounded"
+                    />
+                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: color.hex }} />
+                    <span>{name}</span>
+                  </label>
+                )
+              })
+            })()}
             </div>
             <div className="flex gap-1 mt-2 pt-2 border-t border-gray-100">
               <input
@@ -1072,9 +1086,9 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
                 Add
               </button>
             </div>
-            {speakerPickerSelected.filter(s => !uniqueSpeakers.includes(s)).length > 0 && (
+            {speakerPickerSelected.filter(s => !uniqueSpeakers.some(spk => (speakerNames[spk] || spk) === s)).length > 0 && (
               <div className="mt-1 flex flex-wrap gap-1">
-                {speakerPickerSelected.filter(s => !uniqueSpeakers.includes(s)).map(name => (
+                {speakerPickerSelected.filter(s => !uniqueSpeakers.some(spk => (speakerNames[spk] || spk) === s)).map(name => (
                   <span key={name} className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-xs flex items-center gap-1">
                     {name}
                     <button onClick={(e) => { e.stopPropagation(); setSpeakerPickerSelected(prev => prev.filter(s => s !== name)) }} className="hover:text-red-600">×</button>
@@ -1107,34 +1121,42 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
       return (
         <div className="mt-2 p-2 bg-white rounded-lg border border-gray-200 shadow-sm">
           <div className="text-[10px] text-gray-400 uppercase tracking-wide mb-1 px-1">Flag type</div>
-          {FLAG_TYPES.map(ft => (
-            <button key={ft.id} onClick={(e) => {
-              e.stopPropagation()
-              if (ft.needsSpeaker) {
-                setFlagInlineInput('')
-                setActivePicker('flag-wrong-speaker')
-              } else if (ft.needsCharacter) {
-                setNewCharacterName('')
-                setActivePicker('flag-character')
-              } else if (ft.needsSpeakers) {
-                setSpeakerPickerIdx(idx)
-                setSpeakerPickerSelected([])
-                setFlagInlineInput('')
-              } else if (ft.needsCorrection) {
-                const seg = segments?.[idx]
-                setFlagInlineInput(seg?.text?.trim() || '')
-                setActivePicker(`flag-correction-${ft.id}`)
-                if (seg) playClipOnly(seg, idx)
-              } else if (ft.needsNotes) {
-                setFlagInlineInput('')
-                setActivePicker('flag-other')
-              } else {
-                createFlag(idx, ft.id)
-              }
-            }} className="w-full px-2 py-1.5 text-sm text-left rounded hover:bg-red-50 flex items-center gap-2">
-              <span>{ft.icon}</span> {ft.label}
-            </button>
-          ))}
+          {FLAG_TYPES.map(ft => {
+            const alreadyFlagged = (flaggedSegments[idx] || []).some(f => f.flag_type === ft.id)
+            return (
+              <button key={ft.id} onClick={(e) => {
+                e.stopPropagation()
+                if (ft.needsSpeaker) {
+                  setFlagInlineInput('')
+                  setActivePicker('flag-wrong-speaker')
+                } else if (ft.needsCharacter) {
+                  setNewCharacterName('')
+                  setActivePicker('flag-character')
+                } else if (ft.needsSpeakers) {
+                  setSpeakerPickerIdx(idx)
+                  // Pre-select the segment's current speaker
+                  const seg = segments?.[idx]
+                  const curSpk = seg?.speaker
+                  const curName = curSpk && curSpk !== 'UNKNOWN' ? (speakerNames[curSpk] || curSpk) : null
+                  setSpeakerPickerSelected(curName ? [curName] : [])
+                  setFlagInlineInput('')
+                } else if (ft.needsCorrection) {
+                  const seg = segments?.[idx]
+                  setFlagInlineInput(seg?.text?.trim() || '')
+                  setActivePicker(`flag-correction-${ft.id}`)
+                  if (seg) playClipOnly(seg, idx)
+                } else if (ft.needsNotes) {
+                  setFlagInlineInput('')
+                  setActivePicker('flag-other')
+                } else {
+                  createFlag(idx, ft.id)
+                }
+              }} className="w-full px-2 py-1.5 text-sm text-left rounded hover:bg-red-50 flex items-center gap-2">
+                <span>{ft.icon}</span> {ft.label}
+                {alreadyFlagged && <span className="ml-auto text-[10px] text-green-600 font-medium">✓ flagged</span>}
+              </button>
+            )
+          })}
         </div>
       )
     }
@@ -1492,23 +1514,23 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
 
   // ---- Badge rendering (below text) ----
   const renderBadges = (idx) => {
-    const flag = flaggedSegments[idx]
+    const flags = flaggedSegments[idx] || []
     const character = getCharacterForSegment(idx)
     const chapter = getChapterForSegment(idx)
     const hasSample = markedSamples[idx]
 
-    if (!flag && !character && !chapter && !hasSample) return null
+    if (flags.length === 0 && !character && !chapter && !hasSample) return null
 
     return (
       <div className="flex flex-wrap gap-1.5 mt-2 pt-2 border-t border-gray-200/50">
-        {flag && (
-          <span className={`px-2 py-1 rounded text-xs font-medium cursor-pointer ${
+        {flags.map(flag => (
+          <span key={flag.id ?? flag.flag_type} className={`px-2 py-1 rounded text-xs font-medium cursor-pointer ${
             flag.flag_type === 'wrong_speaker' ? 'bg-red-100 text-red-700' :
             flag.flag_type === 'character_voice' ? 'bg-pink-100 text-pink-700' :
             flag.flag_type === 'misspelling' ? 'bg-amber-100 text-amber-700' :
             flag.flag_type === 'missing_word' ? 'bg-violet-100 text-violet-700' :
             'bg-yellow-100 text-yellow-700'
-          }`} onClick={(e) => { e.stopPropagation(); deleteFlag(idx) }} title="Click to remove flag">
+          }`} onClick={(e) => { e.stopPropagation(); deleteFlag(idx, flag.id) }} title="Click to remove flag">
             {FLAG_TYPES.find(f => f.id === flag.flag_type)?.icon || '🚩'}{' '}
             {flag.flag_type === 'multiple_speakers' && flag.speaker_ids
               ? (() => {
@@ -1521,7 +1543,7 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
               : (FLAG_TYPES.find(f => f.id === flag.flag_type)?.label || 'Flag')
             }
           </span>
-        )}
+        ))}
         {character && (
           <span className="px-2 py-1 rounded text-xs font-medium bg-pink-100 text-pink-700 group/char inline-flex items-center gap-1" title={character.character_name}>
             🎭 {character.character_name}
@@ -1806,11 +1828,11 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
           )}
           {Object.keys(flaggedSegments).length > 0 && (
             <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded text-xs">
-              🚩 {Object.keys(flaggedSegments).length} flags
+              🚩 {Object.values(flaggedSegments).flat().length} flags
             </span>
           )}
           {episode.is_transcribed && (() => {
-            const hintCount = Object.values(flaggedSegments).filter(f =>
+            const hintCount = Object.values(flaggedSegments).flat().filter(f =>
               ['wrong_speaker', 'multiple_speakers', 'character_voice'].includes(f.flag_type) && !f.resolved
             ).length
             const backendLabel = reprocessBackend === 'current'
@@ -2145,11 +2167,12 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
             {filteredSegments.map((segment, filteredIdx) => {
               const idx = filteredIndices[filteredIdx] // real segment index — never changes with search
               const colors = getSpeakerColor(segment.speaker)
-              const displayName = flaggedSegments[idx]?.corrected_speaker
+              const segFlags = flaggedSegments[idx] || []
+              const wrongSpeakerFlag = segFlags.find(f => f.flag_type === 'wrong_speaker')
+              const displayName = wrongSpeakerFlag?.corrected_speaker
                 || speakerNames[segment.speaker] || segment.speaker
               const isCurrent = currentSegmentIdx === idx
               const isSelected = selectedSegmentIdx === idx
-              const flag = flaggedSegments[idx]
 
               return (
                 <div
@@ -2158,13 +2181,17 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
                   className={`group rounded-lg overflow-hidden transition-all cursor-pointer border ${
                     isSelected ? 'ring-2 ring-purple-500 shadow-md border-purple-300' :
                     isCurrent ? `ring-2 ${colors.ring} shadow-md border-transparent` :
-                    flag ? 'ring-1 ring-red-300 border-red-200' :
+                    segFlags.length > 0 ? 'ring-1 ring-red-300 border-red-200' :
                     'border-gray-200 hover:border-gray-300 hover:shadow-sm'
                   }`}
                   onClick={() => {
                     pausePlaybackForReview()
-                    setSelectedSegmentIdx(isSelected ? null : idx)
+                    const newSel = isSelected ? null : idx
+                    setSelectedSegmentIdx(newSel)
                     setActivePicker(null)
+                    if (newSel !== null) {
+                      setTimeout(() => segmentRefs.current[idx]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 30)
+                    }
                   }}
                 >
                   <div className="flex">
@@ -2176,7 +2203,7 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
                         e.stopPropagation()
                         pausePlaybackForReview()
                         setSelectedSegmentIdx(idx)
-                        setActivePicker('speaker')
+                        setTimeout(() => segmentRefs.current[idx]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 30)
                       }}
                     >
                       <span className="text-xs font-semibold text-gray-700 text-center leading-tight cursor-pointer hover:underline">

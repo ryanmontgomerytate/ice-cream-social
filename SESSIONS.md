@@ -27,6 +27,18 @@
 - Cache invalidated after create/update/delete mutations for each resource
 - Removed `speakersAPI.getVoiceLibrary()` from `loadTranscript()` Promise.all; lazy-loads after transcript renders if cache is empty
 
+**Voice Embedding Backend + HF Offline Mode Removal** (`speakers.rs`, `SettingsPanel.jsx`)
+- Removed DB-backed `embedding_model` setting and `hf_hub_offline_enabled` setting entirely
+- Removed all related UI panels from Settings (Voice Embedding Backend, Hugging Face Offline Mode)
+- Simplified `apply_hf_runtime_env_*` — hardcoded to `HF_HUB_OFFLINE=false` always; preserved network-failure auto-retry in `compare_embedding_backends`
+
+**Pending Work Badges + Filter** (`models.rs`, `database/mod.rs`, `commands/episodes.rs`, `EpisodeSidebar.jsx`, `SettingsPanel.jsx`)
+- Added `unresolved_flag_count: i64` and `pending_correction_count: i64` to `Episode` struct
+- `get_episodes()` and `get_episode_by_id()` now LEFT JOIN flagged_segments and transcript_corrections to compute per-episode counts
+- Added `has_pending_work_only` filter to `EpisodeFilters` (Rust) + SQL `IN` subquery
+- `EpisodeSidebar.jsx`: "Needs Review" filter button (amber); 🚩 N unresolved flags badge + ✏️ N pending corrections badge on episode cards
+- `SettingsPanel.jsx`: Improved explanatory text for Scoop Polish Corrections section — explains AI suggestions persist until reviewed
+
 **Task 5: Episode Editor Interaction Analytics** (full stack)
 - DB: `episode_interactions` table in `init_schema()`; `log_episode_interaction()` and `get_episode_interaction_summary()` methods
 - Models: `EpisodeInteraction` and `EpisodeInteractionSummary` structs in `models.rs`

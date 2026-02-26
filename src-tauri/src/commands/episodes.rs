@@ -15,6 +15,7 @@ pub struct EpisodeFilters {
     pub downloaded_only: Option<bool>,
     pub not_downloaded_only: Option<bool>,
     pub diarized_only: Option<bool>,
+    pub has_pending_work_only: Option<bool>,
     pub sort_by: Option<String>,
     pub sort_desc: Option<bool>,
     pub limit: Option<i64>,
@@ -56,6 +57,7 @@ pub async fn get_episodes(
         downloaded_only: None,
         not_downloaded_only: None,
         diarized_only: None,
+        has_pending_work_only: None,
         sort_by: None,
         sort_desc: None,
         limit: None,
@@ -85,6 +87,7 @@ pub async fn get_episodes(
             offset,
             filters.category.as_deref(),
             filters.include_variants.unwrap_or(false),
+            filters.has_pending_work_only.unwrap_or(false),
         )
         .map_err(AppError::from)?;
 
@@ -639,7 +642,7 @@ pub async fn link_cross_feed_episodes(
     // We need episodes with category info to group by number
     let (all_episodes, _) = db.get_episodes(
         None, false, false, false, false, false, false,
-        None, true, None, 10000, 0, None, true, // include_variants = true
+        None, true, None, 10000, 0, None, true, false, // include_variants = true, has_pending_work_only = false
     ).map_err(AppError::from)?;
 
     // Group episode-category episodes by category_number

@@ -77,6 +77,8 @@ pub struct Episode {
     pub transcribe_duration: Option<f64>,
     pub diarize_duration: Option<f64>,
     pub diarized_date: Option<String>,
+    pub unresolved_flag_count: i64,
+    pub pending_correction_count: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

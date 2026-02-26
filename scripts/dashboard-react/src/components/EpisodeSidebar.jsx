@@ -91,6 +91,22 @@ function getStatusBadges(episode, queueStatus) {
     }
   }
 
+  // Pending-work badges (shown in addition to status badges)
+  if (episode.unresolved_flag_count > 0) {
+    badges.push(
+      <span key="flags" className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-700 border border-amber-200" title="Unresolved flags — needs review">
+        🚩 {episode.unresolved_flag_count}
+      </span>
+    )
+  }
+  if (episode.pending_correction_count > 0) {
+    badges.push(
+      <span key="corrections" className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-violet-100 text-violet-700 border border-violet-200" title="Pending Scoop Polish corrections — needs approval">
+        ✏️ {episode.pending_correction_count}
+      </span>
+    )
+  }
+
   return <>{badges}</>
 }
 
@@ -118,6 +134,7 @@ export default function EpisodeSidebar({
     downloaded_only: false,
     not_downloaded_only: false,
     diarized_only: false,
+    has_pending_work_only: false,
     limit: 50,
     offset: 0
   })
@@ -374,6 +391,17 @@ export default function EpisodeSidebar({
               Failed
             </button>
           )}
+          <button
+            onClick={() => setFilters(prev => ({ ...prev, has_pending_work_only: !prev.has_pending_work_only, offset: 0 }))}
+            className={`px-2 py-1 text-xs rounded-full transition-colors ${
+              filters.has_pending_work_only
+                ? 'bg-amber-500 text-white'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+            title="Show episodes with unresolved flags or pending corrections"
+          >
+            Needs Review
+          </button>
         </div>
 
         {/* Source */}
