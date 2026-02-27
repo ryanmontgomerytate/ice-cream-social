@@ -6,6 +6,7 @@ Usage:
   python scripts/export_to_hosted.py --mode export
   python scripts/export_to_hosted.py --mode import
   python scripts/export_to_hosted.py --mode full
+  python scripts/export_to_hosted.py --mode verify
   python scripts/export_to_hosted.py --mode full --dry-run
   python scripts/export_to_hosted.py --tables episodes transcript_segments
 """
@@ -15,11 +16,13 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, Iterator, List, Optional
+from typing import Any, Callable, Dict, Iterable, Iterator, List, Optional, Tuple
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -29,6 +32,7 @@ DEFAULT_SHOW_SLUG = "ics"
 DEFAULT_SHOW_NAME = "Matt and Mattingly's Ice Cream Social"
 DEFAULT_SHOW_DESCRIPTION = "A comedy podcast hosted by Matt Donnelly and Paul Mattingly."
 DEFAULT_SCHEMA_VERSION = "001"
+DEFAULT_ENV_PATHS = (ROOT_DIR / ".env", ROOT_DIR / "scripts" / ".env")
 
 
 def utc_now_iso() -> str:
@@ -73,6 +77,111 @@ def sanitize_row_values(row: Dict[str, Any]) -> Dict[str, Any]:
         else:
             out[key] = value
     return out
+
+
+def _to_iso_timestamptz(value: datetime) -> str:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.isoformat()
+
+
+def normalize_timestamptz(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return _to_iso_timestamptz(value)
+    if isinstance(value, (int, float)):
+        try:
+            return _to_iso_timestamptz(datetime.fromtimestamp(float(value), tz=timezone.utc))
+        except (OverflowError, OSError, ValueError):
+            return None
+    if not isinstance(value, str):
+        return None
+
+    text = value.strip()
+    if not text:
+        return None
+    text = re.sub(r"\b(\d{1,2})(st|nd|rd|th)\b", r"\1", text, flags=re.IGNORECASE)
+    text = " ".join(text.split())
+
+    iso_text = text[:-1] + "+00:00" if text.endswith("Z") else text
+    try:
+        return _to_iso_timestamptz(datetime.fromisoformat(iso_text))
+    except ValueError:
+        pass
+
+    try:
+        return _to_iso_timestamptz(parsedate_to_datetime(text))
+    except (TypeError, ValueError, IndexError):
+        pass
+
+    for fmt in (
+        "%Y-%m-%d",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d %H:%M:%S.%f",
+        "%m/%d/%Y",
+        "%m/%d/%Y %H:%M:%S",
+        "%B %d, %Y",
+        "%b %d, %Y",
+        "%B %d %Y",
+        "%b %d %Y",
+    ):
+        try:
+            return _to_iso_timestamptz(datetime.strptime(text, fmt))
+        except ValueError:
+            continue
+
+    return None
+
+
+def normalize_timestamptz_fields(row: Dict[str, Any], fields: List[str]) -> Dict[str, Any]:
+    out = dict(row)
+    for field in fields:
+        if field in out:
+            out[field] = normalize_timestamptz(out.get(field))
+    return out
+
+
+def _split_env_assignment(line: str) -> Optional[Tuple[str, str]]:
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#"):
+        return None
+    if stripped.startswith("export "):
+        stripped = stripped[7:].strip()
+
+    match = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)\s*(=|:)\s*(.*)$", stripped)
+    if not match:
+        return None
+
+    key = match.group(1).strip()
+    value = match.group(3).strip()
+    if value and value[0] in {"'", '"'} and value[-1:] == value[0]:
+        value = value[1:-1]
+    elif " #" in value:
+        value = value.split(" #", 1)[0].rstrip()
+
+    return key, value
+
+
+def load_env_file(path: Path) -> None:
+    if not path.exists():
+        return
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            for raw_line in fh:
+                parsed = _split_env_assignment(raw_line)
+                if not parsed:
+                    continue
+                key, value = parsed
+                os.environ.setdefault(key, value)
+    except OSError:
+        # If env file is unreadable, continue so explicit shell env still works.
+        return
+
+
+def load_default_env_files() -> None:
+    for env_path in DEFAULT_ENV_PATHS:
+        load_env_file(env_path)
 
 
 @dataclass(frozen=True)
@@ -153,7 +262,7 @@ def build_table_configs() -> Dict[str, TableConfig]:
                 "description": row["description"],
                 "audio_url": row["audio_url"],
                 "duration": row["duration"],
-                "published_date": row["published_date"],
+                "published_date": normalize_timestamptz(row["published_date"]),
                 "category": row["category"] or "episode",
                 "category_number": row["category_number"],
                 "sub_series": row["sub_series"],
@@ -188,7 +297,7 @@ def build_table_configs() -> Dict[str, TableConfig]:
                 "description": row["description"],
                 "is_host": to_bool(row["is_host"]),
                 "image_url": row["image_url"],
-                "created_at": row["created_at"],
+                "created_at": normalize_timestamptz(row["created_at"]),
             },
             conflict_cols=["id"],
             import_batch_size=500,
@@ -208,7 +317,7 @@ def build_table_configs() -> Dict[str, TableConfig]:
                 FROM episode_speakers
                 ORDER BY id
             """,
-            transform=_identity,
+            transform=lambda row: normalize_timestamptz_fields(row, ["created_at"]),
             conflict_cols=["id"],
             import_batch_size=500,
         ),
@@ -228,7 +337,7 @@ def build_table_configs() -> Dict[str, TableConfig]:
                 FROM characters
                 ORDER BY id
             """,
-            transform=_identity,
+            transform=lambda row: normalize_timestamptz_fields(row, ["created_at"]),
             conflict_cols=["id"],
             import_batch_size=500,
         ),
@@ -265,7 +374,7 @@ def build_table_configs() -> Dict[str, TableConfig]:
                 FROM chapter_types
                 ORDER BY id
             """,
-            transform=_identity,
+            transform=lambda row: normalize_timestamptz_fields(row, ["created_at"]),
             conflict_cols=["id"],
             import_batch_size=200,
         ),
@@ -286,7 +395,7 @@ def build_table_configs() -> Dict[str, TableConfig]:
                 FROM episode_chapters
                 ORDER BY id
             """,
-            transform=_identity,
+            transform=lambda row: normalize_timestamptz_fields(row, ["created_at"]),
             conflict_cols=["id"],
             import_batch_size=500,
         ),
@@ -303,7 +412,7 @@ def build_table_configs() -> Dict[str, TableConfig]:
                 FROM audio_drops
                 ORDER BY id
             """,
-            transform=_identity,
+            transform=lambda row: normalize_timestamptz_fields(row, ["created_at"]),
             conflict_cols=["id"],
             import_batch_size=200,
         ),
@@ -322,7 +431,7 @@ def build_table_configs() -> Dict[str, TableConfig]:
                 FROM audio_drop_instances
                 ORDER BY id
             """,
-            transform=_identity,
+            transform=lambda row: normalize_timestamptz_fields(row, ["created_at"]),
             conflict_cols=["id"],
             import_batch_size=500,
         ),
@@ -343,7 +452,10 @@ def build_table_configs() -> Dict[str, TableConfig]:
                 FROM wiki_lore
                 ORDER BY id
             """,
-            transform=lambda row: {**row, "is_wiki_sourced": to_bool(row["is_wiki_sourced"])},
+            transform=lambda row: {
+                **normalize_timestamptz_fields(row, ["last_synced"]),
+                "is_wiki_sourced": to_bool(row["is_wiki_sourced"]),
+            },
             conflict_cols=["id"],
             import_batch_size=500,
         ),
@@ -388,7 +500,7 @@ def build_table_configs() -> Dict[str, TableConfig]:
                 ORDER BY id
             """,
             transform=lambda row: {
-                **row,
+                **normalize_timestamptz_fields(row, ["air_date", "last_synced"]),
                 "topics_json": parse_json_text(row["topics_json"]),
                 "guests_json": parse_json_text(row["guests_json"]),
                 "bits_json": parse_json_text(row["bits_json"]),
@@ -401,16 +513,17 @@ def build_table_configs() -> Dict[str, TableConfig]:
             name="transcript_segments",
             select_sql="""
                 SELECT
-                    id,
-                    episode_id,
-                    segment_idx,
-                    speaker,
-                    text,
-                    start_time,
-                    end_time,
-                    is_performance_bit
-                FROM transcript_segments
-                ORDER BY id
+                    ts.id,
+                    ts.episode_id,
+                    ts.segment_idx,
+                    ts.speaker,
+                    ts.text,
+                    ts.start_time,
+                    ts.end_time,
+                    ts.is_performance_bit
+                FROM transcript_segments ts
+                INNER JOIN episodes e ON e.id = ts.episode_id
+                ORDER BY ts.id
             """,
             transform=lambda row: {**row, "is_performance_bit": to_bool(row["is_performance_bit"])},
             conflict_cols=["id"],
@@ -450,6 +563,25 @@ def count_sqlite_rows(conn: sqlite3.Connection, table_name: str) -> int:
     cur.execute(f"SELECT COUNT(*) FROM {table_name}")
     val = cur.fetchone()
     return int(val[0]) if val else 0
+
+
+def count_sqlite_source_rows(conn: sqlite3.Connection, table_config: TableConfig) -> int:
+    if table_config.name == "shows":
+        return 1
+    cur = conn.cursor()
+    wrapped_sql = f"SELECT COUNT(*) FROM ({table_config.select_sql}) AS src"
+    cur.execute(wrapped_sql)
+    val = cur.fetchone()
+    return int(val[0]) if val else 0
+
+
+def list_sqlite_source_ids(conn: sqlite3.Connection, table_config: TableConfig) -> List[int]:
+    if table_config.name == "shows":
+        return []
+    cur = conn.cursor()
+    wrapped_sql = f"SELECT id FROM ({table_config.select_sql}) AS src WHERE id IS NOT NULL ORDER BY id"
+    cur.execute(wrapped_sql)
+    return [int(row[0]) for row in cur.fetchall()]
 
 
 def ensure_postgres_driver():
@@ -522,6 +654,44 @@ def update_import_batch(
     )
 
 
+def get_public_table_columns(pg_cur, table_names: List[str]) -> Dict[str, List[str]]:
+    if not table_names:
+        return {}
+
+    pg_cur.execute(
+        """
+        SELECT table_name, column_name
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = ANY(%s)
+        ORDER BY table_name, ordinal_position
+        """,
+        (table_names,),
+    )
+    rows = pg_cur.fetchall()
+    columns_by_table: Dict[str, List[str]] = {name: [] for name in table_names}
+    for table_name, column_name in rows:
+        columns_by_table[str(table_name)].append(str(column_name))
+    return columns_by_table
+
+
+def filter_rows_to_target_columns(
+    *,
+    rows: List[Dict[str, Any]],
+    target_columns: List[str],
+) -> Tuple[List[Dict[str, Any]], List[str]]:
+    if not rows:
+        return rows, []
+
+    target_set = set(target_columns)
+    source_columns = list(rows[0].keys())
+    kept_columns = [col for col in source_columns if col in target_set]
+    dropped_columns = [col for col in source_columns if col not in target_set]
+
+    filtered_rows = [{col: row.get(col) for col in kept_columns} for row in rows]
+    return filtered_rows, dropped_columns
+
+
 def upsert_rows(
     *,
     pg_cur,
@@ -586,6 +756,34 @@ def upsert_rows(
 
     execute_values(pg_cur, query.as_string(pg_cur.connection), value_tuples, page_size=len(rows))
     return len(rows)
+
+
+def apply_episode_canonical_links(
+    *,
+    pg_cur,
+    execute_values,
+    episode_links: List[Tuple[int, Optional[int]]],
+) -> None:
+    if not episode_links:
+        return
+
+    execute_values(
+        pg_cur,
+        """
+        UPDATE episodes AS e
+        SET canonical_id = v.canonical_id
+        FROM (
+            SELECT
+                raw.id::bigint AS id,
+                raw.canonical_id::bigint AS canonical_id
+            FROM (VALUES %s) AS raw(id, canonical_id)
+        ) AS v
+        WHERE e.id = v.id
+          AND e.canonical_id IS DISTINCT FROM v.canonical_id
+        """,
+        episode_links,
+        page_size=min(1000, len(episode_links)),
+    )
 
 
 def export_tables(
@@ -673,10 +871,31 @@ def import_tables(
 
     with psycopg2.connect(database_url) as pg_conn:
         with pg_conn.cursor() as pg_cur:
+            target_columns_by_table = get_public_table_columns(pg_cur, table_names)
+            missing_tables = [name for name, cols in target_columns_by_table.items() if not cols]
+            if missing_tables:
+                raise RuntimeError(
+                    "Target Postgres schema is missing table metadata for: "
+                    + ", ".join(sorted(missing_tables))
+                )
+
             batch_id = insert_import_batch(pg_cur, DEFAULT_SCHEMA_VERSION)
+            if batch_id is not None:
+                # Persist the batch row so failures can be recorded after rollback.
+                pg_conn.commit()
             show_id: Optional[int] = None
+            warned_column_drift: set[str] = set()
             if "shows" in table_names:
                 shows_rows = list(iter_sqlite_rows(sqlite_conn, table_configs["shows"]))
+                shows_rows, dropped_cols = filter_rows_to_target_columns(
+                    rows=shows_rows,
+                    target_columns=target_columns_by_table["shows"],
+                )
+                if dropped_cols and "shows" not in warned_column_drift:
+                    warned_column_drift.add("shows")
+                    print(
+                        f"[warn] dropping unmapped columns for shows: {', '.join(dropped_cols)}"
+                    )
                 imported_counts["shows"] += upsert_rows(
                     pg_cur=pg_cur,
                     sql_mod=sql_mod,
@@ -706,13 +925,39 @@ def import_tables(
                     if table_name == "shows":
                         continue
                     cfg = table_configs[table_name]
+                    canonical_links: List[Tuple[int, Optional[int]]] = []
                     rows_iter = iter_sqlite_rows(sqlite_conn, cfg)
                     for chunk in chunked(rows_iter, cfg.import_batch_size):
                         if table_name == "episodes":
+                            prepared_chunk: List[Dict[str, Any]] = []
                             for row in chunk:
-                                row["show_id"] = show_id
-                                row["imported_at"] = utc_now_iso()
-                                row["import_batch_id"] = batch_id
+                                canonical_links.append((int(row["id"]), row.get("canonical_id")))
+                                row_with_meta = dict(row)
+                                row_with_meta["show_id"] = show_id
+                                row_with_meta["imported_at"] = utc_now_iso()
+                                row_with_meta["import_batch_id"] = batch_id
+                                # Defer self-reference assignment until all episodes exist.
+                                row_with_meta["canonical_id"] = None
+                                prepared_chunk.append(row_with_meta)
+                            chunk = prepared_chunk
+                        chunk, dropped_cols = filter_rows_to_target_columns(
+                            rows=chunk,
+                            target_columns=target_columns_by_table[table_name],
+                        )
+                        if dropped_cols and table_name not in warned_column_drift:
+                            warned_column_drift.add(table_name)
+                            print(
+                                f"[warn] dropping unmapped columns for {table_name}: "
+                                + ", ".join(dropped_cols)
+                            )
+                        if not chunk or not chunk[0]:
+                            continue
+                        missing_conflict_cols = [c for c in cfg.conflict_cols if c not in chunk[0]]
+                        if missing_conflict_cols:
+                            raise RuntimeError(
+                                f"Target table {table_name} is missing conflict columns: "
+                                + ", ".join(missing_conflict_cols)
+                            )
                         imported_counts[table_name] += upsert_rows(
                             pg_cur=pg_cur,
                             sql_mod=sql_mod,
@@ -721,6 +966,12 @@ def import_tables(
                             table_name=table_name,
                             rows=chunk,
                             conflict_cols=cfg.conflict_cols,
+                        )
+                    if table_name == "episodes":
+                        apply_episode_canonical_links(
+                            pg_cur=pg_cur,
+                            execute_values=execute_values,
+                            episode_links=canonical_links,
                         )
 
                 update_import_batch(
@@ -733,27 +984,97 @@ def import_tables(
                     error_text=None,
                 )
             except Exception as exc:
-                update_import_batch(
-                    pg_cur,
-                    batch_id,
-                    episode_count=imported_counts.get("episodes", 0),
-                    segment_count=imported_counts.get("transcript_segments", 0),
-                    character_count=imported_counts.get("characters", 0),
-                    status="failed",
-                    error_text=str(exc)[:2000],
-                )
+                pg_conn.rollback()
+                try:
+                    with pg_conn.cursor() as failed_cur:
+                        update_import_batch(
+                            failed_cur,
+                            batch_id,
+                            episode_count=imported_counts.get("episodes", 0),
+                            segment_count=imported_counts.get("transcript_segments", 0),
+                            character_count=imported_counts.get("characters", 0),
+                            status="failed",
+                            error_text=str(exc)[:2000],
+                        )
+                    pg_conn.commit()
+                except Exception:
+                    pass
                 raise
 
     return imported_counts
+
+
+def verify_tables(
+    *,
+    sqlite_conn: sqlite3.Connection,
+    table_names: List[str],
+    table_configs: Dict[str, TableConfig],
+    database_url: str,
+) -> Dict[str, Dict[str, Any]]:
+    psycopg2, sql_mod, _, _ = ensure_postgres_driver()
+
+    verification: Dict[str, Dict[str, Any]] = {}
+    source_counts: Dict[str, int] = {
+        table_name: count_sqlite_source_rows(sqlite_conn, table_configs[table_name])
+        for table_name in table_names
+    }
+
+    with psycopg2.connect(database_url) as pg_conn:
+        with pg_conn.cursor() as pg_cur:
+            target_columns_by_table = get_public_table_columns(pg_cur, table_names)
+            missing_tables = [name for name, cols in target_columns_by_table.items() if not cols]
+            if missing_tables:
+                raise RuntimeError(
+                    "Target Postgres schema is missing table metadata for: "
+                    + ", ".join(sorted(missing_tables))
+                )
+
+            for table_name in table_names:
+                pg_cur.execute(
+                    sql_mod.SQL("SELECT COUNT(*) FROM {}").format(sql_mod.Identifier(table_name))
+                )
+                row = pg_cur.fetchone()
+                hosted_count = int(row[0]) if row else 0
+                source_count = int(source_counts.get(table_name, 0))
+                table_result: Dict[str, Any] = {
+                    "source": source_count,
+                    "hosted": hosted_count,
+                    "delta": hosted_count - source_count,
+                    "match": hosted_count == source_count,
+                }
+
+                # For small mismatched tables, compute ID-level diffs to speed debugging.
+                if (
+                    not table_result["match"]
+                    and source_count <= 50000
+                    and hosted_count <= 50000
+                    and "id" in target_columns_by_table.get(table_name, [])
+                    and table_name in table_configs
+                ):
+                    source_ids = list_sqlite_source_ids(sqlite_conn, table_configs[table_name])
+                    pg_cur.execute(
+                        sql_mod.SQL("SELECT id FROM {} ORDER BY id").format(
+                            sql_mod.Identifier(table_name)
+                        )
+                    )
+                    hosted_ids = [int(r[0]) for r in pg_cur.fetchall() if r and r[0] is not None]
+                    source_id_set = set(source_ids)
+                    hosted_id_set = set(hosted_ids)
+                    table_result["missing_in_hosted"] = sorted(source_id_set - hosted_id_set)[:20]
+                    table_result["extra_in_hosted"] = sorted(hosted_id_set - source_id_set)[:20]
+
+                verification[table_name] = table_result
+
+    return verification
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Export local SQLite data to hosted Postgres.")
     parser.add_argument(
         "--mode",
-        choices=["export", "import", "full"],
+        choices=["export", "import", "full", "verify"],
         default="full",
-        help="export: JSON only, import: DB upsert only, full: both",
+        help="export: JSON only, import: DB upsert only, full: export+import, verify: local vs hosted row-count check",
     )
     parser.add_argument(
         "--tables",
@@ -805,13 +1126,15 @@ def main() -> None:
     sqlite_path = Path(args.sqlite_path).expanduser().resolve()
     export_root = Path(args.export_root).expanduser().resolve()
 
+    load_default_env_files()
+
     if not sqlite_path.exists():
         raise SystemExit(f"SQLite DB not found: {sqlite_path}")
 
-    needs_import = args.mode in {"import", "full"}
+    needs_import = args.mode in {"import", "full", "verify"}
     database_url = os.getenv("DATABASE_URL", "").strip()
     if needs_import and not args.dry_run and not database_url:
-        raise SystemExit("DATABASE_URL is required for import/full mode.")
+        raise SystemExit("DATABASE_URL is required for import/full/verify mode.")
 
     sqlite_conn = sqlite3.connect(str(sqlite_path))
     sqlite_conn.row_factory = sqlite3.Row
@@ -845,6 +1168,36 @@ def main() -> None:
             print("[import] counts:")
             for table_name in table_names:
                 print(f"  - {table_name}: {import_counts.get(table_name, 0)}")
+
+        if args.mode in {"verify", "full"} and not args.dry_run:
+            verification = verify_tables(
+                sqlite_conn=sqlite_conn,
+                table_names=table_names,
+                table_configs=table_configs,
+                database_url=database_url,
+            )
+            print("[verify] import-source vs hosted row counts:")
+            mismatches: List[str] = []
+            for table_name in table_names:
+                row = verification[table_name]
+                status = "ok" if row["match"] else "mismatch"
+                print(
+                    f"  - {table_name}: source={row['source']} hosted={row['hosted']} "
+                    f"delta={row['delta']} [{status}]"
+                )
+                if not row["match"]:
+                    missing_ids = row.get("missing_in_hosted")
+                    extra_ids = row.get("extra_in_hosted")
+                    if missing_ids is not None:
+                        print(f"      missing_in_hosted_ids={missing_ids}")
+                    if extra_ids is not None:
+                        print(f"      extra_in_hosted_ids={extra_ids}")
+                if not row["match"]:
+                    mismatches.append(table_name)
+            if mismatches:
+                raise SystemExit(
+                    "Verification failed for table(s): " + ", ".join(mismatches)
+                )
 
         print("[done] export/import pipeline finished.")
     finally:

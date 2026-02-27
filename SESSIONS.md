@@ -1,5 +1,164 @@
 # Development Sessions Log
 
+## Session: February 27, 2026
+
+### Current State Update (CI Environment Binding for Hosted Verify)
+
+**Done:**
+- Bound `hosted-verify` job to GitHub Environment `hosted` in `.github/workflows/ci.yml` (`environment: hosted`) so environment-level `DATABASE_URL` secrets are available to that job.
+
+**Pending:**
+- Confirm your environment name is exactly `hosted`; if you used a different name, update that single line in workflow to match.
+- Trigger `CI` via `workflow_dispatch` and verify `hosted-verify` starts and can access secret.
+
+**Blockers:**
+- Hosted verify still requires `data/ice_cream_social.db` in runner checkout; on GitHub-hosted runners this step will warn/skip unless DB is supplied.
+
+**Tests Run:**
+- `ruby -e "require 'yaml'; YAML.load_file('.github/workflows/ci.yml'); puts 'ci.yml syntax ok'"` — **pass**
+
+### Current State Update (CI Wiring: Hosted Verify Job)
+
+**Done:**
+- Updated `.github/workflows/ci.yml` to include `workflow_dispatch` so hosted verification can be run manually from Actions.
+- Added new `hosted-verify` CI job that runs `python scripts/export_to_hosted.py --mode verify` when:
+  - event is not `pull_request`
+  - repository secret `DATABASE_URL` is set
+- Added safe guard in the job for missing local source DB in checkout (`data/ice_cream_social.db`): job emits warning and skips verify step instead of failing entire CI.
+- Added Python setup + `psycopg2-binary` install in the job to ensure importer connectivity to Postgres in GitHub runners.
+
+**Pending:**
+- Add repository secret `DATABASE_URL` in GitHub Settings -> Secrets and variables -> Actions.
+- If you want this to actually execute in GitHub-hosted runners, provide `data/ice_cream_social.db` to CI (or run this job on a self-hosted runner that has the DB file).
+
+**Blockers:**
+- GitHub checkout does not include `data/ice_cream_social.db` by default (ignored in repo), so hosted verify step will skip unless DB is supplied in CI environment.
+
+**Tests Run:**
+- `ruby -e "require 'yaml'; YAML.load_file('.github/workflows/ci.yml'); puts 'ci.yml syntax ok'"` — **pass**
+
+### Current State Update (Hosted Verification Mode + Data Sync Validation)
+
+**Done:**
+- Added `verify` mode to `scripts/export_to_hosted.py` so hosted validation can run through the same env-loading path as import (`--mode verify`).
+- Implemented import-source-aware verification (counts now compare hosted rows vs each table’s actual import `SELECT`, not raw SQLite table counts), which correctly handles importer filters like `transcript_segments` episode join scope.
+- Added small-table mismatch diagnostics in verify output (`missing_in_hosted_ids` / `extra_in_hosted_ids`) to speed root-cause analysis when counts diverge.
+- Re-imported drifted tables and completed a full hosted verification pass with all tables in sync:
+  - `shows=1`, `episodes=2218`, `speakers=10`, `episode_speakers=84`, `characters=2`, `character_appearances=1`, `chapter_types=11`, `episode_chapters=10`, `audio_drops=4`, `audio_drop_instances=4`, `wiki_lore=0`, `wiki_lore_mentions=0`, `wiki_episode_meta=7`, `transcript_segments=1851398`.
+
+**Pending:**
+- Optional: run `--mode verify` periodically (or in CI) after future local backfills/edits to detect hosted drift early.
+
+**Blockers:**
+- None.
+
+**Tests Run:**
+- `./venv/bin/python3.14 scripts/export_to_hosted.py --mode import` — **pass** (full hosted import completed)
+- `./venv/bin/python3.14 -m py_compile scripts/export_to_hosted.py` — **pass**
+- `./venv/bin/python3.14 scripts/export_to_hosted.py --mode verify` — **pass** (all configured tables `[ok]`)
+- `./venv/bin/python3.14 scripts/export_to_hosted.py --mode import --tables episode_chapters transcript_segments` — **pass**
+- `./venv/bin/python3.14 scripts/export_to_hosted.py --mode verify --tables episode_chapters` — **pass**
+
+### Current State Update (Web Phase 1: Search + Episode/Wiki Read Pages)
+
+**Done:**
+- Replaced hosted search API stub with real Postgres FTS-backed endpoint in `web/app/api/v1/search/route.ts` using shared query logic.
+- Added shared transcript search utility in `web/lib/search.ts` (query normalization, pagination, `text_search` lookup, episode join shaping).
+- Replaced public Search page stub with working UI in `web/app/(public)/search/page.tsx` (query form, result list, pagination, deep links to episode segments).
+- Replaced Episode detail stub in `web/app/(public)/episodes/[id]/page.tsx` with live hosted reads: episode metadata, wiki summary (if present), chapters, speaker assignments, transcript preview.
+- Replaced Wiki lore stub in `web/app/(public)/wiki/[slug]/page.tsx` with live hosted reads: lore summary, aliases/wiki link, first episode link, recent mention list.
+
+**Pending:**
+- Manual browse verification in `npm --prefix web run dev` against live hosted data (empty-state copy and result quality checks).
+- Optional follow-up: wire a visible Wiki index/discovery surface in nav/routes (currently wiki pages are deep-linkable by slug).
+
+**Blockers:**
+- None.
+
+**Tests Run:**
+- `npm --prefix web run build` — **pass** (Next.js 15 build + type check; dynamic routes generated: `/episodes/[id]`, `/search`, `/wiki/[slug]`, `/api/v1/search`)
+
+### Current State Update (Sound Bite Signature Phrase Save/UI Sync Fix)
+
+**Done:**
+- Fixed stale UI refresh for sound-bite signature phrase saves by invalidating the `audioDrops` static cache after updates in `scripts/dashboard-react/src/services/api.js`.
+- Updated both `contentAPI.updateAudioDropTranscript()` and `contentAPI.updateAudioDropWindow()` to call `invalidateStaticCache('audioDrops')` after successful Tauri writes.
+- This keeps `SpeakersPanel` in sync when it re-fetches audio drops after save, so saved signature text no longer disappears immediately in UI.
+
+**Pending:**
+- Manual in-app verification in Tauri: edit a sound bite signature phrase in Audio Identification, click Save, confirm phrase remains after refresh/reopen.
+
+**Blockers:**
+- None.
+
+**Tests Run:**
+- `npm --prefix scripts/dashboard-react run build` — **pass** (Vite production build successful)
+
+### Current State Update (Hosted Import FK + Error-Path Fix)
+
+**Done:**
+- Updated `scripts/export_to_hosted.py` to import `episodes` in two phases: first upsert with `canonical_id=NULL`, then apply canonical self-references in a batched update. This fixes `episodes_canonical_id_fkey` failures when a row references a not-yet-inserted episode id.
+- Fixed import failure handling in `scripts/export_to_hosted.py` to `ROLLBACK` before writing failed `import_batches` status, preventing `InFailedSqlTransaction` from masking the root DB error.
+- Added a small transaction-safety improvement: when `import_batches` row is created, it is committed immediately so later failure status updates can be recorded.
+
+**Pending:**
+- Re-run hosted import against Supabase to confirm full end-to-end success on real credentials/network (`--mode full` or at least `--mode import --tables episodes`).
+
+**Blockers:**
+- None in local code validation; Supabase connectivity/auth still depends on local environment credentials.
+
+**Tests Run:**
+- `./venv/bin/python3.14 -m py_compile scripts/export_to_hosted.py` — **pass**
+- `./venv/bin/python3.14 scripts/export_to_hosted.py --mode import --tables episodes --dry-run` — **pass** (reported `episodes: 2218`)
+
+### Current State Update (Hosted Import Canonical Cast Fix)
+
+**Done:**
+- Updated `scripts/export_to_hosted.py` `apply_episode_canonical_links()` SQL to cast `VALUES` payload columns explicitly (`id::bigint`, `canonical_id::bigint`) before updating `episodes.canonical_id`.
+- This fixes Postgres error `operator does not exist: bigint = text` seen during canonical link backfill.
+
+**Pending:**
+- Re-run hosted import against Supabase to verify full import completion after the cast fix.
+
+**Blockers:**
+- None in local validation; end-to-end verification depends on remote DB run.
+
+**Tests Run:**
+- `./venv/bin/python3.14 -m py_compile scripts/export_to_hosted.py` — **pass**
+
+### Current State Update (Hosted Import Timestamp Normalization Fix)
+
+**Done:**
+- Added robust timestamp normalization in `scripts/export_to_hosted.py` for hosted `timestamptz` columns so loose/localized source values (for example `April 16th, 2020`) are converted to ISO-8601 before Postgres upsert.
+- Applied normalization to all affected hosted fields: `episodes.published_date`, `speakers.created_at`, `characters.created_at`, `character_appearances.created_at`, `chapter_types.created_at`, `episode_chapters.created_at`, `audio_drops.created_at`, `audio_drop_instances.created_at`, `wiki_lore.last_synced`, `wiki_episode_meta.air_date`, and `wiki_episode_meta.last_synced`.
+
+**Pending:**
+- Re-run full hosted import against Supabase (`--mode import` / `--mode full`) to confirm end-to-end completion on remote DB.
+
+**Blockers:**
+- None in local validation.
+
+**Tests Run:**
+- `./venv/bin/python3.14 -m py_compile scripts/export_to_hosted.py` — **pass**
+- `./venv/bin/python3.14 - <<'PY' ... normalize_timestamptz(...) sample checks ... PY` — **pass** (`April 16th, 2020` normalized to `2020-04-16T00:00:00+00:00`)
+- `./venv/bin/python3.14 scripts/export_to_hosted.py --mode import --tables episodes wiki_episode_meta wiki_lore --dry-run` — **pass**
+
+### Current State Update (Hosted Import Row-Shape Guard Fix)
+
+**Done:**
+- Fixed `normalize_timestamptz_fields()` in `scripts/export_to_hosted.py` so it only normalizes fields that already exist in each row instead of injecting missing keys.
+- This resolves hosted import failures where tables without `created_at` (for example `episode_speakers`) were receiving an unexpected `created_at` column in generated upsert SQL.
+
+**Pending:**
+- Re-run hosted import against Supabase to confirm full end-to-end completion after row-shape fix.
+
+**Blockers:**
+- None in local validation.
+
+**Tests Run:**
+- `./venv/bin/python3.14 -m py_compile scripts/export_to_hosted.py` — **pass**
+- `./venv/bin/python3.14 - <<'PY' ... episode_speakers key-shape check ... PY` — **pass** (no `created_at` key present)
+
 ## Session: February 26, 2026 (continued)
 
 ### Current State Update (Phase 1: Web Read Experience + Hosted Data Model)
@@ -34,6 +193,24 @@
 ---
 
 ## Session: February 26, 2026
+
+### Current State Update (Supabase Connectivity Smoke Test)
+
+- Ran `npm --prefix web run build` successfully with `.env` loaded by Next.js
+- Started Next.js dev server and called `GET /api/v1/episodes?page=1&per_page=3`
+- Response was `500` with: `Could not find the table 'public.episodes' in the schema cache`
+- Interpretation: Supabase credentials are wired, but hosted schema is not applied yet (or wrong project/ref), so import/app reads cannot proceed
+
+### Current State Update (Supabase New-Key Alias Support)
+
+- Updated web Supabase env resolution to support both naming styles:
+  - New: `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`
+  - Back-compat: `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
+- Added `web/lib/supabase/env.ts` and switched `client.ts`, `server.ts`, and `middleware.ts` to use shared env getters with explicit missing-env errors
+- Updated env templates to document new key naming while keeping compatible aliases:
+  - `.env.example`
+  - `web/.env.example`
+  - `scripts/.env.example`
 
 ### Current State Update (Phase 1 Hosted Bridge: Export/Import Pipeline + Env Templates)
 
@@ -330,3 +507,115 @@ What current reprocess actually uses
   ---
   The highest-ROI short-term improvement is fixing the hints file to include resolved flags + approved Qwen classifications + exclude character voice segments from voice matching. That's a
   Rust-side change to reprocess_diarization in commands/episodes.rs — want me to implement that?
+
+
+### Current State Update (Hosted Import MCP Schema Drift Fix)
+
+- **Done:** Hardened `scripts/export_to_hosted.py` import path to read live Postgres public-column metadata and drop unmapped source columns before upsert; this prevents failures like `episode_speakers.created_at` against hosted schema. Added explicit validation for missing target table metadata and missing conflict columns, with one-time drift warnings per table.
+- **Pending:** Re-run a real hosted import (`--mode import` or `--mode full`) against Supabase with `DATABASE_URL` set to confirm end-to-end completion past `episode_speakers`.
+- **Blockers:** None.
+
+Tests Run
+- `python3 -m py_compile scripts/export_to_hosted.py` — **PASS** (no syntax errors)
+- `python3 scripts/export_to_hosted.py --mode import --dry-run --tables episode_speakers wiki_lore wiki_lore_mentions wiki_episode_meta transcript_segments` — **PASS** (table counts printed; pipeline completed)
+
+### Current State Update (Hosted Import Env Auto-Load)
+
+- **Done:** Updated `scripts/export_to_hosted.py` to auto-load environment variables from `.env` and `scripts/.env` before import checks, and added parser support for both `KEY=value` and `KEY: value` assignment formats.
+- **Pending:** Add a real `DATABASE_URL` value to local `.env` (or export it in shell) and rerun non-dry-run hosted import.
+- **Blockers:** `DATABASE_URL` is still missing in current runtime environment, so import cannot connect.
+
+Tests Run
+- `python3 -m py_compile scripts/export_to_hosted.py` — **PASS** (no syntax errors)
+- `python3 - <<'PY' ... _split_env_assignment(...) ... PY` — **PASS** (`=` and `:` env line parsing validated)
+- `python3 scripts/export_to_hosted.py --mode import --dry-run --tables episode_speakers wiki_lore wiki_lore_mentions wiki_episode_meta transcript_segments` — **PASS** (dry-run counts printed; pipeline completed)
+
+### Current State Update (Root Env Template Alignment)
+
+- **Done:** Added `DATABASE_URL` placeholder and usage note to root `.env.example` so top-level env setup includes hosted import requirements.
+- **Pending:** Populate `.env` with a real `DATABASE_URL` and rerun non-dry-run hosted import.
+- **Blockers:** Cannot execute hosted import without user-provided DB connection value.
+
+Tests Run
+- `rg -n "DATABASE_URL" .env.example scripts/.env.example` — **PASS** (confirmed `DATABASE_URL` documented in both templates)
+
+### Current State Update (Hosted Import Completed)
+
+- **Done:** Completed hosted import for `shows`, `episodes`, `speakers`, `episode_speakers`, `wiki_lore`, `wiki_lore_mentions`, `wiki_episode_meta`, and `transcript_segments` using `scripts/export_to_hosted.py`.
+- **Done:** Fixed hosted import blockers by (1) adding schema-aware column filtering in importer, (2) auto-loading `.env`/`scripts/.env` for `DATABASE_URL`, (3) documenting `DATABASE_URL` in root `.env.example`, and (4) filtering `transcript_segments` export to rows whose `episode_id` exists in `episodes` to avoid FK violations from orphan local rows.
+- **Pending:** Optional follow-up import of additional content tables (`characters`, `chapter_types`, `episode_chapters`, `audio_drops`, `audio_drop_instances`, etc.) if you want the hosted mirror expanded.
+- **Blockers:** None.
+
+Tests Run
+- `python3 -m py_compile scripts/export_to_hosted.py` — **PASS** (script compiles)
+- `python3 scripts/export_to_hosted.py --mode import --dry-run --tables episode_speakers wiki_lore wiki_lore_mentions wiki_episode_meta transcript_segments` — **PASS** (dry-run counts)
+- `./venv/bin/python3.14 scripts/export_to_hosted.py --mode import --tables shows episodes speakers episode_speakers wiki_lore wiki_lore_mentions wiki_episode_meta transcript_segments` — **PASS** (import completed; transcript segments loaded)
+- Supabase MCP verification SQL — **PASS**:
+  - `public.shows`: 1
+  - `public.episodes`: 2218 (id range 2..2219)
+  - `public.episode_speakers`: 84
+  - `public.transcript_segments`: 1,787,899
+
+### Current State Update (Hosted Import Pass - Characters/Chapters/Drops)
+
+- **Done:** Ran hosted import pass for `shows`, `episodes`, `speakers`, `characters`, `chapter_types`, `episode_chapters`, `audio_drops`, and `audio_drop_instances` successfully.
+- **Done:** Verified hosted row counts via Supabase MCP: `characters=2`, `chapter_types=10`, `episode_chapters=8`, `audio_drops=4`, `audio_drop_instances=4`.
+- **Pending:** Optional remaining hosted imports for other content tables (for example `character_appearances`, `wiki_*` refresh, and any additional analytics/review tables) if needed.
+- **Blockers:** None.
+
+Tests Run
+- `./venv/bin/python3.14 scripts/export_to_hosted.py --mode import --tables shows episodes speakers characters chapter_types episode_chapters audio_drops audio_drop_instances` — **PASS** (import completed with expected per-table counts)
+- Supabase MCP SQL checks — **PASS** (table counts match import output)
+
+### Current State Update (Hosted Import Pass - Character Appearances)
+
+- **Done:** Imported `character_appearances` with FK-safe parent set (`shows`, `episodes`, `speakers`, `characters`) using hosted import pipeline.
+- **Done:** Verified hosted counts across all import-target tables; `character_appearances` now present (`1` row), and previously-imported tables remain populated.
+- **Pending:** Optional data quality review for intentionally sparse tables (`wiki_lore=0`, `wiki_lore_mentions=0`) if you expect non-zero source data.
+- **Blockers:** None.
+
+Tests Run
+- `./venv/bin/python3.14 scripts/export_to_hosted.py --mode import --tables shows episodes speakers characters character_appearances` — **PASS** (import completed; `character_appearances: 1`)
+- Supabase MCP SQL aggregate count check across all hosted import-target tables — **PASS** (counts returned as expected)
+
+
+### Current State Update (Voice Store SQLite Cutover + Verification Tooling)
+
+- **Done:** Enforced SQLite embedding store for Tauri runtime voice workflows by passing `--store-mode sqlite` (and DB path where applicable) across `voice_library.py` command invocations in `episodes.rs`, `speakers.rs`, and diarization worker (`worker/diarize.rs` via `--voice-store-mode sqlite`).
+- **Done:** Added strict SQLite mode behavior in `scripts/voice_library.py` (`--store-mode sqlite` now fails fast if SQLite store is unavailable; JSON writes are skipped in SQLite mode).
+- **Done:** Added new voice library maintenance commands in `scripts/voice_library.py`:
+  - `rebuild-from-db` (recomputes centroids from `voice_embedding_samples`)
+  - `verify` (reports integrity metrics: orphan rows, missing files, centroid coverage)
+- **Done:** Updated auxiliary scripts to default to SQLite store for embeddings:
+  - `scripts/harvest_voice_samples.py` now supports `--store-mode` and defaults to `sqlite`
+  - `scripts/extract_voice_sample.py` now supports `--store-mode` and defaults to `sqlite`
+  - `scripts/speaker_diarization.py` now supports `--voice-store-mode`/`--voice-db-path` and passes them into `VoiceLibrary`
+- **Pending:** Optional UI wiring for `verify` / `rebuild-from-db` if you want one-click controls in Settings/Speakers panel.
+- **Blockers:** None.
+
+Tests Run
+- `python3 -m py_compile scripts/voice_library.py scripts/speaker_diarization.py scripts/harvest_voice_samples.py scripts/extract_voice_sample.py` — **PASS** (all scripts compile)
+- `./venv/bin/python3.14 scripts/voice_library.py verify --backend pyannote --db-path data/ice_cream_social.db --store-mode sqlite` — **PASS** (command executes and returns JSON integrity report)
+- `./venv/bin/python3.14 scripts/voice_library.py rebuild-from-db --backend pyannote --db-path data/ice_cream_social.db --store-mode sqlite` — **PASS** (centroids rebuilt from DB samples)
+- `cargo check --manifest-path src-tauri/Cargo.toml` — **PASS** (build check succeeded; existing dead_code warning unchanged)
+- `cargo test --manifest-path src-tauri/Cargo.toml` — **PASS** (`49 passed, 0 failed`)
+
+### Current State Update (Playwright Re-enabled + Voice Flow E2E Harness)
+
+- **Done:** Re-enabled Playwright GitHub workflow on push/PR in `.github/workflows/playwright.yml` and updated it to install both root + dashboard dependencies before running tests.
+- **Done:** Updated Playwright setup to current published version `@playwright/test@1.58.2` and added root npm scripts (`test:e2e`, headed/UI variants, browser install helper).
+- **Done:** Replaced brittle legacy external/backend-dependent Playwright specs with deterministic local tests:
+  - `tests/ice-cream-social.spec.ts` now validates voice sample + voiceprint UI flow via a dedicated harness page.
+  - `tests/example.spec.ts` now validates local harness page load (no external site dependency).
+- **Done:** Added `scripts/dashboard-react/public/e2e-voice-flow.html` harness that exercises the same frontend API calls used by UI (`save_voice_samples` + `get_voice_library`) in a mocked Tauri IPC mode.
+- **Done:** Added Playwright-friendly Tauri mock support in `scripts/dashboard-react/src/services/tauri.js` (`window.__TAURI_MOCK__` support for `invoke`/`listen`).
+- **Pending:** True native Tauri window E2E (real IPC + filesystem + DB in app window) would still require a dedicated Tauri-driver/WebDriver setup; current harness validates frontend command wiring deterministically.
+- **Blockers:** None.
+
+Tests Run
+- `npm view @playwright/test version` — **PASS** (`1.58.2`)
+- `npm install` — **PASS** (updated lockfile/deps)
+- `npx playwright --version` — **PASS** (`Version 1.58.2`)
+- `npx playwright install chromium` — **PASS** (installed Chromium + headless shell)
+- `npx playwright test` — **PASS** (`2 passed`)
+- `npm --prefix scripts/dashboard-react run build` — **PASS** (Vite production build succeeds)
