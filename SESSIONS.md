@@ -2,6 +2,32 @@
 
 ## Session: February 27, 2026
 
+### Current State Update (GitHub Project Access Unblocked + Board Live)
+
+**Done:**
+- Verified `gh` token now includes `project` scope and confirmed project API access works.
+- Created GitHub Project board: `ICS Roadmap + Clip Feed Tracker` (`https://github.com/users/ryanmontgomerytate/projects/1`).
+- Seeded board items from both trackers using `scripts/github/seed_tracker_project.sh`.
+- Wired repo automation settings:
+  - variable `PROJECT_BOARD_URL`
+  - secret `PROJECTS_TOKEN`
+- Fixed workflow config mismatch by renaming invalid repo variable key usage from `GITHUB_PROJECT_URL` to `PROJECT_BOARD_URL` in:
+  - `.github/workflows/project-board-sync.yml`
+  - `docs/operations/GITHUB_PROJECT_BOARD.md`
+
+**Pending:**
+- Optional: add `status:*` labels to existing issues/PRs so automation maps them into explicit board columns beyond default Todo/Done behavior.
+
+**Blockers:**
+- None.
+
+**Tests Run:**
+- `gh project list --owner "@me" --limit 50 --format json` — **pass**
+- `gh project create --owner "@me" --title "ICS Roadmap + Clip Feed Tracker" --format json` — **pass**
+- `bash scripts/github/seed_tracker_project.sh` — **pass** (created/synced tracker items)
+- `gh variable list --repo ryanmontgomerytate/ice-cream-social` — **pass** (`PROJECT_BOARD_URL` present)
+- `gh secret list --repo ryanmontgomerytate/ice-cream-social` — **pass** (`PROJECTS_TOKEN` present)
+
 ### Current State Update (GitHub Project Board Mirror + Tracker Sync Automation)
 
 **Done:**

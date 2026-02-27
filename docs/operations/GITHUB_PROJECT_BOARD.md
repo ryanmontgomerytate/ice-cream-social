@@ -42,7 +42,7 @@ bash scripts/github/seed_tracker_project.sh
 This repo includes `.github/workflows/project-board-sync.yml`.
 
 Set these repo settings so workflow automation can add/update board items:
-- Repository variable: `GITHUB_PROJECT_URL` = full project URL
+- Repository variable: `PROJECT_BOARD_URL` = full project URL
 - Repository secret: `PROJECTS_TOKEN` = PAT with `repo`, `read:project`, `project`
 
 Workflow behavior:

@@ -21,11 +21,11 @@ jobs:
       - name: Validate project automation configuration
         id: validate
         env:
-          GITHUB_PROJECT_URL: ${{ vars.GITHUB_PROJECT_URL }}
+          PROJECT_BOARD_URL: ${{ vars.PROJECT_BOARD_URL }}
           PROJECTS_TOKEN: ${{ secrets.PROJECTS_TOKEN }}
         run: |
-          if [ -z "${GITHUB_PROJECT_URL:-}" ]; then
-            echo "::warning::Missing repo variable GITHUB_PROJECT_URL. Project sync is disabled."
+          if [ -z "${PROJECT_BOARD_URL:-}" ]; then
+            echo "::warning::Missing repo variable PROJECT_BOARD_URL. Project sync is disabled."
             echo "enabled=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -40,21 +40,21 @@ jobs:
         if: ${{ steps.validate.outputs.enabled == 'true' }}
         uses: actions/add-to-project@v1.0.2
         with:
-          project-url: ${{ vars.GITHUB_PROJECT_URL }}
+          project-url: ${{ vars.PROJECT_BOARD_URL }}
           github-token: ${{ secrets.PROJECTS_TOKEN }}
 
       - name: Sync project Status field
         if: ${{ steps.validate.outputs.enabled == 'true' }}
         uses: actions/github-script@v7
         env:
-          GITHUB_PROJECT_URL: ${{ vars.GITHUB_PROJECT_URL }}
+          PROJECT_BOARD_URL: ${{ vars.PROJECT_BOARD_URL }}
         with:
           github-token: ${{ secrets.PROJECTS_TOKEN }}
           script: |
-            const projectUrl = process.env.GITHUB_PROJECT_URL;
+            const projectUrl = process.env.PROJECT_BOARD_URL;
             const matches = projectUrl.match(/github\.com\/(?:users|orgs)\/([^/]+)\/projects\/(\d+)/);
             if (!matches) {
-              core.warning(`Invalid GITHUB_PROJECT_URL format: ${projectUrl}`);
+              core.warning(`Invalid PROJECT_BOARD_URL format: ${projectUrl}`);
               return;
             }
 
