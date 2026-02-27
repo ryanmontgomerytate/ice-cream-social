@@ -2,6 +2,26 @@
 
 ## Session: February 27, 2026
 
+### Current State Update (Phase 1 Progress: Wiki Index/Discovery Route + Nav)
+
+**Done:**
+- Added public wiki index/discovery route at `web/app/(public)/wiki/page.tsx` with:
+  - search (`q`)
+  - category filter tabs
+  - pagination
+  - links into existing lore detail pages (`/wiki/[slug]`)
+- Added top-level navigation link to `/wiki` in `web/app/layout.tsx`.
+- Updated roadmap tracker to reflect this Phase 1 milestone in `docs/EVOLVE_ICS_TRACKER.md`.
+
+**Pending:**
+- Continue Phase 1 by improving search ranking relevance/results quality.
+
+**Blockers:**
+- None.
+
+**Tests Run:**
+- `npm --prefix web run build` — **pass** (includes routes `/wiki` and `/wiki/[slug]`)
+
 ### Current State Update (Phase 0 SDLC Foundation: Rust fmt Blocker Cleared)
 
 **Done:**

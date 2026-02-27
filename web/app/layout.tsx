@@ -35,6 +35,9 @@ export default function RootLayout({
               <Link href="/episodes" className="hover:text-white transition-colors">
                 Episodes
               </Link>
+              <Link href="/wiki" className="hover:text-white transition-colors">
+                Wiki
+              </Link>
               <Link href="/search" className="hover:text-white transition-colors">
                 Search
               </Link>
