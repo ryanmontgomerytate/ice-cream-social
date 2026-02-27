@@ -2,6 +2,29 @@
 
 ## Session: February 27, 2026
 
+### Current State Update (Phase 1 Search Relevance: Ranked RPC + Safe Fallback)
+
+**Done:**
+- Added hosted migration `web/supabase/migrations/002_search_ranked_rpc.sql` introducing `public.search_transcript_segments(...)`:
+  - ranks by `ts_rank_cd(text_search, tsquery)`
+  - ties broken by newest episode publish date
+  - paginated with bounded page size.
+- Updated `web/lib/search.ts` to:
+  - use ranked RPC path by default
+  - fall back to basic text-search path when RPC is not yet applied
+  - keep timeout-safe warning behavior and diagnostics IDs.
+- Updated `docs/EVOLVE_ICS_TRACKER.md` Phase 1 notes/next-step to reflect ranked search implementation and hosted migration validation.
+- Commit scope intentionally limited to active Phase 1 files only (unrelated local modifications left untouched).
+
+**Pending:**
+- Apply migration `002_search_ranked_rpc.sql` in hosted Supabase environment and validate ranking quality against real query samples.
+
+**Blockers:**
+- None in local code/build; hosted ranking validation depends on migration being applied remotely.
+
+**Tests Run:**
+- `npm --prefix web run build` — **pass**
+
 ### Current State Update (Workflow Rule: Selective Task Commits)
 
 **Done:**
