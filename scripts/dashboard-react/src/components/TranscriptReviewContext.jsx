@@ -57,6 +57,10 @@ export function TranscriptReviewProvider({ episode, onNotification, isVisible, c
     (speakerId) => handlersRef.current.seekToSpeaker?.(speakerId),
     []
   )
+  const playTrimmedSample = useCallback(
+    (idx) => handlersRef.current.playTrimmedSample?.(idx),
+    []
+  )
   // assignSpeakerName: update display state, then notify TranscriptEditor to
   // mark unsaved changes (the actual DB write happens in TranscriptEditor.saveEdits)
   const assignSpeakerName = useCallback((label, name) => {
@@ -112,6 +116,7 @@ export function TranscriptReviewProvider({ episode, onNotification, isVisible, c
     toggleVoiceSample,
     seekToSegment,
     seekToSpeaker,
+    playTrimmedSample,
     assignSpeakerName,
     assignAudioDrop,
     // Passed-through context props

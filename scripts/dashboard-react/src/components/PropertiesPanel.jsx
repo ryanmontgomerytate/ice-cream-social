@@ -177,6 +177,7 @@ export default function PropertiesPanel() {
     removeCharacter,
     deleteChapter,
     toggleVoiceSample,
+    playTrimmedSample,
     seekToSegment,
     assignSpeakerName,
     assignAudioDrop,
@@ -608,7 +609,8 @@ export default function PropertiesPanel() {
     if (!displayName) return true // unnamed — always show
     return speakers.findIndex(s => speakerNames[s] === displayName) === idx
   })
-  const speakerCount = deduplicatedSpeakers.length
+  const unknownSegmentCount = segments?.filter(s => !s.speaker || s.speaker === 'UNKNOWN').length ?? 0
+  const speakerCount = deduplicatedSpeakers.length + (unknownSegmentCount > 0 ? 1 : 0)
 
   const getSegmentTime = (idx) => {
     if (!segments?.[idx]) return null
@@ -681,6 +683,16 @@ export default function PropertiesPanel() {
             </span>
           </div>
           <div className="flex flex-wrap gap-1">
+            {unknownSegmentCount > 0 && (
+              <button
+                onClick={() => seekToSpeaker?.('UNKNOWN')}
+                className="px-2 py-1 rounded text-xs font-medium flex items-center gap-1 bg-gray-100 text-gray-500 border border-gray-300 hover:shadow-sm transition-all"
+                title={`${unknownSegmentCount} unassigned segment${unknownSegmentCount !== 1 ? 's' : ''} — click to navigate`}
+              >
+                ❓ Unknown ({unknownSegmentCount})
+                <span className="opacity-50 text-[10px]">▶</span>
+              </button>
+            )}
             {deduplicatedSpeakers.map(speakerId => {
               const colors = getSpeakerColor(speakerId)
               const displayName = speakerNames[speakerId]
@@ -1036,31 +1048,51 @@ export default function PropertiesPanel() {
                 <div className="text-xs text-gray-600 mb-2">
                   {sampleCount} audio ID{sampleCount !== 1 ? 's' : ''} marked
                 </div>
-                {Object.keys(markedSamples).map(idx => (
-                  <div
-                    key={idx}
-                    className="p-2 rounded-lg bg-yellow-50 border border-yellow-200 cursor-pointer hover:shadow-sm transition-shadow"
-                    onClick={() => seekToSegment?.(parseInt(idx))}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span>⭐</span>
-                        <span className="text-xs font-medium text-yellow-800">Clip #{idx}</span>
+                {Object.keys(markedSamples).map(idx => {
+                  const sample = markedSamples[idx]
+                  const duration = sample ? (sample.endTime - sample.startTime).toFixed(1) : null
+                  return (
+                    <div key={idx} className="p-2 rounded-lg bg-yellow-50 border border-yellow-200">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => playTrimmedSample?.(parseInt(idx))}
+                            className="w-6 h-6 flex items-center justify-center bg-yellow-400 hover:bg-yellow-500 text-yellow-900 rounded-full transition-colors flex-shrink-0"
+                            title="Play trimmed sample"
+                          >
+                            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                              <path d="M8 5v14l11-7z" />
+                            </svg>
+                          </button>
+                          <div>
+                            <span className="text-xs font-medium text-yellow-800">Clip #{idx}</span>
+                            {duration && <span className="text-[10px] text-yellow-600 ml-1">{duration}s</span>}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => seekToSegment?.(parseInt(idx))}
+                            className="p-1 text-gray-400 hover:text-yellow-700 transition-colors"
+                            title="Go to segment in transcript"
+                          >
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 9l3 3m0 0l-3 3m3-3H8m13 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={() => toggleVoiceSample?.(parseInt(idx))}
+                            className="p-1 text-gray-400 hover:text-red-500 transition-colors"
+                            title="Remove sample"
+                          >
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
                       </div>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          toggleVoiceSample?.(parseInt(idx))
-                        }}
-                        className="p-1 text-gray-400 hover:text-red-500 transition-colors"
-                      >
-                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </>
             )}
           </div>

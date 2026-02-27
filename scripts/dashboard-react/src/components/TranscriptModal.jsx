@@ -1055,6 +1055,31 @@ export default function TranscriptModal({ episode, onClose }) {
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2">
+                    {(() => {
+                      const unknownCount = segments?.filter(s => !s.speaker || s.speaker === 'UNKNOWN').length ?? 0
+                      if (unknownCount === 0) return null
+                      const firstUnknownSeg = segments?.find(s => !s.speaker || s.speaker === 'UNKNOWN')
+                      const firstUnknownIdx = segments?.findIndex(s => !s.speaker || s.speaker === 'UNKNOWN') ?? -1
+                      return (
+                        <div
+                          key="UNKNOWN"
+                          className="flex items-center gap-2 px-2 py-1 rounded bg-gray-100 border border-gray-300 cursor-pointer hover:shadow-md transition-shadow"
+                          onClick={() => {
+                            if (firstUnknownSeg && !editingSpeakers) {
+                              seekToSegment(firstUnknownSeg)
+                              if (segmentRefs.current[firstUnknownIdx]) {
+                                segmentRefs.current[firstUnknownIdx].scrollIntoView({ behavior: 'smooth', block: 'center' })
+                              }
+                            }
+                          }}
+                          title={`${unknownCount} unassigned segment${unknownCount !== 1 ? 's' : ''} — click to navigate`}
+                        >
+                          <span className="text-xs text-gray-500">❓ Unknown:</span>
+                          <span className="text-xs text-gray-600 font-medium">{unknownCount} seg{unknownCount !== 1 ? 's' : ''}</span>
+                          <span className="text-xs opacity-50">▶</span>
+                        </div>
+                      )
+                    })()}
                     {uniqueSpeakers.map(speakerId => {
                       const colors = getSpeakerColor(speakerId)
                       const displayName = getSpeakerDisplayName(speakerId)

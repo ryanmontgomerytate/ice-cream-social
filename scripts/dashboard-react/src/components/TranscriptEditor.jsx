@@ -192,6 +192,8 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
         if (appearances) setCharacterAppearances(appearances)
         if (chars) setCharacters(chars)
       })
+      // Refresh chapter types in case Settings was used to add/edit/delete types
+      contentAPI.getChapterTypes().then(types => { if (types) setChapterTypes(types) }).catch(() => {})
     }
     prevVisibleRef.current = isVisible
   }, [isVisible])
@@ -200,6 +202,9 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
   useEffect(() => {
     if (activePicker === 'speaker' || activePicker === 'flag-wrong-speaker') {
       speakersAPI.getVoiceLibrary().then(voices => setVoiceLibrary(voices)).catch(() => {})
+    }
+    if (activePicker === 'chapter') {
+      contentAPI.getChapterTypes().then(types => { if (types) setChapterTypes(types) }).catch(() => {})
     }
   }, [activePicker])
 
@@ -479,6 +484,17 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
     }
   }
 
+  const playTrimmedSample = useCallback((idx) => {
+    const sample = markedSamples[idx]
+    if (!sample || !audioRef.current) return
+    clipStartRef.current = sample.startTime
+    clipEndRef.current = sample.endTime
+    setPlayingClipIdx(idx)
+    audioRef.current.currentTime = sample.startTime
+    setCurrentTime(sample.startTime)
+    audioRef.current.play().catch(err => console.error('Audio play failed:', err))
+  }, [markedSamples])
+
   const seekToSegmentIdx = (idx) => {
     if (segments?.[idx]) {
       seekToSegment(segments[idx])
@@ -702,6 +718,8 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
     }
   }
 
+  const getDropsForSegment = (idx) => audioDropInstances.filter(adi => adi.segment_idx === idx)
+
   // Returns the effective speaker name for a segment, accounting for wrong-speaker flags and audio drops.
   const getEffectiveSpeakerName = useCallback((segIdx) => {
     const segment = segments?.[segIdx]
@@ -832,7 +850,6 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
   // Helpers
   const getCharacterForSegment = (idx) => characterAppearances.find(ca => ca.segment_idx === idx)
   const getChapterForSegment = (idx) => episodeChapters.find(ch => ch.start_segment_idx <= idx && ch.end_segment_idx >= idx)
-  const getDropsForSegment = (idx) => audioDropInstances.filter(adi => adi.segment_idx === idx)
 
   // Filter segments by search — also track real indices so Clip # never changes
   const { filteredSegments, filteredIndices } = useMemo(() => {
@@ -985,6 +1002,7 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
       removeCharacter: removeCharacterFromSegment,
       deleteChapter,
       toggleVoiceSample,
+      playTrimmedSample,
       seekToSegment: seekToSegmentIdx,
       seekToSpeaker,
       // Called by context.assignSpeakerName (from PropertiesPanel) — just mark unsaved;
@@ -1307,7 +1325,7 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
             className="w-full px-2 py-1.5 text-sm border border-amber-200 rounded resize-none focus:outline-none focus:ring-1 focus:ring-amber-400"
             autoFocus
           />
-          <div className="flex gap-2 mt-1">
+          <div className="flex gap-2 mt-1 flex-wrap">
             <button onClick={async (e) => {
               e.stopPropagation()
               const corrected = flagInlineInput.trim()
@@ -1325,6 +1343,29 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
             }} className="px-3 py-1 text-xs bg-amber-500 text-white rounded hover:bg-amber-600">
               Save correction
             </button>
+            <button onClick={async (e) => {
+              e.stopPropagation()
+              await createFlag(idx, flagTypeId, null, null, 'Needs re-listening')
+              setActivePicker(null)
+              onNotification?.('Flagged for re-listen', 'success')
+            }} className="px-3 py-1 text-xs bg-slate-100 text-slate-600 rounded hover:bg-slate-200 border border-slate-200">
+              Mark for re-listen
+            </button>
+            {isTauri && (
+              <button onClick={async (e) => {
+                e.stopPropagation()
+                await createFlag(idx, flagTypeId, null, null, 'Queued for Qwen Polish')
+                try {
+                  await contentAPI.runQwenPolish(episode.id, [idx])
+                  onNotification?.('Sent to Scoop Polish — results in Properties panel', 'success')
+                } catch (err) {
+                  onNotification?.(`Polish failed: ${err.message}`, 'error')
+                }
+                setActivePicker(null)
+              }} className="px-3 py-1 text-xs bg-purple-100 text-purple-700 rounded hover:bg-purple-200 border border-purple-200">
+                Fix with Qwen
+              </button>
+            )}
             <button onClick={(e) => { e.stopPropagation(); setActivePicker('flag') }} className="px-2 py-1 text-xs text-gray-400 hover:text-gray-600">← Back</button>
           </div>
         </div>
