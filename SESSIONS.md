@@ -2,6 +2,32 @@
 
 ## Session: February 27, 2026
 
+### Current State Update (Phase 1 Search Reliability: Fast RPC Live for Broad Queries)
+
+**Done:**
+- Added migration `web/supabase/migrations/003_search_fast_rpc.sql` with:
+  - `search_transcript_segments_fast(...)` (lighter `plainto_tsquery` + recency sort)
+  - `search_transcript_segments(...)` recreation as `SECURITY DEFINER` for more predictable performance under RLS.
+- Updated `web/lib/search.ts` to degrade through fast RPC before legacy fallback:
+  - single-token queries now prefer fast RPC
+  - ranked timeout now degrades to fast RPC results instead of returning empty timeout state.
+- Applied migration to hosted Supabase and validated live queries:
+  - `search_transcript_segments_fast('Thanks, Penn', 1, 5)` returns rows
+  - `search_transcript_segments('Thanks, Penn', 1, 5)` returns rows.
+- Commit scope intentionally limited to active Phase 1 files only.
+
+**Pending:**
+- Confirm in browser that the prior timeout case now yields results for broad inputs, then continue ranking-quality tuning.
+
+**Blockers:**
+- None.
+
+**Tests Run:**
+- `mcp__supabase__apply_migration(name=\"search_fast_rpc\", ...)` — **pass**
+- `mcp__supabase__execute_sql(\"select ... from public.search_transcript_segments_fast('Thanks, Penn', 1, 5)\")` — **pass**
+- `mcp__supabase__execute_sql(\"select ... from public.search_transcript_segments('Thanks, Penn', 1, 5)\")` — **pass**
+- `npm --prefix web run build` — **pass**
+
 ### Current State Update (Phase 1 Search Reliability: Timeout Degrade Path)
 
 **Done:**

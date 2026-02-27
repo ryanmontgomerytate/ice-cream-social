@@ -22,7 +22,7 @@ Source strategy:
 | Phase | Status | What is complete | What is next |
 |---|---|---|---|
 | Phase 0: SDLC foundation | `done` | CI workflow restored; issue/PR templates; deployment + backup runbooks; architecture doc restored; Rust fmt violations fixed in `src-tauri`. | Monitor CI for regressions and enforce formatting pre-commit/PR. |
-| Phase 1: Web read + hosted model | `in_progress` | Supabase schema + import pipeline; hosted import/verify modes; web episodes/search/wiki/episode detail reads live; hosted verify job wired in Actions; wiki index/discovery route shipped; ranked search RPC + fallback path implemented; migration applied and validated in hosted Supabase. | Tune ranking quality for broad/common queries and refine tie-break behavior. |
+| Phase 1: Web read + hosted model | `in_progress` | Supabase schema + import pipeline; hosted import/verify modes; web episodes/search/wiki/episode detail reads live; hosted verify job wired in Actions; wiki index/discovery route shipped; ranked search RPC + fallback path implemented; migration applied and validated in hosted Supabase; fast search RPC timeout-degrade path added and validated. | Tune ranking quality for broad/common queries and refine tie-break behavior. |
 | Phase 2: Community editing + moderation | `not_started` | Requirements captured in `feedTheScoops.md`. | Implement auth, revision model, moderation queue, and abuse controls. |
 | Phase 3: Phone-first polish | `not_started` | Responsive foundations present in web pages. | Add PWA manifest/install flow and mobile UX performance/accessibility pass. |
 | Phase 4: Multi-show generalization | `not_started` | `shows` support exists in hosted schema. | Add show-scoped routing/config and API/UI show selection patterns. |

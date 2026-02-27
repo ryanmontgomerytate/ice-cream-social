@@ -54,6 +54,10 @@ function isMissingRankedSearchRpc(message: string): boolean {
   return /search_transcript_segments|could not find the function/i.test(message);
 }
 
+function isMissingFastSearchRpc(message: string): boolean {
+  return /search_transcript_segments_fast|could not find the function/i.test(message);
+}
+
 function mapRpcRowToResult(row: RpcSearchRow): SearchResult {
   const segment: TranscriptSegment = {
     id: row.id,
@@ -97,12 +101,9 @@ async function fallbackSearchWithoutRpc({
   const supabase = await createPublicClient();
   const offset = (page - 1) * perPage;
 
-  const { data, count, error } = await supabase
+  const { data, error } = await supabase
     .from("transcript_segments")
-    .select(
-      "id, episode_id, segment_idx, speaker, text, start_time, end_time, is_performance_bit",
-      { count: "planned" }
-    )
+    .select("id, episode_id, segment_idx, speaker, text, start_time, end_time, is_performance_bit")
     .textSearch("text_search", query, { type: "websearch", config: "english" })
     .order("episode_id", { ascending: false })
     .order("segment_idx", { ascending: true })
@@ -176,7 +177,7 @@ async function fallbackSearchWithoutRpc({
     })
     .filter((item): item is SearchResult => item !== null);
 
-  const total = count ?? offset + results.length + (hasMore ? 1 : 0);
+  const total = offset + results.length + (hasMore ? 1 : 0);
   return {
     query,
     results,
@@ -184,6 +185,73 @@ async function fallbackSearchWithoutRpc({
     page,
     per_page: perPage,
     has_more: hasMore || offset + perPage < total,
+  };
+}
+
+async function searchWithFastRpc({
+  query,
+  page,
+  perPage,
+}: {
+  query: string;
+  page: number;
+  perPage: number;
+}): Promise<SearchQueryResult> {
+  const supabase = await createPublicClient();
+  const offset = (page - 1) * perPage;
+
+  const { data, error } = await supabase.rpc("search_transcript_segments_fast", {
+    search_query: query,
+    page_number: page,
+    page_size: perPage + 1,
+  });
+
+  if (error) {
+    const diagnosticsId = createDiagnosticsId();
+
+    console.error(`[search:${diagnosticsId}] fast rpc failed`, {
+      query,
+      page,
+      per_page: perPage,
+      offset,
+      error: error.message,
+    });
+
+    if (isStatementTimeout(error.message)) {
+      return {
+        query,
+        results: [],
+        total: 0,
+        page,
+        per_page: perPage,
+        has_more: false,
+        warning:
+          "Search timed out on the backend. Try a more specific query or fewer broad terms.",
+        diagnostics_id: diagnosticsId,
+      };
+    }
+
+    if (isMissingFastSearchRpc(error.message)) {
+      console.warn(`[search:${diagnosticsId}] fast rpc not available; falling back to legacy query`);
+      return fallbackSearchWithoutRpc({ query, page, perPage });
+    }
+
+    throw new Error(`[search:${diagnosticsId}] ${error.message}`);
+  }
+
+  const rows = (data ?? []) as RpcSearchRow[];
+  const hasMore = rows.length > perPage;
+  const visibleRows = hasMore ? rows.slice(0, perPage) : rows;
+  const results = visibleRows.map(mapRpcRowToResult);
+  const total = offset + results.length + (hasMore ? 1 : 0);
+
+  return {
+    query,
+    results,
+    total,
+    page,
+    per_page: perPage,
+    has_more: hasMore,
   };
 }
 
@@ -211,9 +279,9 @@ export async function searchTranscriptSegments({
   }
 
   // Single-token queries are usually broad and can time out under ranked sorting.
-  // Use the fast fallback path for better reliability.
+  // Use a fast non-ranked RPC path for better reliability.
   if (queryTokens.length <= 1) {
-    return fallbackSearchWithoutRpc({
+    return searchWithFastRpc({
       query,
       page: safePage,
       perPage: safePerPage,
@@ -243,7 +311,7 @@ export async function searchTranscriptSegments({
 
     if (isStatementTimeout(error.message)) {
       try {
-        const fallback = await fallbackSearchWithoutRpc({
+        const fallback = await searchWithFastRpc({
           query,
           page: safePage,
           perPage: safePerPage,
@@ -282,9 +350,9 @@ export async function searchTranscriptSegments({
 
     if (isMissingRankedSearchRpc(error.message)) {
       console.warn(
-        `[search:${diagnosticsId}] ranked rpc not available; falling back to basic text search`
+        `[search:${diagnosticsId}] ranked rpc not available; falling back to fast search path`
       );
-      return fallbackSearchWithoutRpc({
+      return searchWithFastRpc({
         query,
         page: safePage,
         perPage: safePerPage,
