@@ -34,6 +34,7 @@ Source strategy:
 | Hosted import parity | `done` | Full local import-source vs hosted verification passing locally. |
 | GitHub hosted verification | `in_progress` | Secret/env wiring done; fallback hosted checks run in Actions; optional `SQLITE_DB_URL` still not configured. |
 | Voice library SQLite migration | `in_progress` | Core runtime paths switched to SQLite store mode; optional UI actions pending. |
+| Web observability (Sentry) | `done` | Sentry integrated in Next.js runtime (client/server/edge/global error), smoke-tested event ingestion, and targeted spans added for search + moderation actions. |
 | Phase 2 moderation schema | `done` | Phase 2 foundation tables migrated and validated in hosted Supabase. |
 | Phase 2 moderation API (read) | `done` | Admin-key-gated read endpoints + `/admin` dashboard wired for pending edits, moderation queue, and revisions. |
 | Phase 2 moderation API (write) | `in_progress` | `POST /api/v1/admin/moderation-actions` shipped for approve/reject/needs_changes/assign/unassign using authenticated role checks and RLS-backed RPC. |

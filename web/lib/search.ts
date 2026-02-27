@@ -1,4 +1,5 @@
 import { createPublicClient } from "@/lib/supabase/server";
+import * as Sentry from "@sentry/nextjs";
 import type { EpisodeCard, SearchResult, TranscriptSegment } from "@/lib/types";
 
 const DEFAULT_PAGE = 1;
@@ -89,6 +90,19 @@ function mapRpcRowToResult(row: RpcSearchRow): SearchResult {
   };
 }
 
+function captureSearchMessage(
+  level: "warning" | "error",
+  message: string,
+  context: Record<string, unknown>
+) {
+  Sentry.withScope((scope) => {
+    scope.setLevel(level);
+    scope.setTag("feature", "search");
+    scope.setContext("search", context);
+    Sentry.captureMessage(message);
+  });
+}
+
 async function fallbackSearchWithoutRpc({
   query,
   page,
@@ -101,13 +115,25 @@ async function fallbackSearchWithoutRpc({
   const supabase = await createPublicClient();
   const offset = (page - 1) * perPage;
 
-  const { data, error } = await supabase
-    .from("transcript_segments")
-    .select("id, episode_id, segment_idx, speaker, text, start_time, end_time, is_performance_bit")
-    .textSearch("text_search", query, { type: "websearch", config: "english" })
-    .order("episode_id", { ascending: false })
-    .order("segment_idx", { ascending: true })
-    .range(offset, offset + perPage);
+  const { data, error } = await Sentry.startSpan(
+    {
+      op: "db.query",
+      name: "fallback transcript search",
+      attributes: {
+        query_length: query.length,
+        page,
+        per_page: perPage,
+      },
+    },
+    () =>
+      supabase
+        .from("transcript_segments")
+        .select("id, episode_id, segment_idx, speaker, text, start_time, end_time, is_performance_bit")
+        .textSearch("text_search", query, { type: "websearch", config: "english" })
+        .order("episode_id", { ascending: false })
+        .order("segment_idx", { ascending: true })
+        .range(offset, offset + perPage)
+  );
 
   if (error) {
     const diagnosticsId = createDiagnosticsId();
@@ -121,6 +147,12 @@ async function fallbackSearchWithoutRpc({
     });
 
     if (isStatementTimeout(error.message)) {
+      captureSearchMessage("warning", "Fallback search timed out", {
+        query,
+        page,
+        per_page: perPage,
+        diagnostics_id: diagnosticsId,
+      });
       return {
         query,
         results: [],
@@ -134,6 +166,13 @@ async function fallbackSearchWithoutRpc({
       };
     }
 
+    captureSearchMessage("error", "Fallback search failed", {
+      query,
+      page,
+      per_page: perPage,
+      diagnostics_id: diagnosticsId,
+      error: error.message,
+    });
     throw new Error(`[search:${diagnosticsId}] ${error.message}`);
   }
 
@@ -200,11 +239,23 @@ async function searchWithFastRpc({
   const supabase = await createPublicClient();
   const offset = (page - 1) * perPage;
 
-  const { data, error } = await supabase.rpc("search_transcript_segments_fast", {
-    search_query: query,
-    page_number: page,
-    page_size: perPage + 1,
-  });
+  const { data, error } = await Sentry.startSpan(
+    {
+      op: "db.rpc",
+      name: "search_transcript_segments_fast",
+      attributes: {
+        query_length: query.length,
+        page,
+        per_page: perPage,
+      },
+    },
+    () =>
+      supabase.rpc("search_transcript_segments_fast", {
+        search_query: query,
+        page_number: page,
+        page_size: perPage + 1,
+      })
+  );
 
   if (error) {
     const diagnosticsId = createDiagnosticsId();
@@ -218,6 +269,12 @@ async function searchWithFastRpc({
     });
 
     if (isStatementTimeout(error.message)) {
+      captureSearchMessage("warning", "Fast search RPC timed out", {
+        query,
+        page,
+        per_page: perPage,
+        diagnostics_id: diagnosticsId,
+      });
       return {
         query,
         results: [],
@@ -232,10 +289,23 @@ async function searchWithFastRpc({
     }
 
     if (isMissingFastSearchRpc(error.message)) {
+      captureSearchMessage("warning", "Fast search RPC missing; using fallback query", {
+        query,
+        page,
+        per_page: perPage,
+        diagnostics_id: diagnosticsId,
+      });
       console.warn(`[search:${diagnosticsId}] fast rpc not available; falling back to legacy query`);
       return fallbackSearchWithoutRpc({ query, page, perPage });
     }
 
+    captureSearchMessage("error", "Fast search RPC failed", {
+      query,
+      page,
+      per_page: perPage,
+      diagnostics_id: diagnosticsId,
+      error: error.message,
+    });
     throw new Error(`[search:${diagnosticsId}] ${error.message}`);
   }
 
@@ -278,102 +348,156 @@ export async function searchTranscriptSegments({
     };
   }
 
-  // Single-token queries are usually broad and can time out under ranked sorting.
-  // Use a fast non-ranked RPC path for better reliability.
-  if (queryTokens.length <= 1) {
-    return searchWithFastRpc({
-      query,
-      page: safePage,
-      perPage: safePerPage,
-    });
-  }
-
-  const supabase = await createPublicClient();
-  const offset = (safePage - 1) * safePerPage;
-
-  // Preferred path: ranked RPC (ts_rank_cd + recency tie-break).
-  const { data, error } = await supabase.rpc("search_transcript_segments", {
-    search_query: query,
-    page_number: safePage,
-    page_size: safePerPage + 1,
-  });
-
-  if (error) {
-    const diagnosticsId = createDiagnosticsId();
-
-    console.error(`[search:${diagnosticsId}] ranked rpc failed`, {
-      query,
-      page: safePage,
-      per_page: safePerPage,
-      offset,
-      error: error.message,
-    });
-
-    if (isStatementTimeout(error.message)) {
-      try {
-        const fallback = await searchWithFastRpc({
+  return Sentry.startSpan(
+    {
+      op: "ics.search",
+      name: "searchTranscriptSegments",
+      attributes: {
+        query_length: query.length,
+        query_tokens: queryTokens.length,
+        page: safePage,
+        per_page: safePerPage,
+      },
+    },
+    async () => {
+      // Single-token queries are usually broad and can time out under ranked sorting.
+      // Use a fast non-ranked RPC path for better reliability.
+      if (queryTokens.length <= 1) {
+        return searchWithFastRpc({
           query,
           page: safePage,
           perPage: safePerPage,
         });
+      }
 
-        return {
-          ...fallback,
-          warning:
-            fallback.warning ??
-            "Ranked search timed out. Showing fallback results ordered by recency.",
-          diagnostics_id: fallback.diagnostics_id ?? diagnosticsId,
-        };
-      } catch (fallbackError) {
-        const fallbackMessage =
-          fallbackError instanceof Error ? fallbackError.message : "fallback search failed";
-        console.error(`[search:${diagnosticsId}] fallback after timeout failed`, {
+      const supabase = await createPublicClient();
+      const offset = (safePage - 1) * safePerPage;
+
+      // Preferred path: ranked RPC (ts_rank_cd + recency tie-break).
+      const { data, error } = await Sentry.startSpan(
+        {
+          op: "db.rpc",
+          name: "search_transcript_segments",
+          attributes: {
+            query_length: query.length,
+            page: safePage,
+            per_page: safePerPage,
+          },
+        },
+        () =>
+          supabase.rpc("search_transcript_segments", {
+            search_query: query,
+            page_number: safePage,
+            page_size: safePerPage + 1,
+          })
+      );
+
+      if (error) {
+        const diagnosticsId = createDiagnosticsId();
+
+        console.error(`[search:${diagnosticsId}] ranked rpc failed`, {
           query,
           page: safePage,
           per_page: safePerPage,
-          error: fallbackMessage,
+          offset,
+          error: error.message,
         });
 
-        return {
+        if (isStatementTimeout(error.message)) {
+          captureSearchMessage("warning", "Ranked search RPC timed out", {
+            query,
+            page: safePage,
+            per_page: safePerPage,
+            diagnostics_id: diagnosticsId,
+          });
+
+          try {
+            const fallback = await searchWithFastRpc({
+              query,
+              page: safePage,
+              perPage: safePerPage,
+            });
+
+            return {
+              ...fallback,
+              warning:
+                fallback.warning ??
+                "Ranked search timed out. Showing fallback results ordered by recency.",
+              diagnostics_id: fallback.diagnostics_id ?? diagnosticsId,
+            };
+          } catch (fallbackError) {
+            const fallbackMessage =
+              fallbackError instanceof Error ? fallbackError.message : "fallback search failed";
+            captureSearchMessage("error", "Search timeout fallback failed", {
+              query,
+              page: safePage,
+              per_page: safePerPage,
+              diagnostics_id: diagnosticsId,
+              error: fallbackMessage,
+            });
+
+            console.error(`[search:${diagnosticsId}] fallback after timeout failed`, {
+              query,
+              page: safePage,
+              per_page: safePerPage,
+              error: fallbackMessage,
+            });
+
+            return {
+              query,
+              results: [],
+              total: 0,
+              page: safePage,
+              per_page: safePerPage,
+              has_more: false,
+              warning:
+                "Search timed out on the backend. Try a more specific query or fewer broad terms.",
+              diagnostics_id: diagnosticsId,
+            };
+          }
+        }
+
+        if (isMissingRankedSearchRpc(error.message)) {
+          captureSearchMessage("warning", "Ranked search RPC missing; using fast path", {
+            query,
+            page: safePage,
+            per_page: safePerPage,
+            diagnostics_id: diagnosticsId,
+          });
+          console.warn(
+            `[search:${diagnosticsId}] ranked rpc not available; falling back to fast search path`
+          );
+          return searchWithFastRpc({
+            query,
+            page: safePage,
+            perPage: safePerPage,
+          });
+        }
+
+        captureSearchMessage("error", "Ranked search RPC failed", {
           query,
-          results: [],
-          total: 0,
           page: safePage,
           per_page: safePerPage,
-          has_more: false,
-          warning:
-            "Search timed out on the backend. Try a more specific query or fewer broad terms.",
           diagnostics_id: diagnosticsId,
-        };
+          error: error.message,
+        });
+        throw new Error(`[search:${diagnosticsId}] ${error.message}`);
       }
-    }
 
-    if (isMissingRankedSearchRpc(error.message)) {
-      console.warn(
-        `[search:${diagnosticsId}] ranked rpc not available; falling back to fast search path`
-      );
-      return searchWithFastRpc({
+      const rows = (data ?? []) as RpcSearchRow[];
+      const hasMore = rows.length > safePerPage;
+      const visibleRows = hasMore ? rows.slice(0, safePerPage) : rows;
+      const results = visibleRows.map(mapRpcRowToResult);
+      const total = offset + results.length + (hasMore ? 1 : 0);
+
+      return {
         query,
+        results,
+        total,
         page: safePage,
-        perPage: safePerPage,
-      });
+        per_page: safePerPage,
+        has_more: hasMore,
+      };
     }
-
-    throw new Error(`[search:${diagnosticsId}] ${error.message}`);
-  }
-
-  const rows = (data ?? []) as RpcSearchRow[];
-  const hasMore = rows.length > safePerPage;
-  const visibleRows = hasMore ? rows.slice(0, safePerPage) : rows;
-  const results = visibleRows.map(mapRpcRowToResult);
-  const total = offset + results.length + (hasMore ? 1 : 0);
-
-  return {
-    query,
-    results,
-    total,
-    page: safePage,
-    per_page: safePerPage,
-    has_more: hasMore,
-  };
+  );
 }

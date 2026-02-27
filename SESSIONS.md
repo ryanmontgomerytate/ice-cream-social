@@ -2,6 +2,34 @@
 
 ## Session: February 27, 2026 (cont'd — Cleanup & Security)
 
+### Current State Update (Sentry Follow-Through: Dev Runtime + Targeted Spans)
+
+**Done:**
+- Updated web dev runtime default to non-Turbopack for reliability while Sentry is enabled:
+  - `web/package.json` `dev` script now uses `next dev -p ${PORT:-3001}`.
+- Added targeted Sentry observability around high-value backend flows:
+  - `web/lib/search.ts`
+    - root span for `searchTranscriptSegments`
+    - db/rpc spans for ranked/fast/fallback search paths
+    - warning/error messages with search context for timeout/fallback/rpc failures.
+  - `web/app/api/v1/admin/moderation-actions/route.ts`
+    - request span for moderation action endpoint
+    - db/rpc span for `apply_moderation_action`
+    - structured Sentry error message capture for unexpected RPC failures.
+- Added reusable smoke-test helper script:
+  - `scripts/sentry_smoke.py`
+- Updated tracker:
+  - `docs/EVOLVE_ICS_TRACKER.md` now marks **Web observability (Sentry)** as `done`.
+
+**Pending:**
+- Optional: define alert thresholds and ownership rules in Sentry now that ingestion is live.
+
+**Blockers:**
+- None.
+
+**Tests Run:**
+- `npm --prefix web run build` — **pass** (Next.js 15.5.10; all routes including moderation/search compile and build)
+
 ### Current State Update (Kill Browser Mode — Tauri-Only Frontend)
 
 **Done:**
