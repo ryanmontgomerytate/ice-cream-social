@@ -909,9 +909,9 @@ export const contentAPI = {
     throw new Error('Content only available in Tauri mode');
   },
 
-  async addCharacterAppearance(characterId, episodeId, startTime, endTime, segmentIdx) {
+  async addCharacterAppearance(characterId, episodeId, startTime, endTime, segmentIdx, performedBySpeakerId = null) {
     if (isTauri) {
-      return await tauriAPI.contentAPI.addCharacterAppearance(characterId, episodeId, startTime, endTime, segmentIdx);
+      return await tauriAPI.contentAPI.addCharacterAppearance(characterId, episodeId, startTime, endTime, segmentIdx, performedBySpeakerId);
     }
     throw new Error('Content only available in Tauri mode');
   },

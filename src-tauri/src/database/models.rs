@@ -224,6 +224,10 @@ pub struct CharacterAppearance {
     pub end_time: Option<f64>,
     pub segment_idx: Option<i32>,
     pub notes: Option<String>,
+    /// The speaker (real person) who performed this character voice in this segment.
+    /// e.g. Paul Mattingly performed Paul McCartney. Null when not recorded.
+    pub performed_by_speaker_id: Option<i64>,
+    pub performed_by_speaker_name: Option<String>,
 }
 
 // ============================================================================

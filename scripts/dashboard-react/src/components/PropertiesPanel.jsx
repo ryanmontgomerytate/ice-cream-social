@@ -874,8 +874,11 @@ export default function PropertiesPanel() {
                       </svg>
                     </button>
                   </div>
-                  <div className="text-[10px] text-gray-500 mt-1">
-                    Clip #{appearance.segment_idx}
+                  <div className="text-[10px] text-gray-500 mt-1 flex items-center gap-2 flex-wrap">
+                    <span>Clip #{appearance.segment_idx}</span>
+                    {appearance.performed_by_speaker_name && (
+                      <span className="text-pink-600 font-medium">· by {appearance.performed_by_speaker_name}</span>
+                    )}
                   </div>
                 </div>
               ))

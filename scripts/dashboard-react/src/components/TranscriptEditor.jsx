@@ -585,8 +585,11 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
   const addCharacterToSegment = async (idx, characterId) => {
     const segment = segments[idx]
     if (!segment) return
+    // Auto-resolve which real speaker performed this character from the segment's diarization label
+    const assignment = episodeSpeakerAssignments.find(a => a.diarization_label === segment.speaker)
+    const performedBySpeakerId = assignment?.speaker_id ?? null
     try {
-      await contentAPI.addCharacterAppearance(characterId, episode.id, parseTimestampToSeconds(segment), getSegmentEndTime(segment), idx)
+      await contentAPI.addCharacterAppearance(characterId, episode.id, parseTimestampToSeconds(segment), getSegmentEndTime(segment), idx, performedBySpeakerId)
       const appearances = await contentAPI.getCharacterAppearancesForEpisode(episode.id)
       setCharacterAppearances(appearances)
       setActivePicker(null)

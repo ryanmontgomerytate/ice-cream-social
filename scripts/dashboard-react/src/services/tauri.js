@@ -523,8 +523,8 @@ export const contentAPI = {
     return tauriInvoke('delete_character', { id });
   },
 
-  async addCharacterAppearance(characterId, episodeId, startTime, endTime, segmentIdx) {
-    return tauriInvoke('add_character_appearance', { characterId, episodeId, startTime, endTime, segmentIdx });
+  async addCharacterAppearance(characterId, episodeId, startTime, endTime, segmentIdx, performedBySpeakerId = null) {
+    return tauriInvoke('add_character_appearance', { characterId, episodeId, startTime, endTime, segmentIdx, performedBySpeakerId });
   },
 
   // Sponsors

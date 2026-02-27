@@ -178,13 +178,15 @@ pub async fn add_character_appearance(
     start_time: Option<f64>,
     end_time: Option<f64>,
     segment_idx: Option<i32>,
+    performed_by_speaker_id: Option<i64>,
 ) -> Result<i64, AppError> {
     log::info!(
-        "Adding character {} appearance in episode {}",
+        "Adding character {} appearance in episode {} (performed by speaker {:?})",
         character_id,
-        episode_id
+        episode_id,
+        performed_by_speaker_id
     );
-    db.add_character_appearance(character_id, episode_id, start_time, end_time, segment_idx)
+    db.add_character_appearance(character_id, episode_id, start_time, end_time, segment_idx, performed_by_speaker_id)
         .map_err(AppError::from)
 }
 

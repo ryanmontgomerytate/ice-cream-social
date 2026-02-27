@@ -2,6 +2,22 @@
 
 ## Session: February 27, 2026
 
+### Current State Update (Character Performer Tracking — Option A)
+
+**Done:**
+- Added `performed_by_speaker_id INTEGER REFERENCES speakers(id)` to `character_appearances` via idempotent migration
+- Updated `CharacterAppearance` struct with `performed_by_speaker_id` + `performed_by_speaker_name` fields
+- Updated `add_character_appearance` DB method and Tauri command to accept performer
+- Updated both `get_character_appearances_for_*` queries to LEFT JOIN speakers and return performer name
+- `addCharacterToSegment` in TranscriptEditor auto-resolves performer from `episodeSpeakerAssignments` (segment's diarization label → speaker_id)
+- PropertiesPanel character cards now show "· by Paul Mattingly" when performer is known
+- Created `docs/CHARACTER_PERFORMER.md` with Options B–D architecture and data-driven thresholds
+- Created GitHub Issue #23 tracking Options B–D with readiness queries
+
+**Tests Run:**
+- `cargo check --manifest-path src-tauri/Cargo.toml` — **pass**
+- `npm --prefix scripts/dashboard-react run build` — **pass**
+
 ### Current State Update (Phase 2 Started: Community/Moderation Schema Foundation)
 
 **Done:**

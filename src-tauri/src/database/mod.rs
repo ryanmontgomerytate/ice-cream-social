@@ -880,6 +880,14 @@ Mark the start time of each segment.',
             [],
         );
 
+        // Migration: Add performed_by_speaker_id to character_appearances (idempotent)
+        // Tracks which real speaker (Paul Mattingly, Matt Donnelly, etc.) performed
+        // a given character voice in a specific segment.
+        let _ = conn.execute(
+            "ALTER TABLE character_appearances ADD COLUMN performed_by_speaker_id INTEGER REFERENCES speakers(id)",
+            [],
+        ); // Ignore error if column already exists
+
         Ok(())
     }
 
@@ -3367,11 +3375,12 @@ Mark the start time of each segment.',
         start_time: Option<f64>,
         end_time: Option<f64>,
         segment_idx: Option<i32>,
+        performed_by_speaker_id: Option<i64>,
     ) -> Result<i64> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT INTO character_appearances (character_id, episode_id, start_time, end_time, segment_idx) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![character_id, episode_id, start_time, end_time, segment_idx]
+            "INSERT INTO character_appearances (character_id, episode_id, start_time, end_time, segment_idx, performed_by_speaker_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![character_id, episode_id, start_time, end_time, segment_idx, performed_by_speaker_id]
         )?;
         Ok(conn.last_insert_rowid())
     }
@@ -4478,10 +4487,12 @@ Mark the start time of each segment.',
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             r#"SELECT ca.id, ca.character_id, c.name, ca.episode_id, e.title,
-                      ca.start_time, ca.end_time, ca.segment_idx, ca.notes
+                      ca.start_time, ca.end_time, ca.segment_idx, ca.notes,
+                      ca.performed_by_speaker_id, sp.name
                FROM character_appearances ca
                JOIN characters c ON ca.character_id = c.id
                JOIN episodes e ON ca.episode_id = e.id
+               LEFT JOIN speakers sp ON ca.performed_by_speaker_id = sp.id
                WHERE ca.episode_id = ?1
                ORDER BY ca.start_time NULLS LAST, ca.segment_idx NULLS LAST"#,
         )?;
@@ -4497,6 +4508,8 @@ Mark the start time of each segment.',
                     end_time: row.get(6)?,
                     segment_idx: row.get(7)?,
                     notes: row.get(8)?,
+                    performed_by_speaker_id: row.get(9)?,
+                    performed_by_speaker_name: row.get(10)?,
                 })
             })?
             .filter_map(|r| r.ok())
@@ -4512,10 +4525,12 @@ Mark the start time of each segment.',
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             r#"SELECT ca.id, ca.character_id, c.name, ca.episode_id, e.title,
-                      ca.start_time, ca.end_time, ca.segment_idx, ca.notes
+                      ca.start_time, ca.end_time, ca.segment_idx, ca.notes,
+                      ca.performed_by_speaker_id, sp.name
                FROM character_appearances ca
                JOIN characters c ON ca.character_id = c.id
                JOIN episodes e ON ca.episode_id = e.id
+               LEFT JOIN speakers sp ON ca.performed_by_speaker_id = sp.id
                WHERE ca.character_id = ?1
                ORDER BY e.episode_number DESC, ca.start_time NULLS LAST, ca.segment_idx NULLS LAST"#
         )?;
@@ -4531,6 +4546,8 @@ Mark the start time of each segment.',
                     end_time: row.get(6)?,
                     segment_idx: row.get(7)?,
                     notes: row.get(8)?,
+                    performed_by_speaker_id: row.get(9)?,
+                    performed_by_speaker_name: row.get(10)?,
                 })
             })?
             .filter_map(|r| r.ok())
