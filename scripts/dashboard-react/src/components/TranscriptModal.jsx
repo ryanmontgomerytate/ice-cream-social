@@ -398,12 +398,15 @@ export default function TranscriptModal({ episode, onClose }) {
     if (!segment) return
 
     try {
+      const assignment = episodeSpeakerAssignments.find(a => a.diarization_label === segment.speaker)
+      const performedBySpeakerId = assignment?.speaker_id ?? null
       const id = await contentAPI.addCharacterAppearance(
         characterId,
         episode.id,
         parseTimestampToSeconds(segment),
         getSegmentEndTime(segment),
-        idx
+        idx,
+        performedBySpeakerId
       )
       // Reload character appearances
       const appearances = await contentAPI.getCharacterAppearancesForEpisode(episode.id)
