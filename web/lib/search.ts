@@ -193,6 +193,7 @@ export async function searchTranscriptSegments({
   perPage = DEFAULT_PER_PAGE,
 }: SearchOptions): Promise<SearchQueryResult> {
   const query = q.trim();
+  const queryTokens = query.split(/\s+/).filter(Boolean);
   const safePage = Number.isFinite(page) ? Math.max(1, Math.floor(page)) : DEFAULT_PAGE;
   const safePerPage = Number.isFinite(perPage)
     ? Math.min(MAX_PER_PAGE, Math.max(1, Math.floor(perPage)))
@@ -207,6 +208,16 @@ export async function searchTranscriptSegments({
       per_page: safePerPage,
       has_more: false,
     };
+  }
+
+  // Single-token queries are usually broad and can time out under ranked sorting.
+  // Use the fast fallback path for better reliability.
+  if (queryTokens.length <= 1) {
+    return fallbackSearchWithoutRpc({
+      query,
+      page: safePage,
+      perPage: safePerPage,
+    });
   }
 
   const supabase = await createPublicClient();
@@ -231,17 +242,42 @@ export async function searchTranscriptSegments({
     });
 
     if (isStatementTimeout(error.message)) {
-      return {
-        query,
-        results: [],
-        total: 0,
-        page: safePage,
-        per_page: safePerPage,
-        has_more: false,
-        warning:
-          "Search timed out on the backend. Try a more specific query or fewer broad terms.",
-        diagnostics_id: diagnosticsId,
-      };
+      try {
+        const fallback = await fallbackSearchWithoutRpc({
+          query,
+          page: safePage,
+          perPage: safePerPage,
+        });
+
+        return {
+          ...fallback,
+          warning:
+            fallback.warning ??
+            "Ranked search timed out. Showing fallback results ordered by recency.",
+          diagnostics_id: fallback.diagnostics_id ?? diagnosticsId,
+        };
+      } catch (fallbackError) {
+        const fallbackMessage =
+          fallbackError instanceof Error ? fallbackError.message : "fallback search failed";
+        console.error(`[search:${diagnosticsId}] fallback after timeout failed`, {
+          query,
+          page: safePage,
+          per_page: safePerPage,
+          error: fallbackMessage,
+        });
+
+        return {
+          query,
+          results: [],
+          total: 0,
+          page: safePage,
+          per_page: safePerPage,
+          has_more: false,
+          warning:
+            "Search timed out on the backend. Try a more specific query or fewer broad terms.",
+          diagnostics_id: diagnosticsId,
+        };
+      }
     }
 
     if (isMissingRankedSearchRpc(error.message)) {

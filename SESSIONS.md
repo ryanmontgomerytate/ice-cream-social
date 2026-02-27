@@ -2,6 +2,24 @@
 
 ## Session: February 27, 2026
 
+### Current State Update (Phase 1 Search Reliability: Timeout Degrade Path)
+
+**Done:**
+- Updated `web/lib/search.ts` timeout behavior to prevent zero-result dead ends:
+  - single-token queries now use fallback search path directly (avoids heavy ranked sort on broad terms)
+  - ranked RPC timeout now automatically degrades to fallback search instead of returning empty result set
+  - keeps warning + diagnostics ID when degraded mode is used.
+- Commit scope intentionally limited to active Phase 1 files only.
+
+**Pending:**
+- Verify in-browser behavior for previously timing-out query patterns (e.g., single-token `Penn`) and tune threshold logic if needed.
+
+**Blockers:**
+- None.
+
+**Tests Run:**
+- `npm --prefix web run build` — **pass**
+
 ### Current State Update (Phase 1 Search Relevance: Hosted Migration Applied)
 
 **Done:**
