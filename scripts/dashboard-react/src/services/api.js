@@ -956,14 +956,18 @@ export const contentAPI = {
 
   async updateAudioDropTranscript(dropId, text) {
     if (isTauri) {
-      return await tauriAPI.contentAPI.updateAudioDropTranscript(dropId, text);
+      const result = await tauriAPI.contentAPI.updateAudioDropTranscript(dropId, text);
+      invalidateStaticCache('audioDrops');
+      return result;
     }
     throw new Error('Content only available in Tauri mode');
   },
 
   async updateAudioDropWindow(dropId, minWindow, maxWindow) {
     if (isTauri) {
-      return await tauriAPI.contentAPI.updateAudioDropWindow(dropId, minWindow, maxWindow);
+      const result = await tauriAPI.contentAPI.updateAudioDropWindow(dropId, minWindow, maxWindow);
+      invalidateStaticCache('audioDrops');
+      return result;
     }
     throw new Error('Content only available in Tauri mode');
   },

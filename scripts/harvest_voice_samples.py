@@ -172,6 +172,8 @@ def main():
     parser.add_argument("--episode-id", type=int, default=None, help="Process only one episode ID")
     parser.add_argument("--backend", type=str, default="pyannote", choices=["ecapa-tdnn", "pyannote"],
                         help="Embedding backend")
+    parser.add_argument("--store-mode", type=str, default="sqlite", choices=["auto", "json", "sqlite"],
+                        help="Voice embedding store mode")
     args = parser.parse_args()
 
     # Resolve to absolute paths
@@ -189,7 +191,13 @@ def main():
 
     hf_token = get_hf_token()
     try:
-        library = VoiceLibrary(hf_token, quiet=True, backend=args.backend)
+        library = VoiceLibrary(
+            hf_token,
+            quiet=True,
+            backend=args.backend,
+            db_path=db_path,
+            store_mode=args.store_mode,
+        )
     except Exception as e:
         print(json.dumps({"status": "error", "error": f"Failed to initialize voice library: {e}"}))
         sys.exit(1)

@@ -5,7 +5,7 @@
 This file is the repository-level architecture source of truth for `ice-cream-social-app`.
 It describes the current implemented system (desktop-first Tauri app) and the key storage/runtime boundaries that matter for ongoing development and future web/mobile migration.
 
-Last updated: February 26, 2026
+Last updated: February 27, 2026
 
 ## System Overview
 
@@ -225,6 +225,39 @@ Available coverage:
 Current gap:
 - No architecture doc was present before this file was recreated
 - CI and API-contract coverage need strengthening before hosted deployment work
+
+## Environment Topology
+
+Standard environments:
+- `local` (current primary): Tauri desktop + local SQLite + local filesystem artifacts
+- `staging` (target hosted pre-prod): production-like hosted stack for release validation
+- `prod` (target hosted production): public user-facing environment with controlled deploy + rollback
+
+Reference:
+- `docs/operations/ENVIRONMENTS.md`
+
+## SDLC Operations Artifacts
+
+The repository now includes standard SDLC operations docs:
+- Deployment + rollback checklist: `docs/operations/DEPLOYMENT_AND_ROLLBACK_CHECKLIST.md`
+- Data backup/restore runbook: `docs/operations/BACKUP_RESTORE_RUNBOOK.md`
+- Hosted import pipeline runbook: `docs/operations/HOSTED_IMPORT_PIPELINE.md`
+
+These should be used for release execution and incident response.
+
+## Hosted Phase 1 Bridge Artifacts
+
+Phase 1 web migration artifacts are now staged in-repo:
+- Hosted schema migration: `web/supabase/migrations/001_initial_schema.sql`
+- SQLite -> hosted export/import pipeline: `scripts/export_to_hosted.py`
+- Hosted env templates:
+  - `web/.env.example`
+  - `scripts/.env.example`
+
+Current intent:
+- Keep desktop SQLite as the source of truth while hosted Postgres is populated by idempotent upsert imports.
+- Restrict hosted scope to read-first public experience tables (episodes, transcript segments, speakers, characters, chapters, wiki, drops) plus import auditing.
+- Preserve FK-safe import order and chunked segment loading to handle large transcript tables safely.
 
 ## Target Direction (Short Version)
 

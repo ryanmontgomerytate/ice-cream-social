@@ -109,6 +109,8 @@ async fn diarize_with_progress(
         .unwrap_or_else(|| "pyannote".to_string());
     args.push("--embedding-backend".to_string());
     args.push(embedding_backend);
+    args.push("--voice-store-mode".to_string());
+    args.push("sqlite".to_string());
 
     // Pass hints file if available
     if let Some(hints_path) = &job.hints_path {

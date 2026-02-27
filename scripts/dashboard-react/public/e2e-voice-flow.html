@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Voice Flow E2E Harness</title>
+    <style>
+      body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 24px; }
+      button { margin-right: 8px; margin-bottom: 12px; padding: 8px 12px; }
+      pre { background: #f5f5f5; padding: 12px; border-radius: 6px; }
+    </style>
+  </head>
+  <body>
+    <h1>Voice Flow E2E Harness</h1>
+    <p id="mode">Mode: loading...</p>
+    <button id="saveSampleBtn">Save Voice Sample</button>
+    <button id="refreshLibraryBtn">Refresh Voice Library</button>
+    <pre id="output"></pre>
+
+    <script>
+      const state = {
+        library: {},
+      };
+
+      function buildLibraryResponse() {
+        return Object.entries(state.library).map(([name, data]) => ({
+          name,
+          short_name: (name.split(' ')[0] || name),
+          sample_count: data.sample_count,
+          sample_file: data.sample_file,
+          file_count: data.sample_count,
+          episode_count: 1,
+          has_embedding: true,
+        }));
+      }
+
+      window.__TAURI_MOCK__ = {
+        async invoke(command, args = {}) {
+          if (command === 'save_voice_samples') {
+            const samples = Array.isArray(args.samples) ? args.samples : [];
+            for (const sample of samples) {
+              const name = sample.speakerName || sample.speaker_name || 'Unknown Speaker';
+              const cur = state.library[name] || { sample_count: 0, sample_file: null };
+              cur.sample_count += 1;
+              cur.sample_file = cur.sample_file || `mock_${name.replace(/\s+/g, '_')}.wav`;
+              state.library[name] = cur;
+            }
+            return samples.length;
+          }
+
+          if (command === 'get_voice_library') {
+            return buildLibraryResponse();
+          }
+
+          if (command === 'get_voice_samples') {
+            const speakerName = args.speakerName || args.speaker_name;
+            const count = state.library[speakerName]?.sample_count || 0;
+            return Array.from({ length: count }).map((_, i) => ({
+              id: i + 1,
+              file_path: `mock/${speakerName || 'unknown'}/${i + 1}.wav`,
+              file_name: `${i + 1}.wav`,
+              file_size: 1000,
+              created: '2026-01-01T00:00:00Z',
+              episode_id: 1,
+              episode_number: '1',
+              segment_idx: i,
+              start_time: 0,
+              end_time: 5,
+              transcript_text: 'mock',
+              rating: 0,
+              episode_title: 'Mock Episode',
+              source: 'manual',
+            }));
+          }
+
+          return null;
+        },
+        async listen() {
+          return () => {};
+        },
+      };
+    </script>
+
+    <script type="module">
+      import { isTauri, episodesAPI, speakersAPI } from '/src/services/api.js';
+
+      const modeEl = document.getElementById('mode');
+      const outputEl = document.getElementById('output');
+      const saveBtn = document.getElementById('saveSampleBtn');
+      const refreshBtn = document.getElementById('refreshLibraryBtn');
+
+      modeEl.textContent = `Mode: ${isTauri ? 'tauri-mock' : 'browser'}`;
+
+      function setOutput(payload) {
+        outputEl.textContent = JSON.stringify(payload, null, 2);
+      }
+
+      saveBtn.addEventListener('click', async () => {
+        const samples = [
+          {
+            speaker: 'SPEAKER_00',
+            speakerName: 'Matt Donnelly',
+            startTime: 10.0,
+            endTime: 16.5,
+            text: 'Mock sample text',
+            segmentIdx: 3,
+          },
+        ];
+        const saved = await episodesAPI.saveVoiceSamples(999, samples);
+        setOutput({ action: 'saveVoiceSamples', saved });
+      });
+
+      refreshBtn.addEventListener('click', async () => {
+        const library = await speakersAPI.getVoiceLibrary();
+        setOutput({ action: 'getVoiceLibrary', library });
+      });
+    </script>
+  </body>
+</html>

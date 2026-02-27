@@ -187,7 +187,7 @@ pub struct VoiceLibrarySpeaker {
     pub sample_file: Option<String>,
     pub file_count: i32,
     pub episode_count: i32,
-    /// True if a voice print (embedding) exists for this speaker in embeddings.json.
+    /// True if a voice print (embedding) exists for this speaker in the active store.
     /// False means sample files exist on disk but Rebuild Voice Prints hasn't been run yet.
     pub has_embedding: bool,
 }
@@ -210,6 +210,7 @@ pub async fn get_voice_library(
 
     let voice_library_script = project_dir.join("scripts").join("voice_library.py");
     let venv_python = project_dir.join("venv").join("bin").join("python");
+    let db_path = project_dir.join("data").join("ice_cream_social.db");
 
     let samples_dir = project_dir.join("scripts").join("voice_library").join("samples");
     let sound_bites_dir = project_dir.join("scripts").join("voice_library").join("sound_bites");
@@ -221,7 +222,16 @@ pub async fn get_voice_library(
     // (best-effort — if the script fails, we fall through to filesystem scan)
     if venv_python.exists() && voice_library_script.exists() {
         if let Ok(output) = std::process::Command::new(&venv_python)
-            .args([voice_library_script.to_str().unwrap(), "info", "--backend", &backend])
+            .args([
+                voice_library_script.to_str().unwrap(),
+                "info",
+                "--backend",
+                &backend,
+                "--db-path",
+                db_path.to_str().unwrap(),
+                "--store-mode",
+                "sqlite",
+            ])
             .output()
         {
             if output.status.success() {
@@ -254,7 +264,7 @@ pub async fn get_voice_library(
         }
     }
 
-    // Step 2: scan voice_library/samples/ for speaker subdirs not yet in embeddings.json
+    // Step 2: scan voice_library/samples/ for speaker subdirs not yet in the embedding store
     // These have audio files on disk but haven't been trained yet — shown as "needs Rebuild"
     if samples_dir.exists() {
         if let Ok(entries) = std::fs::read_dir(&samples_dir) {
@@ -284,7 +294,7 @@ pub async fn get_voice_library(
         }
     }
 
-    // Step 3: scan voice_library/sound_bites/ for sound bite subdirs not yet in embeddings.json
+    // Step 3: scan voice_library/sound_bites/ for sound bite subdirs not yet in the embedding store
     // Mirrors Step 2 so saved-but-not-yet-trained sound bites surface correctly.
     if sound_bites_dir.exists() {
         if let Ok(entries) = std::fs::read_dir(&sound_bites_dir) {
@@ -505,6 +515,7 @@ pub async fn delete_voice_sample(
         .join("ice-cream-social-app");
     let venv_python = project_dir.join("venv").join("bin").join("python");
     let voice_library_script = project_dir.join("scripts").join("voice_library.py");
+    let db_path = project_dir.join("data").join("ice_cream_social.db");
 
     if venv_python.exists() && voice_library_script.exists() {
         let mut cmd = std::process::Command::new(&venv_python);
@@ -514,6 +525,10 @@ pub async fn delete_voice_sample(
                 &speaker_name,
                 "--backend",
                 &backend,
+                "--db-path",
+                db_path.to_str().unwrap(),
+                "--store-mode",
+                "sqlite",
             ]);
         apply_hf_runtime_env_std(&mut cmd, false);
         let _ = cmd.output();
@@ -523,7 +538,7 @@ pub async fn delete_voice_sample(
 }
 
 /// Delete a speaker's voice print (embeddings) from the voice library.
-/// This removes the trained embedding from embeddings.json so the speaker
+/// This removes the trained embedding from the active embedding store so the speaker
 /// can be re-trained from scratch. Audio sample files are NOT deleted.
 #[tauri::command]
 pub async fn delete_voice_print(
@@ -537,6 +552,7 @@ pub async fn delete_voice_print(
         .join("ice-cream-social-app");
     let venv_python = project_dir.join("venv").join("bin").join("python");
     let voice_library_script = project_dir.join("scripts").join("voice_library.py");
+    let db_path = project_dir.join("data").join("ice_cream_social.db");
 
     if !venv_python.exists() {
         return Err(AppError::from("Python venv not found"));
@@ -554,6 +570,10 @@ pub async fn delete_voice_print(
             &speaker_name,
             "--backend",
             &backend,
+            "--db-path",
+            db_path.to_str().unwrap(),
+            "--store-mode",
+            "sqlite",
         ]);
     apply_hf_runtime_env_std(&mut cmd, false);
     let output = cmd
@@ -582,6 +602,7 @@ pub async fn rebuild_voice_print_for_speaker(
         .join("ice-cream-social-app");
     let venv_python = project_dir.join("venv").join("bin").join("python");
     let voice_library_script = project_dir.join("scripts").join("voice_library.py");
+    let db_path = project_dir.join("data").join("ice_cream_social.db");
 
     if !venv_python.exists() {
         return Err(AppError::from("Python venv not found"));
@@ -599,6 +620,10 @@ pub async fn rebuild_voice_print_for_speaker(
             &speaker_name,
             "--backend",
             &backend,
+            "--db-path",
+            db_path.to_str().unwrap(),
+            "--store-mode",
+            "sqlite",
         ]);
     apply_hf_runtime_env_std(&mut cmd, false);
     let output = cmd
@@ -787,6 +812,7 @@ pub async fn purge_voice_library_entry(
     let venv_python = project_dir.join("venv").join("bin").join("python");
     let voice_library_script = project_dir.join("scripts").join("voice_library.py");
     let voice_library_dir = project_dir.join("scripts").join("voice_library");
+    let db_path = project_dir.join("data").join("ice_cream_social.db");
 
     let backend = configured_embedding_backend(db.inner());
     let mut deleted_files: i64 = 0;
@@ -801,6 +827,10 @@ pub async fn purge_voice_library_entry(
             &speaker_name,
             "--backend",
             &backend,
+            "--db-path",
+            db_path.to_str().unwrap(),
+            "--store-mode",
+            "sqlite",
         ]);
         apply_hf_runtime_env_std(&mut cmd, false);
         let _ = cmd.output();
@@ -876,13 +906,23 @@ pub async fn rebuild_voice_library(
     let project_dir = home_dir.join("Desktop").join("Projects").join("ice-cream-social-app");
     let venv_python = project_dir.join("venv").join("bin").join("python");
     let script = project_dir.join("scripts").join("voice_library.py");
+    let db_path = project_dir.join("data").join("ice_cream_social.db");
 
     if !venv_python.exists() {
         return Err(AppError::from("Python venv not found"));
     }
 
     let mut cmd = tokio::process::Command::new(&venv_python);
-    cmd.args([script.to_str().unwrap(), "rebuild", "--backend", &backend])
+    cmd.args([
+        script.to_str().unwrap(),
+        "rebuild",
+        "--backend",
+        &backend,
+        "--db-path",
+        db_path.to_str().unwrap(),
+        "--store-mode",
+        "sqlite",
+    ])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
     apply_hf_runtime_env_tokio(&mut cmd, false);
@@ -972,6 +1012,7 @@ pub async fn run_voice_harvest(
             "--min-secs", &min_secs_str,
             "--max-per-speaker-per-episode", &max_per_str,
             "--backend", &backend,
+            "--store-mode", "sqlite",
         ])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -1067,6 +1108,7 @@ pub async fn extract_voice_sample_from_segment(
         "--segment-idx".to_string(), segment_idx.to_string(),
         "--db-path".to_string(), db_path.to_str().unwrap().to_string(),
         "--backend".to_string(), backend,
+        "--store-mode".to_string(), "sqlite".to_string(),
     ];
     if let Some(date) = published_date {
         args.push("--sample-date".to_string());
@@ -1099,6 +1141,7 @@ pub async fn compare_embedding_backends(
         .join("ice-cream-social-app");
     let venv_python = project_dir.join("venv").join("bin").join("python");
     let script = project_dir.join("scripts").join("voice_library.py");
+    let db_path = project_dir.join("data").join("ice_cream_social.db");
 
     let episode = db
         .get_episode_by_id(episode_id)
@@ -1135,6 +1178,10 @@ pub async fn compare_embedding_backends(
             diarization_json.to_str().unwrap(),
             "--audio",
             &audio_path,
+            "--db-path",
+            db_path.to_str().unwrap(),
+            "--store-mode",
+            "sqlite",
         ]);
         if let Some(ref date) = episode_date {
             cmd.args(["--episode-date", date]);

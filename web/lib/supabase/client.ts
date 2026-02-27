@@ -1,12 +1,10 @@
 import { createBrowserClient } from "@supabase/ssr";
+import { getSupabasePublishableKey, getSupabaseUrl } from "@/lib/supabase/env";
 
 /**
- * Browser-side Supabase client (uses anon key, respects RLS).
+ * Browser-side Supabase client (uses publishable key, respects RLS).
  * Call this inside Client Components only.
  */
 export function createClient() {
-  return createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
+  return createBrowserClient(getSupabaseUrl(), getSupabasePublishableKey());
 }

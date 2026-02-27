@@ -102,8 +102,14 @@ def pad_audio_for_diarization(audio_path: Path) -> Optional[Path]:
 class SpeakerDiarizer:
     """Handles speaker diarization for podcast episodes"""
 
-    def __init__(self, hf_token: Optional[str] = None, use_voice_library: bool = True,
-                 embedding_backend: str = "pyannote"):
+    def __init__(
+        self,
+        hf_token: Optional[str] = None,
+        use_voice_library: bool = True,
+        embedding_backend: str = "pyannote",
+        voice_store_mode: str = "auto",
+        voice_db_path: Optional[Path] = None,
+    ):
         """Initialize speaker diarization pipeline
 
         Args:
@@ -126,7 +132,12 @@ class SpeakerDiarizer:
             # Initialize voice library if available and enabled
             if use_voice_library and VOICE_LIBRARY_AVAILABLE:
                 try:
-                    self.voice_library = VoiceLibrary(hf_token, backend=embedding_backend)
+                    self.voice_library = VoiceLibrary(
+                        hf_token,
+                        backend=embedding_backend,
+                        store_mode=voice_store_mode,
+                        db_path=voice_db_path,
+                    )
                     if self.voice_library.embeddings:
                         logger.info(f"Voice library loaded with {len(self.voice_library.embeddings)} speakers")
                     else:
@@ -469,7 +480,9 @@ def apply_hints_to_transcript(transcript: Dict, hints: Dict) -> Dict:
 def process_episode(audio_path: Path, transcript_path: Path, hf_token: str,
                     num_speakers: Optional[int] = None, use_voice_library: bool = True,
                     hints: Optional[Dict] = None, episode_date: Optional[str] = None,
-                    embedding_backend: str = "pyannote") -> Dict:
+                    embedding_backend: str = "pyannote",
+                    voice_store_mode: str = "auto",
+                    voice_db_path: Optional[Path] = None) -> Dict:
     """Process a single episode: diarize and align with transcript
 
     Args:
@@ -498,6 +511,8 @@ def process_episode(audio_path: Path, transcript_path: Path, hf_token: str,
         hf_token,
         use_voice_library=use_voice_library,
         embedding_backend=embedding_backend,
+        voice_store_mode=voice_store_mode,
+        voice_db_path=voice_db_path,
     )
     diarization = diarizer.diarize(audio_path, num_speakers=num_speakers)
 
@@ -552,6 +567,11 @@ if __name__ == "__main__":
     parser.add_argument("--embedding-backend", type=str, default="pyannote",
                        choices=["ecapa-tdnn", "pyannote"],
                        help="Voice embedding backend for speaker identification")
+    parser.add_argument("--voice-store-mode", type=str, default="auto",
+                       choices=["auto", "json", "sqlite"],
+                       help="Voice embedding store mode")
+    parser.add_argument("--voice-db-path", type=Path, default=None,
+                       help="Optional SQLite DB path for voice embedding store")
 
     args = parser.parse_args()
 
@@ -573,4 +593,6 @@ if __name__ == "__main__":
         hints=hints,
         episode_date=args.episode_date,
         embedding_backend=args.embedding_backend,
+        voice_store_mode=args.voice_store_mode,
+        voice_db_path=args.voice_db_path,
     )

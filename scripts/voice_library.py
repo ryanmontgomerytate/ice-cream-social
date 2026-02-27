@@ -314,6 +314,29 @@ class SqliteVoiceEmbeddingStore:
                     ),
                 )
 
+    def import_centroids_missing_only(self, backend: str, embeddings: Dict[str, Dict[str, Any]]) -> int:
+        """Insert centroids from `embeddings` for speakers not already in SQLite. Returns count added."""
+        existing = set(self.load_centroids(backend).keys())
+        to_import = {k: v for k, v in embeddings.items() if k not in existing}
+        if not to_import:
+            return 0
+        # Merge: preserve existing + add missing, then write the full set atomically
+        merged = {**self.load_centroids(backend), **to_import}
+        self.replace_centroids(backend, merged)
+        return len(to_import)
+
+    def export_centroids_to_json(self, backend: str) -> Dict[str, Any]:
+        """Return centroids as a JSON-serialisable dict matching the legacy embeddings file format."""
+        centroids = self.load_centroids(backend)
+        return {
+            "meta": {
+                "backend": backend,
+                "exported_at": datetime.utcnow().isoformat() + "Z",
+                "source": "sqlite",
+            },
+            "speakers": centroids,
+        }
+
     def _sample_key(
         self,
         backend: str,
@@ -439,6 +462,241 @@ class SqliteVoiceEmbeddingStore:
                 (speaker_name, backend),
             )
 
+    def rebuild_centroids_from_samples(self, backend: str) -> Dict[str, int]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    s.backend_model_id,
+                    s.speaker_name,
+                    COALESCE(s.sample_type, 'speaker') AS sample_type,
+                    s.sample_date,
+                    s.file_path,
+                    s.embedding_blob,
+                    m.embedding_dim
+                FROM voice_embedding_samples s
+                JOIN voice_embedding_models m ON m.id = s.backend_model_id
+                WHERE m.backend = ?
+                  AND m.is_active = 1
+                """,
+                (backend,),
+            ).fetchall()
+
+            conn.execute(
+                """
+                DELETE FROM voice_embedding_centroids
+                WHERE backend_model_id IN (
+                    SELECT id FROM voice_embedding_models WHERE backend = ?
+                )
+                """,
+                (backend,),
+            )
+
+            if not rows:
+                return {
+                    "sample_rows": 0,
+                    "group_count": 0,
+                    "centroids_written": 0,
+                }
+
+            grouped: Dict[Tuple[int, str, str], Dict[str, Any]] = {}
+            for row in rows:
+                model_id = int(row["backend_model_id"])
+                speaker_name = str(row["speaker_name"])
+                sample_type = str(row["sample_type"] or "speaker")
+                key = (model_id, speaker_name, sample_type)
+                state = grouped.setdefault(
+                    key,
+                    {
+                        "vectors": [],
+                        "sample_dates": [],
+                        "sample_file": None,
+                        "dim": int(row["embedding_dim"] or 0),
+                    },
+                )
+
+                vec = _unpack_embedding_blob(row["embedding_blob"], int(row["embedding_dim"] or 0))
+                if vec.size == 0:
+                    continue
+                state["vectors"].append(vec)
+
+                sample_date = row["sample_date"]
+                if sample_date:
+                    normalized = _normalize_sample_date(sample_date)
+                    if normalized:
+                        state["sample_dates"].append(normalized)
+
+                if not state["sample_file"] and row["file_path"]:
+                    state["sample_file"] = Path(str(row["file_path"])).name
+
+            written = 0
+            for (model_id, speaker_name, sample_type), state in grouped.items():
+                vectors: List[np.ndarray] = state["vectors"]
+                if not vectors:
+                    continue
+
+                centroid = np.mean(np.stack(vectors, axis=0), axis=0).astype(np.float32)
+                blob, emb_dim = _pack_embedding_blob(centroid)
+                short_name = speaker_name.split()[0] if speaker_name.split() else speaker_name
+                sample_dates = state["sample_dates"][-100:]
+
+                conn.execute(
+                    """
+                    INSERT INTO voice_embedding_centroids
+                        (speaker_name, sample_type, short_name, sample_file, sample_count,
+                         sample_dates_json, centroid_blob, embedding_dim, dtype, backend_model_id, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'float32', ?, datetime('now', 'localtime'))
+                    ON CONFLICT(speaker_name, sample_type, backend_model_id) DO UPDATE SET
+                        short_name = excluded.short_name,
+                        sample_file = excluded.sample_file,
+                        sample_count = excluded.sample_count,
+                        sample_dates_json = excluded.sample_dates_json,
+                        centroid_blob = excluded.centroid_blob,
+                        embedding_dim = excluded.embedding_dim,
+                        dtype = excluded.dtype,
+                        updated_at = datetime('now', 'localtime')
+                    """,
+                    (
+                        speaker_name,
+                        sample_type,
+                        short_name,
+                        state["sample_file"],
+                        len(vectors),
+                        json.dumps(sample_dates),
+                        blob,
+                        emb_dim,
+                        model_id,
+                    ),
+                )
+                written += 1
+
+            return {
+                "sample_rows": len(rows),
+                "group_count": len(grouped),
+                "centroids_written": written,
+            }
+
+    def verify_integrity(self, backend: str) -> Dict[str, Any]:
+        with self._connect() as conn:
+            sample_row = conn.execute(
+                """
+                SELECT COUNT(*) AS c
+                FROM voice_embedding_samples s
+                JOIN voice_embedding_models m ON m.id = s.backend_model_id
+                WHERE m.backend = ? AND m.is_active = 1
+                """,
+                (backend,),
+            ).fetchone()
+            centroid_row = conn.execute(
+                """
+                SELECT COUNT(*) AS c
+                FROM voice_embedding_centroids c
+                JOIN voice_embedding_models m ON m.id = c.backend_model_id
+                WHERE m.backend = ? AND m.is_active = 1
+                """,
+                (backend,),
+            ).fetchone()
+            distinct_speaker_row = conn.execute(
+                """
+                SELECT COUNT(*) AS c
+                FROM (
+                    SELECT DISTINCT s.speaker_name, COALESCE(s.sample_type, 'speaker') AS sample_type
+                    FROM voice_embedding_samples s
+                    JOIN voice_embedding_models m ON m.id = s.backend_model_id
+                    WHERE m.backend = ? AND m.is_active = 1
+                ) t
+                """,
+                (backend,),
+            ).fetchone()
+            orphan_samples_row = conn.execute(
+                """
+                SELECT COUNT(*) AS c
+                FROM voice_embedding_samples s
+                JOIN voice_embedding_models m ON m.id = s.backend_model_id
+                LEFT JOIN voice_samples vs ON vs.id = s.voice_sample_id
+                WHERE m.backend = ?
+                  AND m.is_active = 1
+                  AND s.voice_sample_id IS NOT NULL
+                  AND vs.id IS NULL
+                """,
+                (backend,),
+            ).fetchone()
+            speakers_without_centroid_row = conn.execute(
+                """
+                SELECT COUNT(*) AS c
+                FROM (
+                    SELECT DISTINCT s.speaker_name, COALESCE(s.sample_type, 'speaker') AS sample_type
+                    FROM voice_embedding_samples s
+                    JOIN voice_embedding_models m ON m.id = s.backend_model_id
+                    WHERE m.backend = ? AND m.is_active = 1
+                ) src
+                LEFT JOIN (
+                    SELECT DISTINCT c.speaker_name, c.sample_type
+                    FROM voice_embedding_centroids c
+                    JOIN voice_embedding_models m ON m.id = c.backend_model_id
+                    WHERE m.backend = ? AND m.is_active = 1
+                ) ctr
+                  ON ctr.speaker_name = src.speaker_name
+                 AND ctr.sample_type = src.sample_type
+                WHERE ctr.speaker_name IS NULL
+                """,
+                (backend, backend),
+            ).fetchone()
+
+            missing_voice_sample_files = 0
+            for row in conn.execute(
+                """
+                SELECT file_path
+                FROM voice_samples
+                WHERE file_path IS NOT NULL
+                  AND TRIM(file_path) <> ''
+                """
+            ).fetchall():
+                file_path = str(row["file_path"])
+                if not Path(file_path).exists():
+                    missing_voice_sample_files += 1
+
+            missing_embedding_files = 0
+            for row in conn.execute(
+                """
+                SELECT s.file_path
+                FROM voice_embedding_samples s
+                JOIN voice_embedding_models m ON m.id = s.backend_model_id
+                WHERE m.backend = ?
+                  AND m.is_active = 1
+                  AND s.file_path IS NOT NULL
+                  AND TRIM(s.file_path) <> ''
+                """,
+                (backend,),
+            ).fetchall():
+                file_path = str(row["file_path"])
+                if not Path(file_path).exists():
+                    missing_embedding_files += 1
+
+            sample_rows = int(sample_row["c"] or 0)
+            centroid_rows = int(centroid_row["c"] or 0)
+            distinct_speakers = int(distinct_speaker_row["c"] or 0)
+            orphan_samples = int(orphan_samples_row["c"] or 0)
+            speakers_without_centroid = int(speakers_without_centroid_row["c"] or 0)
+            ok = (
+                orphan_samples == 0
+                and speakers_without_centroid == 0
+                and missing_voice_sample_files == 0
+                and missing_embedding_files == 0
+            )
+
+            return {
+                "ok": ok,
+                "backend": backend,
+                "sample_rows": sample_rows,
+                "centroid_rows": centroid_rows,
+                "distinct_speaker_groups": distinct_speakers,
+                "orphan_embedding_sample_rows": orphan_samples,
+                "speakers_without_centroid": speakers_without_centroid,
+                "missing_voice_sample_files": missing_voice_sample_files,
+                "missing_embedding_sample_files": missing_embedding_files,
+            }
+
 
 class VoiceLibrary:
     """Manages voice embeddings for known speakers"""
@@ -480,6 +738,8 @@ class VoiceLibrary:
                 import sys
 
                 print(f"SQLite embedding store unavailable: {e}", file=sys.stderr)
+            if self.store_mode == STORE_SQLITE:
+                raise RuntimeError(f"SQLite store mode requested but unavailable: {e}") from e
             self.sqlite_store = None
 
     def _embeddings_file(self, backend: Optional[str] = None) -> Path:
@@ -509,6 +769,9 @@ class VoiceLibrary:
                     import sys
 
                     print(f"Failed loading sqlite embeddings ({self.backend}): {e}", file=sys.stderr)
+        # SQLite-only mode: no JSON fallback
+        if self.store_mode == STORE_SQLITE:
+            return
         target = self._embeddings_file()
         data = None
 
@@ -532,15 +795,17 @@ class VoiceLibrary:
 
     def _save_embeddings(self):
         """Save embeddings to backend-specific storage."""
-        payload = {
-            "meta": {
-                "backend": self.backend,
-                "updated_at": datetime.utcnow().isoformat() + "Z",
-            },
-            "speakers": self.embeddings,
-        }
-        with open(self._embeddings_file(), "w") as f:
-            json.dump(payload, f, indent=2)
+        # Write JSON only in explicit json mode, or auto mode without a sqlite store available
+        if self.store_mode == STORE_JSON or (self.store_mode == STORE_AUTO and self.sqlite_store is None):
+            payload = {
+                "meta": {
+                    "backend": self.backend,
+                    "updated_at": datetime.utcnow().isoformat() + "Z",
+                },
+                "speakers": self.embeddings,
+            }
+            with open(self._embeddings_file(), "w") as f:
+                json.dump(payload, f, indent=2)
         if self.sqlite_store is not None:
             self.sqlite_store.replace_centroids(self.backend, self.embeddings)
 
@@ -872,6 +1137,8 @@ def run_compare_backends(
     audio_path: Path,
     episode_date: Optional[str],
     hf_token: Optional[str],
+    db_path: Path,
+    store_mode: str,
 ) -> Dict[str, Any]:
     diarization = _load_diarization_segments(diarization_path)
     labels = sorted({s.get("speaker") for s in diarization.get("segments", []) if s.get("speaker")})
@@ -882,7 +1149,13 @@ def run_compare_backends(
     backend_mappings: Dict[str, Dict[str, Any]] = {}
     for backend in [BACKEND_ECAPA, BACKEND_PYANNOTE]:
         try:
-            library = VoiceLibrary(hf_token=hf_token, quiet=True, backend=backend)
+            library = VoiceLibrary(
+                hf_token=hf_token,
+                quiet=True,
+                backend=backend,
+                db_path=db_path,
+                store_mode=store_mode,
+            )
             with contextlib.redirect_stdout(io.StringIO()):
                 mapping = library.identify_speakers_in_diarization(
                     diarization,
@@ -981,6 +1254,35 @@ def main():
     add_backend_arg(rebuild_one_parser)
     add_store_args(rebuild_one_parser)
 
+    rebuild_db_parser = subparsers.add_parser(
+        "rebuild-from-db",
+        help="Rebuild centroids from voice_embedding_samples in SQLite",
+    )
+    add_backend_arg(rebuild_db_parser)
+    add_store_args(rebuild_db_parser)
+
+    verify_parser = subparsers.add_parser(
+        "verify",
+        help="Verify voice library DB/file integrity and centroid coverage",
+    )
+    add_backend_arg(verify_parser)
+    add_store_args(verify_parser)
+
+    migrate_json_parser = subparsers.add_parser(
+        "migrate-json",
+        help="Import centroids from JSON file into SQLite for any speakers not already present",
+    )
+    add_backend_arg(migrate_json_parser)
+    add_store_args(migrate_json_parser)
+
+    export_json_parser = subparsers.add_parser(
+        "export-json",
+        help="Export SQLite centroids to JSON file (portability/debug)",
+    )
+    add_backend_arg(export_json_parser)
+    add_store_args(export_json_parser)
+    export_json_parser.add_argument("--output", type=str, default=None, help="Output path (default: embeddings_<backend>.json)")
+
     compare_parser = subparsers.add_parser("compare", help="Compare ECAPA and pyannote on one diarized episode")
     compare_parser.add_argument("--diarization-json", required=True, help="Path to transcript or diarization JSON")
     compare_parser.add_argument("--audio", required=True, help="Path to original audio file")
@@ -998,6 +1300,8 @@ def main():
     if args.command == "compare":
         diarization_path = Path(args.diarization_json)
         audio_path = Path(args.audio)
+        db_path = Path(getattr(args, "db_path", str(DEFAULT_DB_PATH)))
+        store_mode = getattr(args, "store_mode", STORE_AUTO)
         if not diarization_path.exists():
             print(json.dumps({"status": "error", "error": f"Diarization file not found: {diarization_path}"}))
             raise SystemExit(1)
@@ -1005,12 +1309,19 @@ def main():
             print(json.dumps({"status": "error", "error": f"Audio file not found: {audio_path}"}))
             raise SystemExit(1)
 
-        result = run_compare_backends(diarization_path, audio_path, args.episode_date, hf_token)
+        result = run_compare_backends(
+            diarization_path,
+            audio_path,
+            args.episode_date,
+            hf_token,
+            db_path,
+            store_mode,
+        )
         result["episode"] = args.episode_date
         print(json.dumps(result, indent=2))
         return
 
-    quiet = args.command in ("info", "rebuild", "rebuild-speaker")
+    quiet = args.command in ("info", "rebuild", "rebuild-speaker", "rebuild-from-db", "verify", "migrate-json", "export-json")
     db_path = Path(getattr(args, "db_path", str(DEFAULT_DB_PATH)))
     store_mode = getattr(args, "store_mode", STORE_AUTO)
     library = VoiceLibrary(
@@ -1249,6 +1560,99 @@ def main():
                         }
                     )
                 )
+
+    elif args.command == "rebuild-from-db":
+        if library.sqlite_store is None:
+            print(
+                json.dumps(
+                    {
+                        "status": "error",
+                        "backend": library.backend,
+                        "error": "SQLite embedding store unavailable (use --store-mode sqlite with valid --db-path)",
+                    }
+                )
+            )
+            raise SystemExit(1)
+
+        stats = library.sqlite_store.rebuild_centroids_from_samples(library.backend)
+        library._load_embeddings(quiet=True)
+        print(
+            json.dumps(
+                {
+                    "status": "success",
+                    "backend": library.backend,
+                    **stats,
+                    "speaker_count": len(library.embeddings),
+                }
+            )
+        )
+
+    elif args.command == "verify":
+        if library.sqlite_store is None:
+            print(
+                json.dumps(
+                    {
+                        "status": "error",
+                        "backend": library.backend,
+                        "ok": False,
+                        "error": "SQLite embedding store unavailable (use --store-mode sqlite with valid --db-path)",
+                    }
+                )
+            )
+            raise SystemExit(1)
+
+        report = library.sqlite_store.verify_integrity(library.backend)
+        print(
+            json.dumps(
+                {
+                    "status": "success" if report.get("ok") else "warning",
+                    **report,
+                }
+            )
+        )
+
+    elif args.command == "migrate-json":
+        if library.sqlite_store is None:
+            print(json.dumps({"status": "error", "backend": library.backend, "error": "SQLite store unavailable"}))
+            raise SystemExit(1)
+
+        # Load centroids from the JSON file for this backend (no sqlite store active during read)
+        json_lib = VoiceLibrary(hf_token=hf_token, quiet=True, backend=library.backend, store_mode=STORE_JSON)
+        if not json_lib.embeddings:
+            print(json.dumps({"status": "ok", "backend": library.backend, "imported": 0, "message": "No JSON embeddings found"}))
+        else:
+            imported = library.sqlite_store.import_centroids_missing_only(library.backend, json_lib.embeddings)
+            print(
+                json.dumps(
+                    {
+                        "status": "success",
+                        "backend": library.backend,
+                        "imported": imported,
+                        "json_speakers": list(json_lib.embeddings.keys()),
+                        "message": f"Imported {imported} speaker(s) from JSON into SQLite",
+                    }
+                )
+            )
+
+    elif args.command == "export-json":
+        if library.sqlite_store is None:
+            print(json.dumps({"status": "error", "backend": library.backend, "error": "SQLite store unavailable"}))
+            raise SystemExit(1)
+
+        payload = library.sqlite_store.export_centroids_to_json(library.backend)
+        out_path = Path(args.output) if getattr(args, "output", None) else library._embeddings_file()
+        with open(out_path, "w") as f:
+            json.dump(payload, f, indent=2)
+        print(
+            json.dumps(
+                {
+                    "status": "success",
+                    "backend": library.backend,
+                    "speaker_count": len(payload.get("speakers", {})),
+                    "output": str(out_path),
+                }
+            )
+        )
 
 
 if __name__ == "__main__":

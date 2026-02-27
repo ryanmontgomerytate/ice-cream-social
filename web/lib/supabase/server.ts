@@ -1,18 +1,23 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import {
+  getSupabasePublishableKey,
+  getSupabaseSecretKey,
+  getSupabaseUrl,
+} from "@/lib/supabase/env";
 
 /**
  * Server-side Supabase client for Server Components and API route handlers.
  *
- * Uses the service role key so it bypasses RLS — suitable for import
+ * Uses the secret key so it bypasses RLS — suitable for import
  * pipeline reads and admin operations. For public page rendering, the
- * anon client respects RLS and is preferred.
+ * publishable-key client respects RLS and is preferred.
  */
 export async function createAdminClient() {
   const cookieStore = await cookies();
   return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    getSupabaseUrl(),
+    getSupabaseSecretKey(),
     {
       cookies: {
         getAll() {
@@ -34,14 +39,14 @@ export async function createAdminClient() {
 }
 
 /**
- * Server-side Supabase client using the anon key (respects RLS).
+ * Server-side Supabase client using the publishable key (respects RLS).
  * Use this for public-facing server component data fetches.
  */
 export async function createPublicClient() {
   const cookieStore = await cookies();
   return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    getSupabaseUrl(),
+    getSupabasePublishableKey(),
     {
       cookies: {
         getAll() {

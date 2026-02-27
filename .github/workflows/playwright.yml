@@ -1,10 +1,10 @@
-name: Playwright Tests (Disabled - Tauri Migration)
+name: Playwright Tests
 on:
-  workflow_dispatch:  # Only run manually, not on push/PR
-  # push:
-  #   branches: [ main, master ]
-  # pull_request:
-  #   branches: [ main, master ]
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
 jobs:
   test:
     timeout-minutes: 60
@@ -13,9 +13,15 @@ jobs:
     - uses: actions/checkout@v4
     - uses: actions/setup-node@v4
       with:
-        node-version: lts/*
+        node-version: 20
+        cache: npm
+        cache-dependency-path: |
+          package-lock.json
+          scripts/dashboard-react/package-lock.json
     - name: Install dependencies
       run: npm ci
+    - name: Install dashboard dependencies
+      run: npm --prefix scripts/dashboard-react ci
     - name: Install Playwright Browsers
       run: npx playwright install --with-deps
     - name: Run Playwright tests

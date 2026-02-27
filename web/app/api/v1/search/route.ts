@@ -1,18 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
+import { searchTranscriptSegments } from "@/lib/search";
 
 export const runtime = "nodejs";
 
-// Stub — Full-text search via Postgres tsvector (Phase 2)
 export async function GET(request: NextRequest) {
-  const q = request.nextUrl.searchParams.get("q") ?? "";
+  const searchParams = request.nextUrl.searchParams;
+  const q = searchParams.get("q") ?? "";
+  const page = parseInt(searchParams.get("page") ?? "1", 10);
+  const perPage = parseInt(searchParams.get("per_page") ?? "20", 10);
 
-  return NextResponse.json(
-    {
-      query: q,
-      results: [],
-      total: 0,
-      message: "Full-text search coming in Phase 2.",
-    },
-    { status: 200 }
-  );
+  try {
+    const payload = await searchTranscriptSegments({ q, page, perPage });
+    return NextResponse.json(payload, {
+      headers: {
+        "Cache-Control": "public, s-maxage=120, stale-while-revalidate=600",
+      },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Search failed";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }

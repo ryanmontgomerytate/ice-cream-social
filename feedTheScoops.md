@@ -1,5 +1,9 @@
 Operation Feed the Scoops
 
+Execution tracker (live status): `docs/EVOLVE_ICS_TRACKER.md`
+Clip feed tracker (live status): `docs/TIKTOK_CLIP_FEED_TRACKER.md`
+GitHub Project board mirror runbook: `docs/operations/GITHUB_PROJECT_BOARD.md`
+
   # Plan: Evolve Ice Cream Social From Mac-Only Tauri App to Web + Phone-Ready Community Platform
 
   ## Summary
@@ -495,6 +499,28 @@ Operation Feed the Scoops
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Patreon supports OAuth
+Patreon supports OAuth
+Patreon supports OAuth
+Patreon supports OAuth
+
   Patreon supports OAuth and membership/entitlement data via API v2, so this is feasible. The key design choices are what exactly you want to gate and how strict the entitlement checks
   should be, because those choices change the schema, API, and moderation flow.
 
@@ -717,6 +743,49 @@ Operation Feed the Scoops
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Plan: Build a TikTok-Style Podcast Clip Feed (Ultimate Goal) for ICS and Future Shows
+# Plan: Build a TikTok-Style Podcast Clip Feed (Ultimate Goal) for ICS and Future Shows
+# Plan: Build a TikTok-Style Podcast Clip Feed (Ultimate Goal) for ICS and Future Shows
+# Plan: Build a TikTok-Style Podcast Clip Feed (Ultimate Goal) for ICS and Future Shows
   › create a plan for we could have social media tiktok like feed of podcast segments to scroll and listen. (This is kind of an ultimate goal) This could be shareable across all social media
   platforms and its own stand alone platform. inspiration(https://github.com/rebane2001/xikipedia aslo the algorthrim) this could be from individual clips from different episodes, clips
   highed as chapters, clips strung toghter as bits, clips of a single character, clips of different charaters.
@@ -753,8 +822,6 @@ Operation Feed the Scoops
 • Searched https://github.com/rebane2001/xikipedia
 
 • Proposed Plan
-
-
   # Plan: Build a TikTok-Style Podcast Clip Feed (Ultimate Goal) for ICS and Future Shows
 
   ## Summary
@@ -1271,617 +1338,10 @@ Operation Feed the Scoops
   - Patreon entitlement integration will gate premium clips later using linked app accounts.
   - Rights controls are built in from day one because clip sharing increases legal exposure.
 
-
-  review how and why scripts/voice_library/embeddings.json
-  scripts/voice_library/embeddings_*.json
-  scripts/voice_library/samples/
-• I’m going to inspect the local voice_library files and the code paths that write/read them first, then I’ll compare that design to common approaches used by diarization/embedding tools so
-  the recommendations are grounded.
-
-• Explored
-  └ List voice_library
-
-• I found the on-disk layout and where Rust/Tauri calls into it. Next I’m inspecting scripts/voice_library.py and the JSON payload shape/size so I can explain exactly why this storage exists
-    List voice_library
-    List samples
-    List sound_bites
-
-──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-• Searched pyannote speaker embedding database storage recommendations
-
-• Searched pyannote.audio embedding documentation official
-
-• Searched pgvector official github README index types HNSW IVF
-
-• Explored
-  └ Read episodes.rs, speakers.rs, speaker_diarization.py
-
-• Searched pyannote speaker embedding documentation official
-
-• Searched pyannote.audio embedding model docs pyannote official
-
-• Searched SpeechBrain speaker recognition inference SpeakerRecognition.from_hparams docs official speechbrain
-
-• Searched pgvector official github postgres vector extension
-
-• Searched https://github.com/asg017/sqlite-vec
-
-• Searched https://docs.pyannote.ai/models
-
-• Searched 'SpeakerRecognition.from_hparams' in https://speechbrain.readthedocs.io/en/latest/API/speechbrain.inference.speaker.html
-
-──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-
-• I’ve gathered enough to explain the current design and compare alternatives. I’m doing one last check on the models/ folder (it showed 0B in du, which may mean symlinks/sparse files) so
-  the storage recommendations cover model cache handling too.
-
-• Explored
-  └ List speechbrain_ecapa
-    List speechbrain_ecapa
-
-──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-
-• I’m ready to write the review. I’m grabbing exact line numbers for the key functions (_save_embeddings, rebuild, and sample extraction) so the recommendations can reference the real
-  implementation directly.
-
-• Explored
-  └ Search savedir=cache_dir|SpeakerRecognition\.from_hparams|Model\.from_pretrained\( in voice_library.py
-    Search def _save_embeddings|def _load_embeddings|def add_speaker\(|def identify_speakers_in_diarization\(|elif args.command == \"rebuild\" in voice_library.py
-    Search pub async fn save_voice_samples\(|voice_library\.py\".*, \"add\"|pub async fn get_voice_library\(|pub async fn rebuild_voice_library\( in episodes.rs
-
-──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-
-• Good target. I reviewed the actual implementation and on-disk data layout. Short version: the current storage is simple and works for a small local voice library, but it will become a
-  bottleneck (and a source of drift) as you scale speakers/samples/backends.
-
-  ## What this storage is and why it exists (current app)
-
-  ### Files/directories
-
-  - scripts/voice_library/embeddings_pyannote.json
-  - scripts/voice_library/embeddings_ecapa.json
-  - scripts/voice_library/embeddings.json (legacy)
-  - scripts/voice_library/samples/ (speaker sample WAVs)
-  - scripts/voice_library/sound_bites/ (non-person voice/audio drop samples)
-  - scripts/voice_library/models/ (SpeechBrain model cache symlink dir)
-
-  ### How it gets created
-
-  - Tauri command save_voice_samples extracts WAV clips via ffmpeg and writes them into samples/ or sound_bites/, then calls voice_library.py add ... to compute/update embeddings.
-      - src-tauri/src/commands/episodes.rs:1442
-  - voice_library.py loads/saves backend-specific JSON files and averages embeddings over samples.
-      - _load_embeddings: scripts/voice_library.py:95
-      - _save_embeddings: scripts/voice_library.py:118
-      - add_speaker: scripts/voice_library.py:187
-  - Rebuild scans samples/ and sound_bites/, re-embeds everything, and rewrites JSON.
-      - scripts/voice_library.py:621
-      - Tauri wrapper rebuild_voice_library: src-tauri/src/commands/speakers.rs:869
-  - SpeechBrain ECAPA model cache is stored under scripts/voice_library/models/speechbrain_ecapa, but those are symlinks into Hugging Face cache.
-      - SpeakerRecognition.from_hparams(... savedir=cache_dir): scripts/voice_library.py:139
-
-  ## What I found (current footprint)
-
-  - Embedding JSONs are small right now (~417 KB total)
-  - samples/ + sound_bites/ are ~5.4 MB total (small)
-  - models/speechbrain_ecapa looked 0B at first because it is symlinks, but actual model size is ~85 MB when following links
-  - Current embeddings:
-      - ECAPA vectors are 192-dim
-      - pyannote vectors are 512-dim
-
-  This means storage pressure is not urgent today; the bigger issue is design/maintainability/perf as the library grows.
-
-  ## Why this design made sense
-
-  It is pragmatic for a local desktop app:
-
-  - human-readable JSON
-  - easy to debug/rebuild
-  - Python-first embedding pipeline (pyannote/SpeechBrain)
-  - Rust can call Python subprocesses without needing a shared binary format
-  - raw WAVs are auditable and reusable for retraining
-
-  That is a valid v1 local workflow.
-
-  ## Main problems / scaling risks
-
-  ### 1) JSON is rewritten on every update
-
-  - _save_embeddings() writes the entire file each time.
-  - Fine for 10-50 entries; increasingly wasteful for larger libraries.
-
-  ### 2) Float JSON is bloated and slow
-
-  - Embeddings are stored as decimal float arrays (tolist()), which is much larger/slower than binary (float32 blobs / .npy).
-
-  ### 3) Only centroid embedding is stored (lossy)
-
-  - You average samples into one vector + sample_count.
-  - You lose:
-      - per-sample variance
-      - outlier detection
-      - quality weighting
-      - re-ranking against top-k samples
-  - This limits matching quality as you add noisy clips.
-
-  ### 4) Two sources of truth
-
-  - Sample files on disk + DB records (voice_samples) + embeddings JSON
-  - Rebuild helps, but drift is still possible (deleted files, stale embeddings, mismatched names)
-
-  ### 5) Linear scan matching only
-
-  - identify_speaker() computes cosine similarity against every stored embedding.
-  - Fine now; not fine if you expand to lots of speakers/characters/sound bites across many shows.
-
-  ### 6) Repo/path coupling
-
-  - Several Tauri commands assume fixed project path under your Desktop.
-  - Works on your Mac; bad for portability/deployment.
-
-  ### 7) Backend siloing
-
-  - embeddings_ecapa.json and embeddings_pyannote.json are separate (reasonable), but there’s no unified metadata/model versioning strategy.
-
-  ## Storage optimization options (best-to-practical)
-
-  ## Option A (lowest risk, best short-term ROI): Keep filesystem + optimize format
-
-  Keep current architecture, but change embedding storage format:
-
-  - metadata.json for names/sample counts/dates
-  - embeddings_{backend}.npy or .npz for numeric matrix (float32)
-  - optional name_to_row map
-
-  Benefits:
-
-  - much smaller/faster load/save
-  - keeps Python pipeline simple
-  - no DB migration needed yet
-
-  Add:
-
-  - atomic writes (write temp file + rename)
-  - explicit schema version + backend/model version
-
-  ## Option B (recommended medium-term): Move embeddings metadata + vectors into SQLite
-
-  Use your existing DB as source of truth:
-
-  - voice_embedding_samples (per sample embedding BLOB float32)
-  - voice_embedding_centroids (derived centroid per speaker/backend)
-  - voice_embedding_models (backend/model/version metadata)
-  - keep audio sample files on disk/object storage
-
-  Benefits:
-
-  - single source of truth
-  - transactional updates
-  - easier moderation/cleanup/history
-  - easier future hosting
-  - easier joins with voice_samples, episodes, ratings
-
-  This is the best app-level architecture for your project.
-
-  ## Option C (later scale): Add vector index (sqlite-vec / pgvector / FAISS)
-
-  When library grows across many shows:
-
-  - local desktop: sqlite-vec (fits your SQLite/Tauri setup)
-  - hosted multi-user: pgvector
-  - large offline experimentation: FAISS
-
-  Use only when needed. For current library size, exact cosine scan is okay.
-
-  ## Option D (audio sample storage optimization)
-
-  For sample clips:
-
-  - keep canonical archive as FLAC instead of WAV (smaller lossless)
-  - generate temporary 16k mono WAV on embedding/rebuild if required
-  - dedupe by content hash
-  - cap sample duration and sample count per speaker/backend
-  - retain top-rated/high-confidence samples, archive the rest
-
-  Good when sample volume starts growing fast.
-
-  ## Recommended target design for this app (pragmatic)
-
-  ### Now (keep momentum)
-
-  - Keep raw sample files on disk (samples/, sound_bites/)
-  - Keep JSON for 1 more iteration, but:
-      - store float32
-      - split metadata from vectors
-      - add schema/model-version metadata
-      - add atomic writes
-
-  ### Next (best upgrade)
-
-  - Move embeddings into SQLite tables as BLOB float32
-  - Store per-sample embeddings and derived centroids
-  - Rebuild becomes a DB refresh job, not a JSON rewrite
-  - get_voice_library reads DB first, filesystem only for reconciliation
-
-  ### Later (multi-show)
-
-  - Add vector index (sqlite-vec local, pgvector hosted)
-  - Add ANN only when exact scan becomes slow
-
-  ## “Other tools” and better methods (what they typically do)
-
-  - keep model weights in framework cache (HF cache / local cache dir)
-  - store embeddings in binary arrays or vector DBs, not JSON float arrays
-  - preserve per-sample embeddings and compute centroids/indexes as derived data
-  - use ANN indexes only after scale justifies it
-
-  Relevant references:
-
-  - Pyannote docs (speaker/voice workflows): https://docs.pyannote.ai/
-  - SpeechBrain speaker recognition docs (ECAPA usage): https://speechbrain.readthedocs.io/en/latest/API/speechbrain.inference.speaker.html
-  - FAISS (vector similarity indexing): https://github.com/facebookresearch/faiss
-  - sqlite-vec (SQLite vector search, good local fit): https://github.com/asg017/sqlite-vec
-  - pgvector (Postgres vector extension, good hosted fit): https://github.com/pgvector/pgvector
-
-  ## Specific improvements I’d prioritize for your app
-
-  1. Make embedding storage versioned (schema_version, backend, model_id, dim, dtype)
-  2. Store per-sample embeddings (not only averaged centroid)
-  3. Quantize/store as float32 binary, not JSON floats
-  4. Make DB the canonical metadata store; filesystem for media only
-  5. Remove hardcoded project path assumptions in Tauri commands
-  6. Treat models/ symlink cache as cache, not app data (document/cache path config)
-
-  ## Why this matters for app optimization
-
-  - Faster startup/load of voice library
-  - Faster rebuilds and less file churn
-  - Better diarization speaker-ID quality (outlier handling, weighting)
-  - Easier migration to hosted/multi-show architecture
-  - Lower risk of “sample files exist but embeddings stale” drift
-
-  If you want, I can turn this into a concrete migration plan with an exact SQLite schema (voice_embedding_samples, voice_embedding_centroids) and a step-by-step transition path from the
-  current JSON files.
-
-
-› can you add that to the plan?
-
-
-• Proposed Plan
-
-
-  # Plan Addendum: Voice Library Storage Optimization and Embedding Architecture Upgrade
-
-  ## Summary
-
-  Add a dedicated workstream to modernize how speaker embeddings, sample clips, and model caches are stored. This reduces drift, improves speaker-ID quality, and prepares the app for
-  hosted/multi-show scaling.
-
-  This addendum is based on the current implementation in:
-
-  - scripts/voice_library.py
-  - src-tauri/src/commands/episodes.rs:1442
-  - src-tauri/src/commands/speakers.rs:197
-  - src-tauri/src/commands/speakers.rs:869
-
-  Current state:
-
-  - Embeddings stored as JSON float arrays (embeddings_*.json)
-  - Raw sample clips stored on disk (samples/, sound_bites/)
-  - Rebuild scans filesystem and rewrites whole JSON files
-  - Tauri reads Python CLI + filesystem to infer state
-
   ———
 
-  ## Why This Matters (Product + Performance)
 
-  - Improves diarization speaker identification quality (store per-sample embeddings, not only centroids)
-  - Reduces long-term maintenance risk (single source of truth)
-  - Enables faster startup/load and future vector search
-  - Makes voice library portable for web-hosted / multi-show architecture
-  - Reduces mismatch between DB records, sample files, and JSON embeddings
 
-  ———
 
-  ## Current Storage Model (As-Is)
 
-  ### Current artifacts
 
-  - scripts/voice_library/embeddings_pyannote.json
-  - scripts/voice_library/embeddings_ecapa.json
-  - scripts/voice_library/embeddings.json (legacy)
-  - scripts/voice_library/samples/*/*.wav
-  - scripts/voice_library/sound_bites/*/*.wav
-  - scripts/voice_library/models/speechbrain_ecapa (symlinks into HF cache)
-
-  ### Current behavior
-
-  - save_voice_samples extracts clips via ffmpeg and writes WAV files
-  - voice_library.py add computes embedding and updates JSON
-  - rebuild re-embeds from all sample files and rewrites backend JSON
-  - Matching is linear scan over stored centroid embeddings
-
-  ———
-
-  ## Target Architecture (Storage)
-
-  ## Canonical data split (decision complete)
-
-  - Database (canonical metadata + embeddings):
-      - sample metadata
-      - per-sample embeddings
-      - derived centroids
-      - backend/model versions
-  - Filesystem/Object storage (media assets only):
-      - raw sample clips / sound bites
-  - Model cache (cache only, non-canonical):
-      - Hugging Face / SpeechBrain downloaded weights
-
-  ## Storage strategy by phase
-
-  ### Phase 1 (short-term, low risk)
-
-  - Keep filesystem samples as-is
-  - Keep JSON compatible reads
-  - Add versioned metadata and atomic writes
-  - Introduce export/import helper for embeddings
-
-  ### Phase 2 (recommended target)
-
-  - Move embeddings into SQLite tables (BLOB float32)
-  - Store per-sample embeddings + derived centroids
-  - Rebuild populates DB tables, not JSON
-  - JSON becomes optional debug/export artifact
-
-  ### Phase 3 (scale)
-
-  - Add vector index (sqlite-vec locally; pgvector hosted later)
-  - Support multi-show voice libraries and backend versioned indexes
-
-  ———
-
-  ## Schema Changes (Architect Spec)
-
-  ## New tables (SQLite now, portable to Postgres later)
-
-  ### voice_embedding_models
-
-  Tracks backend/model metadata and compatibility.
-
-  - id
-  - backend (pyannote, ecapa-tdnn)
-  - model_id (e.g. pyannote/embedding, speechbrain/spkrec-ecapa-voxceleb)
-  - embedding_dim (192/512)
-  - dtype (float32)
-  - version_tag (app-defined)
-  - created_at
-  - is_active
-
-  ### voice_embedding_samples
-
-  One row per sample embedding (not averaged).
-
-  - id
-  - speaker_name
-  - sample_type (speaker, sound_bite)
-  - voice_sample_id (FK to existing voice_samples, nullable for legacy)
-  - episode_id (nullable)
-  - file_path
-  - file_hash (dedupe)
-  - backend_model_id (FK)
-  - embedding_blob (float32 packed bytes)
-  - embedding_norm (optional cached norm)
-  - sample_date (nullable)
-  - quality_rating (nullable / from UI)
-  - source (manual, harvest, rebuild)
-  - created_at
-
-  ### voice_embedding_centroids
-
-  Derived per speaker/backend summary for fast matching.
-
-  - id
-  - speaker_name
-  - sample_type
-  - backend_model_id
-  - centroid_blob (float32 packed bytes)
-  - sample_count
-  - sample_dates_json (or normalized table later)
-  - variance_json (optional future)
-  - updated_at
-
-  ### voice_library_state (optional)
-
-  - key/value records for migration/versioning/rebuild timestamps
-
-  ———
-
-  ## Public/Internal Interfaces To Change (Lead Dev Spec)
-
-  ## Python voice_library.py changes
-
-  Add storage backend abstraction:
-
-  - JsonEmbeddingStore (existing behavior)
-  - SqliteEmbeddingStore (new default after migration)
-
-  New CLI flags:
-
-  - --store json|sqlite (default transitional = auto)
-  - --db-path <path> for SQLite embedding store
-  - export-json / import-json for debugging/migration
-
-  Behavior changes:
-
-  - add writes per-sample embedding row + updates centroid
-  - rebuild rebuilds per-sample rows and centroids
-  - info reads centroids and summarizes sample counts
-  - identify can use centroids first; optional top-k sample re-rank later
-
-  ## Rust/Tauri command changes
-
-  - get_voice_library should prefer DB-backed embedding metadata, filesystem scan only for reconciliation
-      - src-tauri/src/commands/speakers.rs:197
-  - rebuild_voice_library remains same UI contract, but Python rebuild writes DB-backed embeddings
-      - src-tauri/src/commands/speakers.rs:869
-  - save_voice_samples should store sample metadata + invoke embedding writer with explicit DB path/store mode
-      - src-tauri/src/commands/episodes.rs:1442
-
-  ## No breaking UI API required (initially)
-
-  Maintain current get_voice_library response shape:
-
-  - name
-  - short_name
-  - sample_count
-  - file_count
-  - episode_count
-  - has_embedding
-
-  ———
-
-  ## Matching/Algorithm Improvements (QA + Performance ROI)
-
-  ## v1.1 improvements (same UX, better accuracy)
-
-  - Keep centroid cosine matching for speed
-  - Add sample-quality weighting when updating centroid
-  - Track per-sample date and apply temporal weighting more accurately
-  - Detect outlier samples (bad/noisy clips) and exclude from centroid build
-
-  ## v1.2 improvements
-
-  - Two-stage match:
-      - centroid shortlist (fast)
-      - top-k per-sample re-rank (more accurate)
-  - This is a major quality improvement without full ANN/vector DB complexity
-
-  ## v2 scale option
-
-  - Vector index:
-      - local desktop: sqlite-vec
-      - hosted: pgvector
-  - Only needed when sample counts grow significantly across shows/users
-
-  ———
-
-  ## Storage Optimization Options (Decisioned Recommendations)
-
-  ## Recommended now
-
-  - Store embeddings as binary float32 blobs in DB (not JSON float arrays)
-  - Keep raw sample audio files on disk
-  - Keep model cache in HF cache / symlink cache, not canonical app data
-  - Add hash-based dedupe for sample files and embeddings
-
-  ## Optional later
-
-  - Convert sample archives from WAV to FLAC (lossless, smaller)
-  - Keep temporary WAVs for embedding extraction if needed
-  - Prune or archive low-quality duplicate samples per speaker
-
-  ## Not recommended right now
-
-  - Complex distributed vector DB
-  - Full remote object-store migration for local-only voice library workflow
-  - Removing raw samples entirely (you need them for rebuild/debug/retraining)
-
-  ———
-
-  ## Migration Plan (Implementation-Ready)
-
-  ## Phase V0: Instrument and document (1-2 days)
-
-  - Document current voice-library storage in ARCHITECTURE.md
-  - Add schema version and backend/model metadata to JSON payloads (if still used)
-  - Add metrics logging for:
-      - library load time
-      - rebuild duration
-      - speaker count
-      - sample count
-
-  ## Phase V1: Add SQLite embedding tables (2-4 days)
-
-  - Add DB migrations/tables listed above
-  - Add binary embedding pack/unpack helpers (float32)
-  - Add model metadata seeding (pyannote, ecapa-tdnn)
-
-  ## Phase V2: Dual-write transition (3-5 days)
-
-  - Update voice_library.py add/rebuild to write SQLite embeddings
-  - Keep JSON writes enabled behind feature flag for fallback (dual_write=true)
-  - Update info command to read SQLite first, JSON fallback
-
-  ## Phase V3: Tauri read-path migration (2-4 days)
-
-  - Update get_voice_library to use DB embedding metadata
-  - Keep filesystem scan only for “untrained sample exists” detection
-  - Surface migration status in settings/debug panel (optional)
-
-  ## Phase V4: Accuracy/perf improvements (3-6 days)
-
-  - Add per-sample quality weighting and outlier filtering
-  - Implement centroid shortlist + top-k re-rank (optional flag)
-  - Benchmark pyannote vs ECAPA with new storage path
-
-  ## Phase V5: JSON deprecation (later)
-
-  - Disable JSON writes by default
-  - Keep export-json for portability/debug
-  - Remove legacy embeddings.json read fallback after migration confidence period
-
-  ———
-
-  ## Test Cases and Scenarios (QA/Tester)
-
-  ## Unit tests
-
-  - float32 pack/unpack roundtrip for embeddings
-  - centroid recompute from N samples
-  - outlier exclusion behavior
-  - model dimension mismatch handling (192 vs 512)
-  - JSON->SQLite migration parser
-
-  ## Integration tests
-
-  - save_voice_samples creates sample file + DB sample row + embedding row
-  - rebuild_voice_library repopulates centroids from filesystem
-  - get_voice_library shows correct has_embedding and counts after migration
-  - deleting sample updates centroids correctly
-  - backend switch (pyannote vs ecapa-tdnn) isolates embeddings correctly
-
-  ## Regression tests
-  - diarization voice identification works with migrated data
-  - rebuild progress events still emit correctly
-
-  ## Performance checks
-
-  - library load time before vs after migration
-  - rebuild time per N samples
-  - identify-speaker latency for growing library sizes
-
-  ———
-
-  ## Other Tools / Methods Review (what to align with)
-
-  Adopt patterns common in speaker embedding systems:
-
-  - model weights as cache (not app data)
-  - embeddings in binary/vector storage (not JSON float text)
-  - per-sample embeddings retained; centroids derived
-  - ANN/vector index only when needed
-
-  Potential future fits:
-
-  - sqlite-vec for local similarity search
-  - pgvector for hosted multi-show platform
-  - FAISS for offline experiments/benchmarks
-
-  ———
-
-  ## Assumptions and Defaults Chosen
-
-  - Voice sample audio files remain on disk for rebuild/debug (canonical media source).
-  - Embeddings become DB-canonical data (not JSON-canonical).
-  - JSON remains temporarily for compatibility during migration.
-  - Matching stays exact cosine + centroid first until scale justifies ANN.
-  - This work is a shared foundation for both current diarization accuracy and future hosted/multi-show architecture.

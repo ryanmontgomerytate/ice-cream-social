@@ -1,183 +1,70 @@
-# Voice Library — Architecture, Status & Known Gaps
+# Deferred Work — Voice Library (Do Not Start Yet)
 
-*Last updated: February 2026*
+  ### 1. sqlite-vec — Local ANN Vector Index
 
----
+  **What:** Replace linear cosine scan in speaker identification with an HNSW index via sqlite-vec.
+  **Why deferred:** At current scale (12 speakers, ~24 sample embeddings), linear scan is nanoseconds.
+  sqlite-vec's HNSW index has fixed overhead that outweighs the benefit until ~1,000–5,000 vectors.
 
-## What the Voice Library Is
+  **When to revisit:** When per-sample two-stage matching (V4) is in place AND sample count crosses
+  ~1,000 embeddings. Rough thresholds for a single-show library:
+  - 12 speakers × 150 samples = ~1,800 vectors → borderline, probably still skip
+  - 50 speakers × 20–50 samples = ~2,500 vectors → worth adding
+  - Multi-show (5+ podcasts sharing a library) = ~5,000+ vectors → clear win
 
-The voice library is the speaker auto-identification system. It has two jobs:
+  **Implementation path:** Add `SqliteVecEmbeddingStore` implementing the same interface as
+  `SqliteVoiceEmbeddingStore`. Swap in via `--store-mode sqlite-vec`. No changes to Rust/Tauri layer.
+  **Reference:** https://github.com/asg017/sqlite-vec
 
-1. **Training** — build a "voice print" (averaged embedding vector) for each known speaker from WAV clip samples
-2. **Identification** — during diarization, compare unknown `SPEAKER_XX` labels against voice prints and auto-assign names with confidence scores
+  ———
 
----
+  ### 2. FAISS — Offline Accuracy Benchmarking
 
-## Two Separate Things: Samples vs Voice Prints
+  **What:** Batch accuracy benchmarks comparing pyannote vs ECAPA-TDNN across many episodes.
+  Standalone Python script — no app integration.
 
-This is the most important architectural distinction to understand.
+  **Why deferred:** The `compare` CLI command already handles one-episode comparison. FAISS enables
+  bulk benchmarking to confirm quality improvements before rolling out to all 900 episodes.
 
-| Concept | Where Stored | What It Is |
-|---|---|---|
-| **Sample files** | `scripts/voice_library/samples/{Name}/` | Raw WAV audio clips of the speaker |
-| **Voice print** | `scripts/voice_library/embeddings.json` | Averaged 512-dim embedding vector trained from samples |
+  **When to revisit:** After V4 (per-sample quality weighting) is done — run benchmarks to measure
+  the gain before full rollout.
 
-**Having sample files does NOT automatically mean a voice print exists.** The samples must be *processed* through the embedding model (pyannote) to create a voice print. That processing step is "Rebuild Voice Prints."
+  **Scope:** Standalone `scripts/benchmark_speaker_id.py` — reads diarized episodes with known
+  speaker labels, embeds with both backends, reports precision/recall/F1 per speaker. No DB writes.
+  **Reference:** https://github.com/facebookresearch/faiss
 
-### UI Indicators
+  ———
 
-| Badge | Meaning |
-|---|---|
-| Green **"Voice Print (Nx)"** | Voice print trained — ready for auto-assignment |
-| Amber **"N clips — needs Rebuild"** | Sample files exist on disk, but Rebuild hasn't been run |
-| No badge | No samples and no voice print |
+  ### 3. pgvector — Hosted Multi-Show Platform
 
----
+  **What:** Postgres vector extension replacing sqlite-vec when the voice library moves to the
+  hosted web platform.
 
-## Full Pipeline
+  **Why deferred:** No hosted platform to deploy it to yet. Zero benefit in the local Tauri app.
 
-```
-1. Sample files land on disk
-   (manually placed, or from Harvest, or from Scoop Polish corrections)
+  **When to revisit:** When the web platform is actively being built and voice library queries need
+  to run server-side across multiple shows.
 
-2. "Rebuild Voice Prints" runs
-   → voice_library.py rebuild
-   → Scans samples/{Speaker}/*.wav
-   → Loads pyannote embedding model (requires HF_TOKEN)
-   → Averages embeddings → saves to embeddings.json
+  **Implementation path:** Add `PgVectorEmbeddingStore` implementing the same storage interface.
+  The abstraction in voice_library.py is already designed for this swap.
 
-3. Diarization runs on a new episode
-   → speaker_diarization.py --episode-date YYYY-MM-DD
-   → Identifies SPEAKER_XX labels
-   → identify_speakers_in_diarization() matches vs embeddings.json
-   → Returns: speaker_names + speaker_confidence
+  ———
 
-4. Rust worker reads match results
-   → For confidence ≥ 0.75: calls db.link_episode_speaker_auto()
-   → episode_speakers row inserted with source='auto'
+  ### 4. Dual-Model Fusion (pyannote + ECAPA-TDNN Ensemble)
 
-5. Human reviews in the UI
-   → Confirms or corrects auto-assignments
-   → On text correction approval in Scoop Polish:
-      → extractVoiceSampleFromSegment() fires (fire-and-forget)
-      → extract_voice_sample.py clips the audio
-      → Calls add_speaker() → updates embeddings.json immediately
-      → Inserts voice_samples DB record
-```
+  **What:** Run both embedding backends and combine their similarity scores for a final speaker ID
+  decision. pyannote is stronger on temporal context; ECAPA on speaker discriminability. A weighted
+  ensemble should outperform either alone.
 
----
+  **Why deferred:** Doubles inference time. Needs FAISS benchmarks first to establish a quality
+  baseline and confirm the gain justifies the cost.
 
-## Era-Aware Temporal Weighting
+  **Approaches to evaluate (in order of complexity):**
+  - Score fusion: `final = w1 * cos_pyannote + w2 * cos_ecapa` — start here, w1=0.6, w2=0.4
+  - Decision fusion: each model votes independently, weighted vote wins
+  - Feature concat: [512 + 192 = 704-dim] vector + small linear classifier (needs labeled data)
 
-The voice library applies a temporal decay when matching — a recording from 2014 gets a lower confidence boost against a 2024 voice print (and vice versa).
+  **DB impact:** Both centroid tables already exist per backend. Fusion is query-time Python only —
+  no schema changes needed.
 
-**Formula:** `adjusted_score = cosine_similarity × (0.5 + 0.5 × exp(-days_diff / 365))`
-
-| Gap | Weight Applied |
-|---|---|
-| Same day | 1.0× (no penalty) |
-| 1 year apart | ≈ 0.82× |
-| 2 years apart | ≈ 0.68× |
-| 5+ years apart | ≈ 0.51× (floor) |
-
-This prevents Matt's 2014 USB-mic recordings from confidently matching against Paul's 2024 studio voice print.
-
----
-
-## What Is Actually Working
-
-| Feature | Status | Notes |
-|---|---|---|
-| Voice print training from WAV clips | ✅ Working | Requires HF_TOKEN + pyannote installed in venv |
-| `Rebuild Voice Prints` button | ✅ Working | Now errors properly on missing HF_TOKEN (was silently showing 0) |
-| Displaying speakers with clips but no print | ✅ Working (Feb 2026 fix) | Shows amber "needs Rebuild" badge |
-| Era-aware temporal weighting | ✅ Implemented | Fires during diarization when `--episode-date` is passed |
-| Auto-assignment during diarization | ✅ Implemented | Confidence ≥ 0.75 → `episode_speakers` with source='auto' |
-| Scoop Polish → voice library feedback loop | ✅ Implemented | Fire-and-forget on text correction approval |
-| `Harvest Samples` button | ✅ Implemented | Requires episodes with confirmed speaker assignments (see below) |
-
----
-
-## Known Gaps & Gotchas
-
-### 1. Rebuild Requires a HuggingFace Token
-
-The pyannote embedding model (`pyannote/embedding`) requires authentication. Without `HF_TOKEN` set in `.env`, Rebuild will fail with an error toast. The token needs the `pyannote/embedding` model permission granted at huggingface.co.
-
-**Setup:**
-```bash
-# In .env:
-HF_TOKEN=hf_your_token_here
-```
-
-### 2. Harvest Has a Prerequisite: Confirmed Speaker Assignments
-
-`Harvest Samples` only extracts audio from episodes where:
-- Episode is downloaded (`is_downloaded=1`)
-- Episode has been diarized (`has_diarization=1`)
-- Episode has confirmed speaker assignments in `episode_speakers` (a human or auto-assignment has set `speaker_id IS NOT NULL`)
-
-**In practice:** Until at least one episode goes through the full pipeline (download → transcribe → diarize → human assigns Matt/Paul labels), Harvest will find 0 episodes and add 0 samples. Harvest is most useful *after* a few dozen episodes are confirmed — at that point it bulk-extracts thousands of clips automatically.
-
-### 3. Auto-Assignment Only Fires After Rebuild
-
-Auto-assignment during diarization matches `SPEAKER_XX` labels against `embeddings.json`. If `embeddings.json` only contains `🔊 Intro` (the initial state), no human speakers will be auto-assigned — even if sample files exist on disk.
-
-**The bootstrap order is:**
-1. Manually place or harvest sample clips for Matt/Paul (or add from Transcript viewer)
-2. Run **Rebuild Voice Prints** → embeddings.json now has Matt, Paul, etc.
-3. Diarize an episode → auto-assignment fires with ≥0.75 confidence
-
-### 4. Samples and Embeddings Can Drift
-
-If you manually drop WAV files into `scripts/voice_library/samples/Matt_Donnelly/` *after* the last Rebuild, the embedding is stale — it doesn't know about the new clips. The amber "needs Rebuild" badge in the UI signals this state. Always run Rebuild after adding new clips manually.
-
-### 5. Speaker Name Must Match Exactly
-
-Auto-assignment and Scoop Polish feedback lookup speaker names case-insensitively in the `speakers` table, but the directory name must use underscores that convert to spaces matching the speaker's registered name exactly.
-
-Example: Directory `Matt_Donnelly` → speaker name `"Matt Donnelly"` ✅
-Example: Directory `Matt` → speaker name `"Matt Donnelly"` ❌ (no match)
-
-### 6. The `🔊 Intro` Voice Print Is Real — Others Were Not
-
-When you open the Speakers panel and see only `🔊 Intro` listed, that reflects the actual state of `embeddings.json`. The hosts Matt Donnelly and Paul Mattingly had sample files on disk (`Matt_Donnelly/`, `Paul_Mattingly/` directories) but no trained embeddings — they were completely invisible to the auto-assignment system.
-
-The **February 2026 fix** made these speakers visible in the UI with amber "needs Rebuild" badges, accurately representing the state.
-
----
-
-## File Locations Reference
-
-| Path | What's Here |
-|---|---|
-| `scripts/voice_library/samples/{Name}/` | Raw WAV clips per speaker |
-| `scripts/voice_library/embeddings.json` | Trained embedding vectors |
-| `scripts/voice_library/sound_bites/` | Audio drop samples |
-| `scripts/voice_library.py` | Core training + identification logic |
-| `scripts/speaker_diarization.py` | Runs pyannote + voice library identification |
-| `scripts/harvest_voice_samples.py` | Bulk-harvests clips from confirmed episodes |
-| `scripts/extract_voice_sample.py` | Extracts a single clip (Scoop Polish feedback) |
-| `data/ice_cream_social.db` → `voice_samples` | DB records tracking each clip's source episode/segment |
-| `data/ice_cream_social.db` → `episode_speakers` | Label→speaker assignments (has `source` and `confidence` columns) |
-
----
-
-## Quick Diagnostic Checklist
-
-If auto-assignment isn't working, check in order:
-
-1. **Is HF_TOKEN set in .env?**
-   `grep HF_TOKEN .env` — should start with `hf_`
-
-2. **Does embeddings.json have human speakers?**
-   `python scripts/voice_library.py list` — should show Matt, Paul, etc.
-
-3. **Did Rebuild run successfully?**
-   Check Speakers panel — voices with clips should show green "Voice Print" badge, not amber.
-
-4. **Is the episode diarized?**
-   In the Episodes list, check that `has_diarization=1` for the episode.
-
-5. **Were any matches found above threshold?**
-   Check the Rust logs — diarize.rs logs `[auto-assign] label → speaker (confidence X.XX)`
+  **Dependency:** FAISS benchmarks (item 2) should run first to confirm the ensemble gain is real.

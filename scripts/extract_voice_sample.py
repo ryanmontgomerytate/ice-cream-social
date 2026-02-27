@@ -87,6 +87,8 @@ def main():
     parser.add_argument("--db-path", type=Path, default=None, help="Path to SQLite database")
     parser.add_argument("--backend", type=str, default="pyannote", choices=["ecapa-tdnn", "pyannote"],
                         help="Embedding backend")
+    parser.add_argument("--store-mode", type=str, default="sqlite", choices=["auto", "json", "sqlite"],
+                        help="Voice embedding store mode")
     args = parser.parse_args()
 
     audio_path = args.audio_file
@@ -130,7 +132,13 @@ def main():
 
     hf_token = get_hf_token()
     try:
-        library = VoiceLibrary(hf_token, quiet=True, backend=args.backend)
+        library = VoiceLibrary(
+            hf_token,
+            quiet=True,
+            backend=args.backend,
+            db_path=(args.db_path if args.db_path else None),
+            store_mode=args.store_mode,
+        )
         library.add_speaker(args.speaker_name, out_path,
                              update_existing=True, sample_date=args.sample_date)
         sample_count = library.embeddings.get(args.speaker_name, {}).get("sample_count", 1)
