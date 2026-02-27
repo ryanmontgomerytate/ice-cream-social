@@ -98,6 +98,18 @@ jobs:
             echo "database_url_set=false" >> "$GITHUB_OUTPUT"
           fi
 
+          if [ -n "${DATABASE_URL:-}" ]; then
+            if python -c "import os,socket;from urllib.parse import urlparse;u=urlparse(os.environ.get('DATABASE_URL','').strip());h=u.hostname;p=u.port or 5432;assert h;socket.create_connection((h,p),5).close()"
+            then
+              echo "database_reachable=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "::warning::Skipping hosted verify: DATABASE_URL host is not reachable from this runner. Use an IPv4-reachable Supabase pooler URL."
+              echo "database_reachable=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "database_reachable=false" >> "$GITHUB_OUTPUT"
+          fi
+
           # Optional bootstrap: download a SQLite snapshot when not present in repo checkout.
           if [ ! -f data/ice_cream_social.db ] && [ -n "${SQLITE_DB_URL:-}" ]; then
             mkdir -p data
@@ -119,13 +131,13 @@ jobs:
           fi
 
       - name: Verify hosted row parity
-        if: ${{ steps.verify_prereqs.outputs.database_url_set == 'true' && steps.verify_prereqs.outputs.sqlite_exists == 'true' }}
+        if: ${{ steps.verify_prereqs.outputs.database_url_set == 'true' && steps.verify_prereqs.outputs.database_reachable == 'true' && steps.verify_prereqs.outputs.sqlite_exists == 'true' }}
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python scripts/export_to_hosted.py --mode verify
 
       - name: Verify hosted integrity (fallback without local SQLite)
-        if: ${{ steps.verify_prereqs.outputs.database_url_set == 'true' && steps.verify_prereqs.outputs.sqlite_exists != 'true' }}
+        if: ${{ steps.verify_prereqs.outputs.database_url_set == 'true' && steps.verify_prereqs.outputs.database_reachable == 'true' && steps.verify_prereqs.outputs.sqlite_exists != 'true' }}
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python scripts/export_to_hosted.py --mode verify-hosted
