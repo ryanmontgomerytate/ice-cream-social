@@ -1,0 +1,187 @@
+name: Project Board Sync
+
+on:
+  workflow_dispatch:
+  issues:
+    types: [opened, reopened, labeled, unlabeled, closed]
+  pull_request:
+    types: [opened, reopened, ready_for_review, converted_to_draft, labeled, unlabeled, closed]
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+jobs:
+  sync-project-item:
+    name: Sync item to project board
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'workflow_dispatch' }}
+    steps:
+      - name: Validate project automation configuration
+        id: validate
+        env:
+          GITHUB_PROJECT_URL: ${{ vars.GITHUB_PROJECT_URL }}
+          PROJECTS_TOKEN: ${{ secrets.PROJECTS_TOKEN }}
+        run: |
+          if [ -z "${GITHUB_PROJECT_URL:-}" ]; then
+            echo "::warning::Missing repo variable GITHUB_PROJECT_URL. Project sync is disabled."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -z "${PROJECTS_TOKEN:-}" ]; then
+            echo "::warning::Missing repo secret PROJECTS_TOKEN. Project sync is disabled."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+
+      - name: Add issue/PR to project
+        if: ${{ steps.validate.outputs.enabled == 'true' }}
+        uses: actions/add-to-project@v1.0.2
+        with:
+          project-url: ${{ vars.GITHUB_PROJECT_URL }}
+          github-token: ${{ secrets.PROJECTS_TOKEN }}
+
+      - name: Sync project Status field
+        if: ${{ steps.validate.outputs.enabled == 'true' }}
+        uses: actions/github-script@v7
+        env:
+          GITHUB_PROJECT_URL: ${{ vars.GITHUB_PROJECT_URL }}
+        with:
+          github-token: ${{ secrets.PROJECTS_TOKEN }}
+          script: |
+            const projectUrl = process.env.GITHUB_PROJECT_URL;
+            const matches = projectUrl.match(/github\.com\/(?:users|orgs)\/([^/]+)\/projects\/(\d+)/);
+            if (!matches) {
+              core.warning(`Invalid GITHUB_PROJECT_URL format: ${projectUrl}`);
+              return;
+            }
+
+            const owner = matches[1];
+            const number = Number(matches[2]);
+            const payload = context.payload;
+            const isIssue = Boolean(payload.issue);
+            const contentNodeId = isIssue ? payload.issue.node_id : payload.pull_request?.node_id;
+            if (!contentNodeId) {
+              core.warning("No issue/pr node_id found in payload; skipping");
+              return;
+            }
+
+            const labels = (isIssue ? payload.issue.labels : payload.pull_request.labels || [])
+              .map((l) => l.name);
+            const isClosed = isIssue
+              ? payload.issue.state === "closed"
+              : payload.pull_request.state === "closed";
+
+            let targetStatus = "Todo";
+            if (isClosed || labels.includes("status:done")) {
+              targetStatus = "Done";
+            } else if (labels.includes("status:blocked")) {
+              targetStatus = "Blocked";
+            } else if (labels.includes("status:in_progress")) {
+              targetStatus = "In Progress";
+            } else if (labels.includes("status:not_started")) {
+              targetStatus = "Todo";
+            }
+
+            const query = `
+              query($owner: String!, $number: Int!) {
+                user(login: $owner) {
+                  id
+                  projectV2(number: $number) {
+                    id
+                    fields(first: 50) {
+                      nodes {
+                        ... on ProjectV2SingleSelectField {
+                          id
+                          name
+                          options { id name }
+                        }
+                      }
+                    }
+                    items(first: 200) {
+                      nodes {
+                        id
+                        content {
+                          ... on Issue { id }
+                          ... on PullRequest { id }
+                        }
+                      }
+                    }
+                  }
+                }
+                organization(login: $owner) {
+                  id
+                  projectV2(number: $number) {
+                    id
+                    fields(first: 50) {
+                      nodes {
+                        ... on ProjectV2SingleSelectField {
+                          id
+                          name
+                          options { id name }
+                        }
+                      }
+                    }
+                    items(first: 200) {
+                      nodes {
+                        id
+                        content {
+                          ... on Issue { id }
+                          ... on PullRequest { id }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            `;
+
+            const data = await github.graphql(query, { owner, number });
+            const ownerNode = data.user ?? data.organization;
+            const project = ownerNode?.projectV2;
+            if (!project) {
+              core.warning(`Project not found for owner=${owner}, number=${number}`);
+              return;
+            }
+
+            const statusField = project.fields.nodes.find((f) => f.name === "Status");
+            if (!statusField) {
+              core.warning("Status field not found on project");
+              return;
+            }
+
+            const statusOption = statusField.options.find((o) => o.name === targetStatus);
+            if (!statusOption) {
+              core.warning(`Status option '${targetStatus}' not found`);
+              return;
+            }
+
+            const item = project.items.nodes.find((n) => n.content?.id === contentNodeId);
+            if (!item) {
+              core.warning("Project item not found after add-to-project step");
+              return;
+            }
+
+            const mutation = `
+              mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
+                updateProjectV2ItemFieldValue(input: {
+                  projectId: $projectId
+                  itemId: $itemId
+                  fieldId: $fieldId
+                  value: { singleSelectOptionId: $optionId }
+                }) {
+                  projectV2Item { id }
+                }
+              }
+            `;
+
+            await github.graphql(mutation, {
+              projectId: project.id,
+              itemId: item.id,
+              fieldId: statusField.id,
+              optionId: statusOption.id,
+            });
+
+            core.info(`Updated project Status to '${targetStatus}'.`);

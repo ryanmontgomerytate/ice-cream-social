@@ -31,13 +31,20 @@ You are the Lead Systems Architect for the "Ice Cream Social" App. Our goal is t
 
 ## 2. The "Context Anchoring" Rules
 
-To prevent memory drift, you must strictly maintain three files:
+To prevent memory drift, you must strictly maintain three source-of-truth files:
 
 * `CLAUDE.md`: (This file) Core architecture, tech stack, and "personality"
+* `ARCHITECTURE.md`: Canonical system/data architecture and migration direction
 * `SESSIONS.md`: A chronological log of what was done today. Every task ends with a "Current State" update here
 
+Operational docs (consult when the request touches these domains):
+* `docs/EVOLVE_ICS_TRACKER.md`: Roadmap execution tracker
+* `docs/TIKTOK_CLIP_FEED_TRACKER.md`: Clip-feed execution tracker
+* `docs/VOICE_LIBRARY.md`: Voice library status/deferred-work plan
+* `docs/operations/GITHUB_PROJECT_BOARD.md`: Project board/Kanban mirroring workflow
 
-**Instruction**: Before starting any code change, Claude must read these three files to verify the current "Source of Truth."
+
+**Instruction**: Before starting any code change, Claude must read the three source-of-truth files above, then pull in relevant operational docs for the active task.
 
 ## 3. M4 Performance Standards
 
@@ -96,6 +103,15 @@ When adding code that needs API keys or tokens:
 ## 7. MCP Memory Server (Knowledge Graph)
 
 Claude has access to a persistent knowledge graph via the MCP Memory Server (`@modelcontextprotocol/server-memory`). This provides long-term memory that persists across conversations.
+
+### Shared Cross-Tool Memory Path (Codex + Claude)
+
+For this project, a shared MCP memory file can be used across tools:
+- `/Users/ryan/.agent-memory/ice-cream-social/memory.json`
+
+Codex CLI is configured with a global MCP server named `memory` using this file. If Claude's MCP memory server is configured with the same `MEMORY_FILE_PATH`, both tools can read/write the same knowledge graph.
+
+This is supplemental context only and does not override `CLAUDE.md`, `ARCHITECTURE.md`, or `SESSIONS.md`.
 
 ### Available Tools
 
