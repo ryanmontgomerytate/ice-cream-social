@@ -71,7 +71,7 @@ jobs:
     name: Hosted Import Verify
     runs-on: ubuntu-latest
     if: ${{ github.event_name != 'pull_request' }}
-    environment: hosted
+    environment: hosted supabase
     steps:
       - uses: actions/checkout@v4
 
