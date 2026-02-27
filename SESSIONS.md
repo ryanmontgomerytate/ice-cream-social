@@ -1213,3 +1213,88 @@ Tests Run
 - `npx playwright install chromium` — **PASS** (installed Chromium + headless shell)
 - `npx playwright test` — **PASS** (`2 passed`)
 - `npm --prefix scripts/dashboard-react run build` — **PASS** (Vite production build succeeds)
+
+### Current State Update (Analytics Evaluation Issues: PostHog + Plausible)
+
+- **Done:** Created analytics planning issues for both options:
+  - `#28` `[Evolve] Evaluate PostHog for Product Analytics`
+  - `#29` `[Evolve] Evaluate Plausible for Web Analytics`
+- **Done:** Included scope, acceptance criteria, privacy guardrails, and recommendation framing in each issue body to support an apples-to-apples decision.
+- **Pending:** Decide whether to adopt PostHog only, Plausible only, or split responsibilities between both.
+- **Blockers:** None.
+
+Tests Run
+- `gh repo view --json nameWithOwner` — **PASS** (confirmed repo context)
+- `gh issue create --title "[Evolve] Evaluate PostHog for Product Analytics" --body-file /tmp/issue_posthog.md` — **PASS** (`#28` created)
+- `gh issue create --title "[Evolve] Evaluate Plausible for Web Analytics" --body-file /tmp/issue_plausible.md` — **PASS** (`#29` created)
+
+### Current State Update (Issue #29 Pricing Clarification: Free Behavioral Tier)
+
+- **Done:** Updated GitHub issue `#29` to include verified pricing and free-tier decision criteria for Plausible vs PostHog.
+- **Done:** Added official source links for Plausible pricing, Plausible self-hosting, and PostHog pricing.
+- **Pending:** Decide analytics direction (Plausible only, PostHog only, or split responsibilities) and then implement chosen SDK(s).
+- **Blockers:** None.
+
+Tests Run
+- `gh issue view 29 --repo ryanmontgomerytate/ice-cream-social --json number,title,body,url` — **PASS** (confirmed issue context before edit)
+- `gh issue edit 29 --repo ryanmontgomerytate/ice-cream-social --body-file /tmp/issue_29_updated.md` — **PASS** (issue body updated)
+
+### Current State Update (Issue #29 Alternatives Added)
+
+- **Done:** Updated GitHub issue `#29` to include a `Plausible Alternatives` section with privacy-first and behavioral analytics options.
+- **Done:** Added direct links for Simple Analytics, Umami, GoatCounter, Fathom, Matomo, Pirsch, PostHog, Mixpanel, Amplitude, and Microsoft Clarity.
+- **Pending:** Choose preferred analytics stack and proceed with implementation issue execution.
+- **Blockers:** None.
+
+Tests Run
+- `gh issue view 29 --repo ryanmontgomerytate/ice-cream-social --json number,title,body,url` — **PASS** (captured current issue body before edit)
+- `gh issue edit 29 --repo ryanmontgomerytate/ice-cream-social --body-file /tmp/issue_29_updated.md` — **PASS** (updated issue body)
+- `gh issue view 29 --repo ryanmontgomerytate/ice-cream-social --json number,title,body,url` — **PASS** (verified alternatives section is present)
+
+### Current State Update (Onboarding + Empty States Issue Created)
+
+- **Done:** Created GitHub issue `#30` `[Evolve] Onboarding + Empty States UX Pass` with route-level scope (`/episodes`, `/wiki`, `/search`, admin), CTA requirements, and acceptance criteria.
+- **Done:** Included suggested UX examples and explicit non-goals to keep implementation focused.
+- **Pending:** Prioritize issue #30 in tracker and begin implementation pass on targeted pages.
+- **Blockers:** None.
+
+Tests Run
+- `gh issue create --title "[Evolve] Onboarding + Empty States UX Pass" --body-file /tmp/issue_onboarding_empty_states.md` — **PASS** (`#30` created)
+
+### Current State Update (Performance Tooling Issue Created)
+
+- **Done:** Created GitHub issue `#31` `[Evolve] Lighthouse + Performance Tooling Baseline`.
+- **Done:** Included scope for Lighthouse, Web Vitals, bundle analysis, and CI threshold checks with acceptance criteria.
+- **Pending:** Prioritize issue #31 and implement baseline tooling in web app/CI.
+- **Blockers:** None.
+
+Tests Run
+- `gh issue create --title "[Evolve] Lighthouse + Performance Tooling Baseline" --body-file /tmp/issue_performance_tooling.md` — **PASS** (`#31` created)
+
+### Current State Update (Sentry Release + Sourcemap CI Issue Created)
+
+- **Done:** Created GitHub issue `#32` `[Evolve] Sentry releases + sourcemaps + GitHub commit association (web)`.
+- **Done:** Added scope/acceptance criteria for CI release creation, sourcemap upload, commit association, environment tagging, and docs.
+- **Pending:** Implement workflow changes and validate source-mapped stack traces in Sentry after next deploy/build.
+- **Blockers:** None.
+
+Tests Run
+- `gh issue list --repo ryanmontgomerytate/ice-cream-social --limit 100 --json number,title,state` — **PASS** (checked for duplicates)
+- `gh issue create --title "[Evolve] Sentry releases + sourcemaps + GitHub commit association (web)" --body-file /tmp/issue_sentry_release_sourcemaps.md` — **PASS** (`#32` created)
+### Current State Update (#32 Completed: Sentry Releases + Sourcemaps + Commit Association)
+
+- **Done:** Added `web-build` job to `.github/workflows/ci.yml` with:
+  - full git history checkout (`fetch-depth: 0`) for commit association
+  - deterministic release naming (`SENTRY_RELEASE=web@<sha>`)
+  - environment tagging (`staging`/`production`)
+  - preflight warnings and non-blocking behavior when Sentry upload secrets are missing.
+- **Done:** Updated `web/next.config.ts` Sentry build options for release creation, commit linking (`setCommits.auto`), sourcemap upload guard, deploy env tagging, and explicit warning-based `errorHandler`.
+- **Done:** Added runbook `docs/operations/SENTRY_RELEASES.md` and updated deployment checklist with Sentry release verification steps.
+- **Done:** Added optional release/upload env guidance to `.env.example` and `web/.env.example`.
+- **Pending:** Trigger CI on GitHub and verify `web-build` logs show `Sentry upload enabled: true` in your configured hosted environment.
+- **Pending:** After a deploy/build, verify in Sentry UI that `web@<sha>` release shows source-mapped stack traces and associated commits.
+- **Blockers:** None.
+
+Tests Run
+- `npm --prefix web run build` — **PASS** (Next.js production build succeeds with updated Sentry config; local upload gracefully skipped without CI upload flag)
+- `ruby -e 'require "yaml"; YAML.load_file(".github/workflows/ci.yml"); puts "ci.yml OK"'` — **PASS** (workflow YAML parses cleanly)

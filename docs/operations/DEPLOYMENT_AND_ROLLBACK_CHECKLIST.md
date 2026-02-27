@@ -22,6 +22,7 @@ Use this checklist for any staging/prod deployment.
   - [ ] speaker assignment update
   - [ ] queue/worker status
 - [ ] Verify logs/metrics for errors
+- [ ] Verify Sentry release `web@<sha>` exists with sourcemaps/commits (if configured)
 - [ ] Verify environment secrets are correct
 
 ## Production Deploy Checklist
@@ -34,6 +35,7 @@ Use this checklist for any staging/prod deployment.
   - [ ] health endpoint / app startup
   - [ ] primary read paths
   - [ ] primary write path
+- [ ] Confirm Sentry release deploy is visible in target environment
 - [ ] Monitor for 15-30 minutes after deploy
 
 ## Rollback Checklist
@@ -58,4 +60,3 @@ Steps:
 - [ ] Update `SESSIONS.md` with outcome and timestamps
 - [ ] File follow-up issues for defects/gaps
 - [ ] Update runbooks/checklists based on lessons learned
-

@@ -34,6 +34,75 @@ jobs:
       - name: Build frontend
         run: npm --prefix scripts/dashboard-react run build
 
+  web-build:
+    name: Web Build (Next + Sentry Release)
+    runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_SENTRY_DSN: ${{ secrets.NEXT_PUBLIC_SENTRY_DSN }}
+      SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+      SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+      SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Configure Sentry release environment
+        env:
+          GH_EVENT_NAME: ${{ github.event_name }}
+          GH_REF_NAME: ${{ github.ref_name }}
+          GH_SHA: ${{ github.sha }}
+        run: |
+          if [ "${GH_EVENT_NAME}" = "push" ] && { [ "${GH_REF_NAME}" = "main" ] || [ "${GH_REF_NAME}" = "master" ]; }; then
+            sentry_env="production"
+          else
+            sentry_env="staging"
+          fi
+
+          echo "SENTRY_ENVIRONMENT=${sentry_env}" >> "$GITHUB_ENV"
+          echo "SENTRY_RELEASE=web@${GH_SHA}" >> "$GITHUB_ENV"
+
+          missing=()
+          for name in SENTRY_ORG SENTRY_PROJECT SENTRY_AUTH_TOKEN; do
+            if [ -z "${!name:-}" ]; then
+              missing+=("$name")
+            fi
+          done
+
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "SENTRY_UPLOAD_ENABLED=false" >> "$GITHUB_ENV"
+            echo "::warning::Sentry sourcemap/release upload disabled (missing: ${missing[*]}). Build will continue."
+          else
+            echo "SENTRY_UPLOAD_ENABLED=true" >> "$GITHUB_ENV"
+          fi
+
+          if [ -z "${NEXT_PUBLIC_SENTRY_DSN:-}" ] && [ -z "${SENTRY_DSN:-}" ]; then
+            echo "::warning::Sentry DSN is not configured for this job. Runtime events may not be captured."
+          fi
+
+      - name: Install web deps
+        run: npm --prefix web ci
+
+      - name: Build web
+        env:
+          NODE_ENV: production
+          NEXT_TELEMETRY_DISABLED: "1"
+        run: npm --prefix web run build
+
+      - name: Sentry release summary
+        run: |
+          echo "Sentry release: ${SENTRY_RELEASE}"
+          echo "Sentry environment: ${SENTRY_ENVIRONMENT}"
+          echo "Sentry upload enabled: ${SENTRY_UPLOAD_ENABLED}"
+
   rust-tests:
     name: Rust Build + Unit Tests
     runs-on: ubuntu-latest
