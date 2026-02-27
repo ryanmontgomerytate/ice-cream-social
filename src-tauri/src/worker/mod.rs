@@ -162,13 +162,19 @@ impl TranscriptionWorker {
             "pause_transcribe_queue",
             if prev_pause { "true" } else { "false" },
         ) {
-            log::warn!("Failed restoring pause_transcribe_queue after priority reprocess: {}", e);
+            log::warn!(
+                "Failed restoring pause_transcribe_queue after priority reprocess: {}",
+                e
+            );
         }
         let _ = self.db.set_setting("priority_reprocess_mode", "false");
         let _ = self
             .db
             .set_setting("priority_reprocess_prev_pause_transcribe", "false");
-        log::info!("Priority reprocess complete; restored transcribe queue pause={}", prev_pause);
+        log::info!(
+            "Priority reprocess complete; restored transcribe queue pause={}",
+            prev_pause
+        );
     }
 
     pub fn new(
@@ -309,7 +315,10 @@ impl TranscriptionWorker {
         if has_diarization {
             match self.db.count_undiarized_transcribed() {
                 Ok(count) if count > 0 => {
-                    log::info!("Found {} transcribed episodes without diarization, auto-queuing", count);
+                    log::info!(
+                        "Found {} transcribed episodes without diarization, auto-queuing",
+                        count
+                    );
                     if let Err(e) = self.db.queue_undiarized_transcribed() {
                         log::error!("Failed to auto-queue undiarized episodes: {}", e);
                     }
@@ -542,10 +551,7 @@ impl TranscriptionWorker {
                             let _ = diarize_tx
                                 .send(DiarizeJob {
                                     episode_id,
-                                    audio_path: item
-                                        .episode
-                                        .audio_file_path
-                                        .unwrap_or_default(),
+                                    audio_path: item.episode.audio_file_path.unwrap_or_default(),
                                     transcript_path,
                                     hints_path: hints,
                                     embedding_backend_override: embedding_backend_override.clone(),
@@ -737,7 +743,8 @@ impl TranscriptionWorker {
                                         queue_type: "diarize_only".to_string(),
                                         transcription_model: transcription_model.clone(),
                                         embedding_backend: resolved_embedding_backend.clone(),
-                                        embedding_backend_override: embedding_backend_override.clone(),
+                                        embedding_backend_override: embedding_backend_override
+                                            .clone(),
                                         entered_pipeline_at: std::time::Instant::now(),
                                         stage_started_at: Utc::now(),
                                         download_duration: None,
@@ -755,7 +762,8 @@ impl TranscriptionWorker {
                                             .unwrap_or_default(),
                                         transcript_path,
                                         hints_path: hints,
-                                        embedding_backend_override: embedding_backend_override.clone(),
+                                        embedding_backend_override: embedding_backend_override
+                                            .clone(),
                                         episode_date: item.episode.published_date.clone(),
                                         db: self.db.clone(),
                                     })
@@ -773,7 +781,8 @@ impl TranscriptionWorker {
                                         queue_type: "diarize_only".to_string(),
                                         transcription_model: transcription_model.clone(),
                                         embedding_backend: resolved_embedding_backend.clone(),
-                                        embedding_backend_override: embedding_backend_override.clone(),
+                                        embedding_backend_override: embedding_backend_override
+                                            .clone(),
                                         entered_pipeline_at: std::time::Instant::now(),
                                         stage_started_at: Utc::now(),
                                         download_duration: None,
@@ -797,7 +806,10 @@ impl TranscriptionWorker {
                             }
                         } else {
                             // Not transcribed yet, can't diarize-only — reset
-                            log::warn!("Diarize-only item {} has no transcript, resetting", episode_id);
+                            log::warn!(
+                                "Diarize-only item {} has no transcript, resetting",
+                                episode_id
+                            );
                             if let Err(e) = self.db.reset_to_pending(episode_id) {
                                 log::error!("Failed to reset: {}", e);
                             }
@@ -865,7 +877,11 @@ impl TranscriptionWorker {
 
         match result.result {
             Ok(file_path) => {
-                log::info!("Download completed for episode {}: {}", episode_id, file_path);
+                log::info!(
+                    "Download completed for episode {}: {}",
+                    episode_id,
+                    file_path
+                );
                 // Save download duration to DB
                 if let Some(dur) = result.duration_seconds {
                     if let Err(e) = self.db.update_download_duration(episode_id, dur) {
@@ -916,7 +932,9 @@ impl TranscriptionWorker {
                                     } else {
                                         None
                                     },
-                                    embedding_backend_override: entry.embedding_backend_override.clone(),
+                                    embedding_backend_override: entry
+                                        .embedding_backend_override
+                                        .clone(),
                                     episode_date: entry.published_date.clone(),
                                     db: self.db.clone(),
                                 })
@@ -928,10 +946,19 @@ impl TranscriptionWorker {
             }
             Err(e) => {
                 log::error!("Download failed for episode {}: {}", episode_id, e);
-                if let Err(db_err) = self.db.mark_failed(episode_id, &format!("Download failed: {}", e)) {
+                if let Err(db_err) = self
+                    .db
+                    .mark_failed(episode_id, &format!("Download failed: {}", e))
+                {
                     log::error!("Failed to mark episode as failed: {}", db_err);
                 }
-                if let Err(log_err) = self.db.log_pipeline_error("download", Some(episode_id), "DownloadFailed", &e, 0) {
+                if let Err(log_err) = self.db.log_pipeline_error(
+                    "download",
+                    Some(episode_id),
+                    "DownloadFailed",
+                    &e,
+                    0,
+                ) {
                     log::warn!("Failed to log pipeline error: {}", log_err);
                 }
                 active.remove(&episode_id);
@@ -987,7 +1014,9 @@ impl TranscriptionWorker {
                                 } else {
                                     None
                                 },
-                                embedding_backend_override: entry.embedding_backend_override.clone(),
+                                embedding_backend_override: entry
+                                    .embedding_backend_override
+                                    .clone(),
                                 episode_date: entry.published_date.clone(),
                                 db: self.db.clone(),
                             })
@@ -1010,7 +1039,13 @@ impl TranscriptionWorker {
                 if let Err(db_err) = self.db.mark_failed(episode_id, &e) {
                     log::error!("Failed to mark episode as failed: {}", db_err);
                 }
-                if let Err(log_err) = self.db.log_pipeline_error("transcribe", Some(episode_id), "TranscribeFailed", &e, 0) {
+                if let Err(log_err) = self.db.log_pipeline_error(
+                    "transcribe",
+                    Some(episode_id),
+                    "TranscribeFailed",
+                    &e,
+                    0,
+                ) {
                     log::warn!("Failed to log pipeline error: {}", log_err);
                 }
                 active.remove(&episode_id);
@@ -1050,13 +1085,25 @@ impl TranscriptionWorker {
                 // Mark speaker-correction flags as resolved — they've been applied
                 match self.db.resolve_speaker_flags_for_episode(episode_id) {
                     Ok(0) => {}
-                    Ok(n) => log::info!("Resolved {} speaker-correction flags for episode {}", n, episode_id),
-                    Err(e) => log::warn!("Failed to resolve speaker flags for episode {}: {}", episode_id, e),
+                    Ok(n) => log::info!(
+                        "Resolved {} speaker-correction flags for episode {}",
+                        n,
+                        episode_id
+                    ),
+                    Err(e) => log::warn!(
+                        "Failed to resolve speaker flags for episode {}: {}",
+                        episode_id,
+                        e
+                    ),
                 }
 
                 // Auto-create placeholder speakers for unknown diarization labels
                 match self.db.auto_create_unknown_speakers_for_episode(episode_id) {
-                    Ok(n) if n > 0 => log::info!("Auto-created {} placeholder speakers for episode {}", n, episode_id),
+                    Ok(n) if n > 0 => log::info!(
+                        "Auto-created {} placeholder speakers for episode {}",
+                        n,
+                        episode_id
+                    ),
                     Ok(_) => {}
                     Err(e) => log::warn!("Failed to auto-create placeholder speakers: {}", e),
                 }
@@ -1080,8 +1127,15 @@ impl TranscriptionWorker {
                 }
             }
             Err(e) => {
-                log::warn!("Diarization failed for episode {} (completing anyway): {}", episode_id, e);
-                if let Err(log_err) = self.db.log_pipeline_error("diarize", Some(episode_id), "DiarizeFailed", &e, 0) {
+                log::warn!(
+                    "Diarization failed for episode {} (completing anyway): {}",
+                    episode_id,
+                    e
+                );
+                if let Err(log_err) =
+                    self.db
+                        .log_pipeline_error("diarize", Some(episode_id), "DiarizeFailed", &e, 0)
+                {
                     log::warn!("Failed to log pipeline error: {}", log_err);
                 }
 
@@ -1170,17 +1224,28 @@ impl TranscriptionWorker {
         }
 
         // Persist which pipeline identity produced this completion for stats/recent panels.
-        let (transcription_model, embedding_backend) = if let Some(entry) = active.get(&episode_id) {
-            (entry.transcription_model.clone(), entry.embedding_backend.clone())
+        let (transcription_model, embedding_backend) = if let Some(entry) = active.get(&episode_id)
+        {
+            (
+                entry.transcription_model.clone(),
+                entry.embedding_backend.clone(),
+            )
         } else {
-            (self.current_transcription_model(), self.current_embedding_backend())
+            (
+                self.current_transcription_model(),
+                self.current_embedding_backend(),
+            )
         };
         if let Err(e) = self.db.update_episode_pipeline_identity(
             episode_id,
             &transcription_model,
             &embedding_backend,
         ) {
-            log::warn!("Failed to save pipeline identity for episode {}: {}", episode_id, e);
+            log::warn!(
+                "Failed to save pipeline identity for episode {}: {}",
+                episode_id,
+                e
+            );
         }
 
         if let Err(e) = self.db.mark_completed(episode_id, transcript_path.to_str()) {
@@ -1189,12 +1254,19 @@ impl TranscriptionWorker {
 
         // Mark any prior errors for this episode as resolved
         if let Err(e) = self.db.mark_pipeline_errors_resolved(episode_id) {
-            log::warn!("Failed to mark pipeline errors resolved for episode {}: {}", episode_id, e);
+            log::warn!(
+                "Failed to mark pipeline errors resolved for episode {}: {}",
+                episode_id,
+                e
+            );
         }
 
         // Auto-index FTS5 with speaker names resolved (non-fatal)
         match self.db.index_episode_from_file(episode_id) {
-            Ok(0) => log::debug!("FTS index skipped for episode {} (no segments found)", episode_id),
+            Ok(0) => log::debug!(
+                "FTS index skipped for episode {} (no segments found)",
+                episode_id
+            ),
             Ok(n) => log::info!("FTS auto-indexed {} segments for episode {}", n, episode_id),
             Err(e) => log::warn!("FTS auto-index failed for episode {}: {}", episode_id, e),
         }
@@ -1226,10 +1298,8 @@ impl TranscriptionWorker {
             .values()
             .filter(|e| e.stage != "downloaded" && e.stage != "waiting_diarize")
             .map(|e| {
-                let (progress, estimated_remaining) = existing
-                    .get(&e.episode.id)
-                    .copied()
-                    .unwrap_or((None, None));
+                let (progress, estimated_remaining) =
+                    existing.get(&e.episode.id).copied().unwrap_or((None, None));
                 PipelineSlot {
                     episode: e.episode.clone(),
                     stage: e.stage.clone(),
@@ -1258,10 +1328,7 @@ impl TranscriptionWorker {
 
         if auto_transcribe {
             if let Ok(Some(episode)) = self.db.get_next_untranscribed_episode() {
-                log::info!(
-                    "Auto-transcribe: adding episode {} to queue",
-                    episode.title
-                );
+                log::info!("Auto-transcribe: adding episode {} to queue", episode.title);
                 if let Err(e) = self.db.add_to_queue(episode.id, 0) {
                     log::error!("Failed to auto-add episode to queue: {}", e);
                 } else {

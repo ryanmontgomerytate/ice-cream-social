@@ -17,8 +17,14 @@ fn parse_episode_infobox(wikitext: &str) -> ParsedWikiEpisode {
 
     // Extract fields from {{Episode1|field = value|...}}
     // The template uses pipe-delimited key=value pairs
-    if let Some(start) = wikitext.find("{{Episode1|").or_else(|| wikitext.find("{{Episode Infobox")) {
-        let template_start = wikitext[start..].find('|').map(|p| start + p + 1).unwrap_or(start);
+    if let Some(start) = wikitext
+        .find("{{Episode1|")
+        .or_else(|| wikitext.find("{{Episode Infobox"))
+    {
+        let template_start = wikitext[start..]
+            .find('|')
+            .map(|p| start + p + 1)
+            .unwrap_or(start);
         // Find matching closing }}
         let mut depth = 0;
         let mut template_end = wikitext.len();
@@ -75,10 +81,22 @@ fn split_template_fields(content: &str) -> Vec<String> {
 
     for c in content.chars() {
         match c {
-            '[' => { bracket_depth += 1; current.push(c); }
-            ']' => { bracket_depth -= 1; current.push(c); }
-            '{' => { brace_depth += 1; current.push(c); }
-            '}' => { brace_depth -= 1; current.push(c); }
+            '[' => {
+                bracket_depth += 1;
+                current.push(c);
+            }
+            ']' => {
+                bracket_depth -= 1;
+                current.push(c);
+            }
+            '{' => {
+                brace_depth += 1;
+                current.push(c);
+            }
+            '}' => {
+                brace_depth -= 1;
+                current.push(c);
+            }
             '|' if bracket_depth == 0 && brace_depth == 0 => {
                 fields.push(current.clone());
                 current.clear();
@@ -188,10 +206,14 @@ pub async fn sync_wiki_episode(
     db: State<'_, Arc<Database>>,
     episode_number: String,
 ) -> Result<WikiSyncResult, AppError> {
-    log::info!("sync_wiki_episode called for episode number: {}", episode_number);
+    log::info!(
+        "sync_wiki_episode called for episode number: {}",
+        episode_number
+    );
 
     // Find the episode in our DB (prefer apple feed)
-    let episode_id = db.find_episode_by_number(&episode_number, Some("apple"))?
+    let episode_id = db
+        .find_episode_by_number(&episode_number, Some("apple"))?
         .or_else(|| {
             db.find_episode_by_number(&episode_number, Some("patreon"))
                 .ok()
@@ -200,7 +222,8 @@ pub async fn sync_wiki_episode(
         .ok_or_else(|| format!("No episode found with number {}", episode_number))?;
 
     // Get episode title from DB for fallback search
-    let episode_title = db.get_episode_by_id(episode_id)
+    let episode_title = db
+        .get_episode_by_id(episode_id)
         .ok()
         .flatten()
         .map(|ep| ep.title.clone())
@@ -224,9 +247,9 @@ pub async fn sync_wiki_episode(
         .to_string();
 
     let search_queries = vec![
-        format!("{}: ", episode_number),        // "998: " — matches "998: The Abolition..."
-        format!("Episode {}", episode_number),  // "Episode 998" — matches "Episode 998: ..."
-        clean_title.clone(),                    // "The Abolition of Hard Pants" — title-based fallback
+        format!("{}: ", episode_number), // "998: " — matches "998: The Abolition..."
+        format!("Episode {}", episode_number), // "Episode 998" — matches "Episode 998: ..."
+        clean_title.clone(),             // "The Abolition of Hard Pants" — title-based fallback
     ];
 
     let mut wiki_page_id: Option<i64> = None;
@@ -237,7 +260,8 @@ pub async fn sync_wiki_episode(
             continue;
         }
 
-        let resp = client.get(WIKI_API_URL)
+        let resp = client
+            .get(WIKI_API_URL)
             .query(&[
                 ("action", "query"),
                 ("list", "search"),
@@ -249,7 +273,9 @@ pub async fn sync_wiki_episode(
             .await
             .map_err(|e| format!("Wiki API request failed: {}", e))?;
 
-        let search: WikiSearchResponse = resp.json().await
+        let search: WikiSearchResponse = resp
+            .json()
+            .await
             .map_err(|e| format!("Failed to parse wiki search response: {}", e))?;
 
         if let Some(results) = search.query.and_then(|q| q.search) {
@@ -283,12 +309,14 @@ pub async fn sync_wiki_episode(
         }
     }
 
-    let page_id = wiki_page_id.ok_or_else(|| format!("Episode {} not found on wiki", episode_number))?;
+    let page_id =
+        wiki_page_id.ok_or_else(|| format!("Episode {} not found on wiki", episode_number))?;
 
     log::info!("Found wiki page: {} (id: {})", wiki_title, page_id);
 
     // Fetch the full page content
-    let resp = client.get(WIKI_API_URL)
+    let resp = client
+        .get(WIKI_API_URL)
         .query(&[
             ("action", "parse"),
             ("pageid", &page_id.to_string()),
@@ -299,7 +327,9 @@ pub async fn sync_wiki_episode(
         .await
         .map_err(|e| format!("Wiki parse request failed: {}", e))?;
 
-    let parsed: WikiParseResponse = resp.json().await
+    let parsed: WikiParseResponse = resp
+        .json()
+        .await
         .map_err(|e| format!("Failed to parse wiki page response: {}", e))?;
 
     let page = parsed.parse.ok_or("Wiki returned empty parse result")?;
@@ -336,7 +366,11 @@ pub async fn sync_wiki_episode(
         Some(&raw_wikitext),
     )?;
 
-    log::info!("Wiki data synced for episode {} (db id: {})", episode_number, episode_id);
+    log::info!(
+        "Wiki data synced for episode {} (db id: {})",
+        episode_number,
+        episode_id
+    );
 
     Ok(WikiSyncResult {
         episode_id,

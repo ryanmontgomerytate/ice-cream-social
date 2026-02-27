@@ -373,12 +373,12 @@ pub struct FlaggedSegment {
     pub id: i64,
     pub episode_id: i64,
     pub segment_idx: i32,
-    pub flag_type: String,  // 'wrong_speaker', 'character_voice', 'multiple_speakers', 'audio_issue', 'other'
-    pub corrected_speaker: Option<String>,  // For wrong_speaker flags
-    pub character_id: Option<i64>,  // For character_voice flags
-    pub character_name: Option<String>,  // Joined from characters table
+    pub flag_type: String, // 'wrong_speaker', 'character_voice', 'multiple_speakers', 'audio_issue', 'other'
+    pub corrected_speaker: Option<String>, // For wrong_speaker flags
+    pub character_id: Option<i64>, // For character_voice flags
+    pub character_name: Option<String>, // Joined from characters table
     pub notes: Option<String>,
-    pub speaker_ids: Option<String>,  // JSON array: ["SPEAKER_00","SPEAKER_01"]
+    pub speaker_ids: Option<String>, // JSON array: ["SPEAKER_00","SPEAKER_01"]
     pub resolved: bool,
     pub created_at: Option<String>,
 }
@@ -387,13 +387,13 @@ pub struct FlaggedSegment {
 pub struct PipelineError {
     pub id: i64,
     pub occurred_at: String,
-    pub context: String,       // "download" | "transcribe" | "diarize"
+    pub context: String, // "download" | "transcribe" | "diarize"
     pub episode_id: Option<i64>,
     pub error_kind: String,
     pub error_detail: String,
     pub retry_count: i32,
     pub resolved: bool,
-    pub episode_title: Option<String>,  // joined from episodes
+    pub episode_title: Option<String>, // joined from episodes
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -422,7 +422,7 @@ pub struct SegmentClassification {
     pub speaker_note: Option<String>,
     pub tone_description: Option<String>,
     pub confidence: Option<f64>,
-    pub approved: i32,  // 0=pending, 1=approved, -1=rejected
+    pub approved: i32, // 0=pending, 1=approved, -1=rejected
     pub created_at: Option<String>,
     // Joined fields
     pub segment_text: Option<String>,
@@ -443,7 +443,7 @@ pub struct TranscriptCorrection {
     pub has_multiple_speakers: bool,
     pub speaker_change_note: Option<String>,
     pub confidence: Option<f64>,
-    pub approved: i32,  // 0=pending, 1=approved, -1=rejected
+    pub approved: i32, // 0=pending, 1=approved, -1=rejected
     pub created_at: Option<String>,
     // Joined field
     pub segment_start_time: Option<f64>,

@@ -44,8 +44,11 @@ pub fn run() {
 
             // Clean up any variant episodes that were queued before cross-feed linking
             match db.purge_variant_queue_items() {
-                Ok(count) if count > 0 => log::info!("Startup cleanup: removed {} variant episodes from queue", count),
-                Ok(_) => {},
+                Ok(count) if count > 0 => log::info!(
+                    "Startup cleanup: removed {} variant episodes from queue",
+                    count
+                ),
+                Ok(_) => {}
                 Err(e) => log::warn!("Failed to purge variant queue items: {}", e),
             }
 
@@ -94,7 +97,8 @@ pub fn run() {
 
             // Diarization paths
             let venv_python_path = project_dir.join("venv").join("bin").join("python");
-            let diarization_script_path = project_dir.join("scripts").join("speaker_diarization.py");
+            let diarization_script_path =
+                project_dir.join("scripts").join("speaker_diarization.py");
             let harvest_script_path = project_dir.join("scripts").join("harvest_voice_samples.py");
 
             // Load HuggingFace token from config (optional)
@@ -346,10 +350,7 @@ async fn feed_sync_scheduler(db: Arc<Database>, app_handle: tauri::AppHandle) {
         // Calculate time until next 1:00 AM
         let now = Local::now();
         let target_hour = 1u32;
-        let today_target = now
-            .date_naive()
-            .and_hms_opt(target_hour, 0, 0)
-            .unwrap();
+        let today_target = now.date_naive().and_hms_opt(target_hour, 0, 0).unwrap();
 
         let next_run = if now.naive_local() < today_target {
             today_target

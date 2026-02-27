@@ -220,26 +220,37 @@ async fn diarize_with_progress(
                 if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
                     // Auto-assign speakers identified with >= 0.75 confidence
                     if let Some(names) = json.get("speaker_names").and_then(|v| v.as_object()) {
-                        let confidence_map = json.get("speaker_confidence")
+                        let confidence_map = json
+                            .get("speaker_confidence")
                             .and_then(|v| v.as_object())
                             .cloned()
                             .unwrap_or_default();
 
                         for (label, name_val) in names {
                             if let Some(speaker_name) = name_val.as_str() {
-                                let confidence = confidence_map.get(label)
+                                let confidence = confidence_map
+                                    .get(label)
                                     .and_then(|c| c.as_f64())
                                     .unwrap_or(0.0);
 
                                 if confidence >= 0.75 {
                                     if let Err(e) = job.db.link_episode_speaker_auto(
-                                        job.episode_id, label, speaker_name, confidence
+                                        job.episode_id,
+                                        label,
+                                        speaker_name,
+                                        confidence,
                                     ) {
-                                        log::warn!("Auto-assign speaker failed for {}: {}", label, e);
+                                        log::warn!(
+                                            "Auto-assign speaker failed for {}: {}",
+                                            label,
+                                            e
+                                        );
                                     } else {
                                         log::info!(
                                             "Auto-assigned {} → {} (confidence: {:.2})",
-                                            label, speaker_name, confidence
+                                            label,
+                                            speaker_name,
+                                            confidence
                                         );
                                     }
                                 }

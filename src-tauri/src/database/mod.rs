@@ -520,14 +520,8 @@ Mark the start time of each segment.',
             "ALTER TABLE episodes ADD COLUMN category TEXT DEFAULT 'episode'",
             [],
         );
-        let _ = conn.execute(
-            "ALTER TABLE episodes ADD COLUMN category_number TEXT",
-            [],
-        );
-        let _ = conn.execute(
-            "ALTER TABLE episodes ADD COLUMN sub_series TEXT",
-            [],
-        );
+        let _ = conn.execute("ALTER TABLE episodes ADD COLUMN category_number TEXT", []);
+        let _ = conn.execute("ALTER TABLE episodes ADD COLUMN sub_series TEXT", []);
         let _ = conn.execute(
             "ALTER TABLE episodes ADD COLUMN canonical_id INTEGER REFERENCES episodes(id)",
             [],
@@ -540,22 +534,13 @@ Mark the start time of each segment.',
         );
 
         // Migration: Add pipeline timing columns to episodes (idempotent)
-        let _ = conn.execute(
-            "ALTER TABLE episodes ADD COLUMN download_duration REAL",
-            [],
-        );
+        let _ = conn.execute("ALTER TABLE episodes ADD COLUMN download_duration REAL", []);
         let _ = conn.execute(
             "ALTER TABLE episodes ADD COLUMN transcribe_duration REAL",
             [],
         );
-        let _ = conn.execute(
-            "ALTER TABLE episodes ADD COLUMN diarize_duration REAL",
-            [],
-        );
-        let _ = conn.execute(
-            "ALTER TABLE episodes ADD COLUMN diarized_date TEXT",
-            [],
-        );
+        let _ = conn.execute("ALTER TABLE episodes ADD COLUMN diarize_duration REAL", []);
+        let _ = conn.execute("ALTER TABLE episodes ADD COLUMN diarized_date TEXT", []);
         let _ = conn.execute(
             "ALTER TABLE episodes ADD COLUMN transcription_model_used TEXT",
             [],
@@ -592,7 +577,9 @@ Mark the start time of each segment.',
 
         // Migration: add keywords column if it doesn't exist
         let has_keywords: bool = conn
-            .prepare("SELECT COUNT(*) FROM pragma_table_info('category_rules') WHERE name='keywords'")?
+            .prepare(
+                "SELECT COUNT(*) FROM pragma_table_info('category_rules') WHERE name='keywords'",
+            )?
             .query_row([], |row| row.get::<_, i64>(0))
             .map(|c| c > 0)
             .unwrap_or(false);
@@ -691,8 +678,14 @@ Mark the start time of each segment.',
         ); // Ignore error if column already exists
 
         // Migration: Add window matching settings to audio_drops
-        let _ = conn.execute("ALTER TABLE audio_drops ADD COLUMN min_window INTEGER DEFAULT 1", []);
-        let _ = conn.execute("ALTER TABLE audio_drops ADD COLUMN max_window INTEGER DEFAULT 4", []);
+        let _ = conn.execute(
+            "ALTER TABLE audio_drops ADD COLUMN min_window INTEGER DEFAULT 1",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE audio_drops ADD COLUMN max_window INTEGER DEFAULT 4",
+            [],
+        );
 
         // Voice samples table (saved audio clips for speaker/sound bite identification)
         conn.execute_batch(
@@ -1024,10 +1017,7 @@ Mark the start time of each segment.',
                     is_transcribed: row.get::<_, i32>(13)? == 1,
                     is_in_queue: row.get::<_, i32>(14)? == 1,
                     transcript_path: row.get(15)?,
-                    transcription_status: row
-                        .get::<_, String>(16)
-                        .unwrap_or_default()
-                        .into(),
+                    transcription_status: row.get::<_, String>(16).unwrap_or_default().into(),
                     transcription_error: row.get(17)?,
                     processing_time: row.get(18)?,
                     feed_source: row.get(19)?,
@@ -1087,10 +1077,7 @@ Mark the start time of each segment.',
                     is_transcribed: row.get::<_, i32>(13)? == 1,
                     is_in_queue: row.get::<_, i32>(14)? == 1,
                     transcript_path: row.get(15)?,
-                    transcription_status: row
-                        .get::<_, String>(16)
-                        .unwrap_or_default()
-                        .into(),
+                    transcription_status: row.get::<_, String>(16).unwrap_or_default().into(),
                     transcription_error: row.get(17)?,
                     processing_time: row.get(18)?,
                     feed_source: row.get(19)?,
@@ -1231,40 +1218,46 @@ Mark the start time of each segment.',
             "SELECT id, episode_id, wiki_page_id, wiki_url, summary, recording_location,
                     air_date, topics_json, guests_json, bits_json, scoopmail_json,
                     jock_vs_nerd, last_synced
-             FROM wiki_episode_meta WHERE episode_id = ?1"
+             FROM wiki_episode_meta WHERE episode_id = ?1",
         )?;
-        let result = stmt.query_row(params![episode_id], |row| {
-            Ok(WikiEpisodeMeta {
-                id: row.get(0)?,
-                episode_id: row.get(1)?,
-                wiki_page_id: row.get(2)?,
-                wiki_url: row.get(3)?,
-                summary: row.get(4)?,
-                recording_location: row.get(5)?,
-                air_date: row.get(6)?,
-                topics_json: row.get(7)?,
-                guests_json: row.get(8)?,
-                bits_json: row.get(9)?,
-                scoopmail_json: row.get(10)?,
-                jock_vs_nerd: row.get(11)?,
-                last_synced: row.get(12)?,
+        let result = stmt
+            .query_row(params![episode_id], |row| {
+                Ok(WikiEpisodeMeta {
+                    id: row.get(0)?,
+                    episode_id: row.get(1)?,
+                    wiki_page_id: row.get(2)?,
+                    wiki_url: row.get(3)?,
+                    summary: row.get(4)?,
+                    recording_location: row.get(5)?,
+                    air_date: row.get(6)?,
+                    topics_json: row.get(7)?,
+                    guests_json: row.get(8)?,
+                    bits_json: row.get(9)?,
+                    scoopmail_json: row.get(10)?,
+                    jock_vs_nerd: row.get(11)?,
+                    last_synced: row.get(12)?,
+                })
             })
-        }).optional()?;
+            .optional()?;
         Ok(result)
     }
 
     /// Find episode ID by category_number (for wiki matching)
-    pub fn find_episode_by_number(&self, episode_number: &str, feed_source: Option<&str>) -> Result<Option<i64>> {
+    pub fn find_episode_by_number(
+        &self,
+        episode_number: &str,
+        feed_source: Option<&str>,
+    ) -> Result<Option<i64>> {
         let conn = self.conn.lock().unwrap();
         let source = feed_source.unwrap_or("apple");
         let mut stmt = conn.prepare(
             "SELECT id FROM episodes
              WHERE category_number = ?1 AND feed_source = ?2 AND category = 'episode'
-             LIMIT 1"
+             LIMIT 1",
         )?;
-        let result = stmt.query_row(params![episode_number, source], |row| {
-            row.get::<_, i64>(0)
-        }).optional()?;
+        let result = stmt
+            .query_row(params![episode_number, source], |row| row.get::<_, i64>(0))
+            .optional()?;
         Ok(result)
     }
 
@@ -1279,7 +1272,7 @@ Mark the start time of each segment.',
                     processing_time, feed_source, metadata_json, has_diarization, num_speakers,
                     category, category_number, sub_series, canonical_id,
                     download_duration, transcribe_duration, diarize_duration, diarized_date
-             FROM episodes WHERE canonical_id = ?"
+             FROM episodes WHERE canonical_id = ?",
         )?;
         let episodes = stmt
             .query_map(params![episode_id], |row| {
@@ -1300,10 +1293,7 @@ Mark the start time of each segment.',
                     is_transcribed: row.get::<_, i32>(13)? == 1,
                     is_in_queue: row.get::<_, i32>(14)? == 1,
                     transcript_path: row.get(15)?,
-                    transcription_status: row
-                        .get::<_, String>(16)
-                        .unwrap_or_default()
-                        .into(),
+                    transcription_status: row.get::<_, String>(16).unwrap_or_default().into(),
                     transcription_error: row.get(17)?,
                     processing_time: row.get(18)?,
                     feed_source: row.get(19)?,
@@ -1358,9 +1348,7 @@ Mark the start time of each segment.',
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare("SELECT id, title, feed_source FROM episodes")?;
         let rows = stmt
-            .query_map([], |row| {
-                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-            })?
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
     }
@@ -1406,7 +1394,15 @@ Mark the start time of each segment.',
                     file_size = COALESCE(?, file_size),
                     published_date = COALESCE(?, published_date)
                  WHERE id = ?",
-                params![episode_number, title, description, duration, file_size, published_date, id],
+                params![
+                    episode_number,
+                    title,
+                    description,
+                    duration,
+                    file_size,
+                    published_date,
+                    id
+                ],
             )?;
             Ok((id, false)) // false = not new
         } else {
@@ -1426,32 +1422,34 @@ Mark the start time of each segment.',
     pub fn get_transcript(&self, episode_id: i64) -> Result<Option<TranscriptData>> {
         let conn = self.conn.lock().unwrap();
 
-        let result = conn.query_row(
-            "SELECT t.full_text, t.segments_json, t.language, t.model_used, t.created_date,
+        let result = conn
+            .query_row(
+                "SELECT t.full_text, t.segments_json, t.language, t.model_used, t.created_date,
                     e.title, e.episode_number, e.transcript_path
              FROM transcripts t
              JOIN episodes e ON t.episode_id = e.id
              WHERE t.episode_id = ?",
-            params![episode_id],
-            |row| {
-                Ok(TranscriptData {
-                    full_text: row.get(0)?,
-                    segments_json: row.get(1)?,
-                    language: row.get(2)?,
-                    model_used: row.get(3)?,
-                    created_date: row.get(4)?,
-                    episode_title: row.get(5)?,
-                    episode_number: row.get(6)?,
-                    transcript_path: row.get(7)?,
-                    // Diarization info - not stored in DB yet, will be parsed from file
-                    has_diarization: false,
-                    num_speakers: None,
-                    diarization_method: None,
-                    speaker_names: None,
-                    marked_samples: None,
-                })
-            },
-        ).ok();
+                params![episode_id],
+                |row| {
+                    Ok(TranscriptData {
+                        full_text: row.get(0)?,
+                        segments_json: row.get(1)?,
+                        language: row.get(2)?,
+                        model_used: row.get(3)?,
+                        created_date: row.get(4)?,
+                        episode_title: row.get(5)?,
+                        episode_number: row.get(6)?,
+                        transcript_path: row.get(7)?,
+                        // Diarization info - not stored in DB yet, will be parsed from file
+                        has_diarization: false,
+                        num_speakers: None,
+                        diarization_method: None,
+                        speaker_names: None,
+                        marked_samples: None,
+                    })
+                },
+            )
+            .ok();
 
         Ok(result)
     }
@@ -1506,7 +1504,14 @@ Mark the start time of each segment.',
         Ok(count)
     }
 
-    pub fn get_queue(&self) -> Result<(Vec<QueueItemWithEpisode>, Vec<QueueItemWithEpisode>, Vec<QueueItemWithEpisode>, Vec<QueueItemWithEpisode>)> {
+    pub fn get_queue(
+        &self,
+    ) -> Result<(
+        Vec<QueueItemWithEpisode>,
+        Vec<QueueItemWithEpisode>,
+        Vec<QueueItemWithEpisode>,
+        Vec<QueueItemWithEpisode>,
+    )> {
         let conn = self.conn.lock().unwrap();
 
         let sql = r#"
@@ -1558,10 +1563,7 @@ Mark the start time of each segment.',
                         is_transcribed: row.get::<_, i32>(23)? == 1,
                         is_in_queue: row.get::<_, i32>(24)? == 1,
                         transcript_path: row.get(25)?,
-                        transcription_status: row
-                            .get::<_, String>(26)
-                            .unwrap_or_default()
-                            .into(),
+                        transcription_status: row.get::<_, String>(26).unwrap_or_default().into(),
                         transcription_error: row.get(27)?,
                         processing_time: row.get(28)?,
                         feed_source: row.get(29)?,
@@ -1705,10 +1707,7 @@ Mark the start time of each segment.',
                         is_transcribed: row.get::<_, i32>(23)? == 1,
                         is_in_queue: row.get::<_, i32>(24)? == 1,
                         transcript_path: row.get(25)?,
-                        transcription_status: row
-                            .get::<_, String>(26)
-                            .unwrap_or_default()
-                            .into(),
+                        transcription_status: row.get::<_, String>(26).unwrap_or_default().into(),
                         transcription_error: row.get(27)?,
                         processing_time: row.get(28)?,
                         feed_source: row.get(29)?,
@@ -1787,10 +1786,7 @@ Mark the start time of each segment.',
                         is_transcribed: row.get::<_, i32>(23)? == 1,
                         is_in_queue: row.get::<_, i32>(24)? == 1,
                         transcript_path: row.get(25)?,
-                        transcription_status: row
-                            .get::<_, String>(26)
-                            .unwrap_or_default()
-                            .into(),
+                        transcription_status: row.get::<_, String>(26).unwrap_or_default().into(),
                         transcription_error: row.get(27)?,
                         processing_time: row.get(28)?,
                         feed_source: row.get(29)?,
@@ -1912,7 +1908,10 @@ Mark the start time of each segment.',
             [],
         )?;
         if fixed > 0 {
-            log::info!("Fixed {} episodes stuck as completed/full without diarization", fixed);
+            log::info!(
+                "Fixed {} episodes stuck as completed/full without diarization",
+                fixed
+            );
         }
         conn.execute(
             "UPDATE episodes SET is_in_queue = 1 WHERE is_transcribed = 1 AND has_diarization = 0 \
@@ -2052,10 +2051,7 @@ Mark the start time of each segment.',
                         is_transcribed: row.get::<_, i32>(23)? == 1,
                         is_in_queue: row.get::<_, i32>(24)? == 1,
                         transcript_path: row.get(25)?,
-                        transcription_status: row
-                            .get::<_, String>(26)
-                            .unwrap_or_default()
-                            .into(),
+                        transcription_status: row.get::<_, String>(26).unwrap_or_default().into(),
                         transcription_error: row.get(27)?,
                         processing_time: row.get(28)?,
                         feed_source: row.get(29)?,
@@ -2143,10 +2139,11 @@ Mark the start time of each segment.',
             [],
             |row| row.get(0),
         )?;
-        let in_queue: i64 =
-            conn.query_row("SELECT COUNT(*) FROM episodes WHERE is_in_queue = 1", [], |row| {
-                row.get(0)
-            })?;
+        let in_queue: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM episodes WHERE is_in_queue = 1",
+            [],
+            |row| row.get(0),
+        )?;
         let in_transcription_queue: i64 = conn.query_row(
             "SELECT COUNT(*) FROM transcription_queue WHERE status IN ('pending', 'processing') AND (queue_type IS NULL OR queue_type = 'full')",
             [],
@@ -2308,7 +2305,10 @@ Mark the start time of each segment.',
         Ok(count as i32)
     }
 
-    pub fn get_recently_completed_episodes(&self, limit: i64) -> Result<Vec<CompletedEpisodeTiming>> {
+    pub fn get_recently_completed_episodes(
+        &self,
+        limit: i64,
+    ) -> Result<Vec<CompletedEpisodeTiming>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT e.id, e.title, e.episode_number, e.duration, e.download_duration, e.transcribe_duration,
@@ -2323,22 +2323,24 @@ Mark the start time of each segment.',
              ORDER BY datetime(COALESCE(q.completed_date, e.diarized_date, e.transcribed_date)) DESC
              LIMIT ?",
         )?;
-        let items = stmt.query_map(params![limit], |row| {
-            Ok(CompletedEpisodeTiming {
-                id: row.get(0)?,
-                title: row.get(1)?,
-                episode_number: row.get(2)?,
-                audio_duration: row.get(3)?,
-                download_duration: row.get(4)?,
-                transcribe_duration: row.get(5)?,
-                diarize_duration: row.get(6)?,
-                total_duration: row.get(7)?,
-                completed_date: row.get(8)?,
-                transcription_model_used: row.get(9)?,
-                embedding_backend_used: row.get(10)?,
-                last_queue_type: row.get(11)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
+        let items = stmt
+            .query_map(params![limit], |row| {
+                Ok(CompletedEpisodeTiming {
+                    id: row.get(0)?,
+                    title: row.get(1)?,
+                    episode_number: row.get(2)?,
+                    audio_duration: row.get(3)?,
+                    download_duration: row.get(4)?,
+                    transcribe_duration: row.get(5)?,
+                    diarize_duration: row.get(6)?,
+                    total_duration: row.get(7)?,
+                    completed_date: row.get(8)?,
+                    transcription_model_used: row.get(9)?,
+                    embedding_backend_used: row.get(10)?,
+                    last_queue_type: row.get(11)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(items)
     }
 
@@ -2347,12 +2349,10 @@ Mark the start time of each segment.',
     /// Diarize list: pending diarize_only queue items.
     pub fn get_queue_episode_lists(
         &self,
-    ) -> Result<
-        (
-            Vec<(i64, String, Option<i64>, String, bool)>,
-            Vec<(i64, String, Option<i64>, String, Option<String>, i32)>,
-        ),
-    > {
+    ) -> Result<(
+        Vec<(i64, String, Option<i64>, String, bool)>,
+        Vec<(i64, String, Option<i64>, String, Option<String>, i32)>,
+    )> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT e.id, e.title, CAST(e.episode_number AS INTEGER),
@@ -2363,11 +2363,20 @@ Mark the start time of each segment.',
              WHERE q.status IN ('pending', 'processing')
                AND COALESCE(q.queue_type, 'full') != 'diarize_only'
              ORDER BY q.priority DESC, q.added_to_queue_date ASC
-             LIMIT 1000"
+             LIMIT 1000",
         )?;
-        let transcribe_queue = stmt.query_map([], |row| {
-            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?, row.get::<_, Option<i64>>(2)?, row.get::<_, String>(3)?, row.get::<_, bool>(4)?))
-        })?.filter_map(|r| r.ok()).collect();
+        let transcribe_queue = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<i64>>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, bool>(4)?,
+                ))
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
 
         let mut stmt2 = conn.prepare(
             "SELECT e.id, e.title, CAST(e.episode_number AS INTEGER), q.added_to_queue_date,
@@ -2376,18 +2385,21 @@ Mark the start time of each segment.',
              JOIN episodes e ON q.episode_id = e.id
              WHERE q.status IN ('pending', 'processing')
                AND q.queue_type = 'diarize_only'
-             ORDER BY q.priority DESC, q.added_to_queue_date ASC"
+             ORDER BY q.priority DESC, q.added_to_queue_date ASC",
         )?;
-        let diarize_queue = stmt2.query_map([], |row| {
-            Ok((
-                row.get::<_, i64>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, Option<i64>>(2)?,
-                row.get::<_, String>(3)?,
-                row.get::<_, Option<String>>(4)?,
-                row.get::<_, i32>(5)?,
-            ))
-        })?.filter_map(|r| r.ok()).collect();
+        let diarize_queue = stmt2
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<i64>>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, i32>(5)?,
+                ))
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
 
         Ok((transcribe_queue, diarize_queue))
     }
@@ -2464,7 +2476,14 @@ Mark the start time of each segment.',
         Ok(speakers)
     }
 
-    pub fn create_speaker(&self, name: &str, short_name: Option<&str>, is_host: bool, is_guest: bool, is_scoop: bool) -> Result<i64> {
+    pub fn create_speaker(
+        &self,
+        name: &str,
+        short_name: Option<&str>,
+        is_host: bool,
+        is_guest: bool,
+        is_scoop: bool,
+    ) -> Result<i64> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "INSERT INTO speakers (name, short_name, is_host, is_guest, is_scoop) VALUES (?, ?, ?, ?, ?)",
@@ -2473,7 +2492,15 @@ Mark the start time of each segment.',
         Ok(conn.last_insert_rowid())
     }
 
-    pub fn update_speaker(&self, id: i64, name: &str, short_name: Option<&str>, is_host: bool, is_guest: bool, is_scoop: bool) -> Result<()> {
+    pub fn update_speaker(
+        &self,
+        id: i64,
+        name: &str,
+        short_name: Option<&str>,
+        is_host: bool,
+        is_guest: bool,
+        is_scoop: bool,
+    ) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "UPDATE speakers SET name = ?, short_name = ?, is_host = ?, is_guest = ?, is_scoop = ? WHERE id = ?",
@@ -2548,7 +2575,9 @@ Mark the start time of each segment.',
             if !label.starts_with("SPEAKER_") {
                 continue;
             }
-            if let Some((speaker_id, audio_drop_id)) = self.get_episode_speaker_assignment_state(episode_id, &label)? {
+            if let Some((speaker_id, audio_drop_id)) =
+                self.get_episode_speaker_assignment_state(episode_id, &label)?
+            {
                 if speaker_id.is_some() || audio_drop_id.is_some() {
                     continue;
                 }
@@ -2572,7 +2601,7 @@ Mark the start time of each segment.',
              FROM speakers s
              LEFT JOIN episode_speakers es ON s.id = es.speaker_id AND es.audio_drop_id IS NULL
              GROUP BY s.id
-             ORDER BY episode_count DESC"
+             ORDER BY episode_count DESC",
         )?;
         let rows = stmt.query_map([], |row| {
             Ok(SpeakerStats {
@@ -2592,7 +2621,12 @@ Mark the start time of each segment.',
         Ok(stats)
     }
 
-    pub fn link_episode_speaker(&self, episode_id: i64, diarization_label: &str, speaker_id: i64) -> Result<()> {
+    pub fn link_episode_speaker(
+        &self,
+        episode_id: i64,
+        diarization_label: &str,
+        speaker_id: i64,
+    ) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "INSERT OR REPLACE INTO episode_speakers (episode_id, diarization_label, speaker_id, audio_drop_id)
@@ -2613,11 +2647,13 @@ Mark the start time of each segment.',
     ) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         // Resolve speaker_id by name (case-insensitive)
-        let speaker_id: Option<i64> = conn.query_row(
-            "SELECT id FROM speakers WHERE LOWER(name) = LOWER(?1)",
-            params![speaker_name],
-            |row| row.get(0),
-        ).ok();
+        let speaker_id: Option<i64> = conn
+            .query_row(
+                "SELECT id FROM speakers WHERE LOWER(name) = LOWER(?1)",
+                params![speaker_name],
+                |row| row.get(0),
+            )
+            .ok();
         let Some(speaker_id) = speaker_id else {
             return Ok(()); // Speaker not in DB — silently skip
         };
@@ -2630,7 +2666,12 @@ Mark the start time of each segment.',
         Ok(())
     }
 
-    pub fn link_episode_audio_drop(&self, episode_id: i64, diarization_label: &str, audio_drop_id: i64) -> Result<()> {
+    pub fn link_episode_audio_drop(
+        &self,
+        episode_id: i64,
+        diarization_label: &str,
+        audio_drop_id: i64,
+    ) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "INSERT OR REPLACE INTO episode_speakers (episode_id, diarization_label, speaker_id, audio_drop_id)
@@ -2657,12 +2698,16 @@ Mark the start time of each segment.',
                 continue;
             }
             // Look up speaker by name
-            let speaker_id: Option<i64> = conn.query_row(
-                "SELECT id FROM speakers WHERE name = ?",
-                params![name],
-                |row| row.get(0),
-            ).ok();
-            let Some(speaker_id) = speaker_id else { continue };
+            let speaker_id: Option<i64> = conn
+                .query_row(
+                    "SELECT id FROM speakers WHERE name = ?",
+                    params![name],
+                    |row| row.get(0),
+                )
+                .ok();
+            let Some(speaker_id) = speaker_id else {
+                continue;
+            };
             // Don't overwrite an existing audio_drop assignment for this label
             let has_drop: bool = conn.query_row(
                 "SELECT COUNT(*) FROM episode_speakers WHERE episode_id = ? AND diarization_label = ? AND audio_drop_id IS NOT NULL",
@@ -2682,7 +2727,11 @@ Mark the start time of each segment.',
     }
 
     /// Get the audio_drop_id for a diarization label, if it's assigned to a sound bite
-    pub fn get_audio_drop_for_label(&self, episode_id: i64, diarization_label: &str) -> Result<Option<i64>> {
+    pub fn get_audio_drop_for_label(
+        &self,
+        episode_id: i64,
+        diarization_label: &str,
+    ) -> Result<Option<i64>> {
         let conn = self.conn.lock().unwrap();
         let result = conn.query_row(
             "SELECT audio_drop_id FROM episode_speakers WHERE episode_id = ? AND diarization_label = ? AND audio_drop_id IS NOT NULL",
@@ -2730,7 +2779,10 @@ Mark the start time of each segment.',
         Ok(conn.last_insert_rowid())
     }
 
-    pub fn get_voice_samples_for_speaker(&self, speaker_name: &str) -> Result<Vec<VoiceSampleRecord>> {
+    pub fn get_voice_samples_for_speaker(
+        &self,
+        speaker_name: &str,
+    ) -> Result<Vec<VoiceSampleRecord>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT vs.id, vs.speaker_name, vs.episode_id, vs.segment_idx,
@@ -2739,7 +2791,7 @@ Mark the start time of each segment.',
              FROM voice_samples vs
              LEFT JOIN episodes e ON vs.episode_id = e.id
              WHERE vs.speaker_name = ?1
-             ORDER BY vs.created_at DESC"
+             ORDER BY vs.created_at DESC",
         )?;
         let rows = stmt.query_map(params![speaker_name], |row| {
             Ok(VoiceSampleRecord {
@@ -2777,11 +2829,13 @@ Mark the start time of each segment.',
     pub fn delete_voice_sample_record(&self, id: i64) -> Result<Option<String>> {
         let conn = self.conn.lock().unwrap();
         // Return the file_path so caller can delete the file
-        let file_path: Option<String> = conn.query_row(
-            "SELECT file_path FROM voice_samples WHERE id = ?1",
-            params![id],
-            |row| row.get(0),
-        ).optional()?;
+        let file_path: Option<String> = conn
+            .query_row(
+                "SELECT file_path FROM voice_samples WHERE id = ?1",
+                params![id],
+                |row| row.get(0),
+            )
+            .optional()?;
         conn.execute("DELETE FROM voice_samples WHERE id = ?1", params![id])?;
         Ok(file_path)
     }
@@ -2801,7 +2855,10 @@ Mark the start time of each segment.',
 
     pub fn delete_voice_samples_by_source(&self, source: &str) -> Result<i64> {
         let conn = self.conn.lock().unwrap();
-        let deleted = conn.execute("DELETE FROM voice_samples WHERE source = ?1", params![source])?;
+        let deleted = conn.execute(
+            "DELETE FROM voice_samples WHERE source = ?1",
+            params![source],
+        )?;
         Ok(deleted as i64)
     }
 
@@ -2822,15 +2879,21 @@ Mark the start time of each segment.',
             "SELECT s.name, COUNT(DISTINCT es.episode_id) as episode_count
              FROM episode_speakers es
              JOIN speakers s ON es.speaker_id = s.id
-             GROUP BY s.id, s.name"
+             GROUP BY s.id, s.name",
         )?;
-        let map: std::collections::HashMap<String, i32> = stmt.query_map([], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, i32>(1)?))
-        })?.filter_map(|r| r.ok()).collect();
+        let map: std::collections::HashMap<String, i32> = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i32>(1)?))
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
         Ok(map)
     }
 
-    pub fn get_episode_speaker_assignments(&self, episode_id: i64) -> Result<Vec<EpisodeSpeakerAssignment>> {
+    pub fn get_episode_speaker_assignments(
+        &self,
+        episode_id: i64,
+    ) -> Result<Vec<EpisodeSpeakerAssignment>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT es.id, es.episode_id, es.diarization_label, es.speaker_id,
@@ -2840,7 +2903,7 @@ Mark the start time of each segment.',
              LEFT JOIN speakers s ON es.speaker_id = s.id
              LEFT JOIN audio_drops ad ON es.audio_drop_id = ad.id
              WHERE es.episode_id = ?
-             ORDER BY es.diarization_label"
+             ORDER BY es.diarization_label",
         )?;
         let rows = stmt.query_map(params![episode_id], |row| {
             Ok(EpisodeSpeakerAssignment {
@@ -2929,7 +2992,8 @@ Mark the start time of each segment.',
     // =========================================================================
 
     fn ensure_default_chapter_types(&self, conn: &rusqlite::Connection) -> Result<()> {
-        let count: i64 = conn.query_row("SELECT COUNT(*) FROM chapter_types", [], |row| row.get(0))?;
+        let count: i64 =
+            conn.query_row("SELECT COUNT(*) FROM chapter_types", [], |row| row.get(0))?;
         if count > 0 {
             return Ok(());
         }
@@ -2943,7 +3007,7 @@ Mark the start time of each segment.',
                 ('Thank Yous', 'Patron acknowledgments', '#8b5cf6', '🙏', 4),
                 ('Patreon Extra', 'Bonus segment for patrons', '#14b8a6', '🎁', 5),
                 ('Commercial', 'Sponsor commercial segment', '#ec4899', '📺', 6);
-            "#
+            "#,
         )?;
         Ok(())
     }
@@ -2954,29 +3018,46 @@ Mark the start time of each segment.',
         let mut stmt = conn.prepare(
             "SELECT id, name, description, color, icon, sort_order FROM chapter_types ORDER BY sort_order"
         )?;
-        let types = stmt.query_map([], |row| {
-            Ok(models::ChapterType {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                description: row.get(2)?,
-                color: row.get(3)?,
-                icon: row.get(4)?,
-                sort_order: row.get(5)?,
-            })
-        })?.filter_map(|r| r.ok()).collect();
+        let types = stmt
+            .query_map([], |row| {
+                Ok(models::ChapterType {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    description: row.get(2)?,
+                    color: row.get(3)?,
+                    icon: row.get(4)?,
+                    sort_order: row.get(5)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
         Ok(types)
     }
 
-    pub fn create_chapter_type(&self, name: &str, description: Option<&str>, color: &str, icon: Option<&str>) -> Result<i64> {
+    pub fn create_chapter_type(
+        &self,
+        name: &str,
+        description: Option<&str>,
+        color: &str,
+        icon: Option<&str>,
+    ) -> Result<i64> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "INSERT INTO chapter_types (name, description, color, icon) VALUES (?1, ?2, ?3, ?4)",
-            params![name, description, color, icon]
+            params![name, description, color, icon],
         )?;
         Ok(conn.last_insert_rowid())
     }
 
-    pub fn update_chapter_type(&self, id: i64, name: &str, description: Option<&str>, color: &str, icon: Option<&str>, sort_order: i32) -> Result<()> {
+    pub fn update_chapter_type(
+        &self,
+        id: i64,
+        name: &str,
+        description: Option<&str>,
+        color: &str,
+        icon: Option<&str>,
+        sort_order: i32,
+    ) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "UPDATE chapter_types SET name = ?1, description = ?2, color = ?3, icon = ?4, sort_order = ?5 WHERE id = ?6",
@@ -3005,28 +3086,37 @@ Mark the start time of each segment.',
                WHERE ec.episode_id = ?1
                ORDER BY ec.start_time"#
         )?;
-        let chapters = stmt.query_map([episode_id], |row| {
-            Ok(models::EpisodeChapter {
-                id: row.get(0)?,
-                episode_id: row.get(1)?,
-                chapter_type_id: row.get(2)?,
-                chapter_type_name: row.get(3)?,
-                chapter_type_color: row.get(4)?,
-                chapter_type_icon: row.get(5)?,
-                title: row.get(6)?,
-                start_time: row.get(7)?,
-                end_time: row.get(8)?,
-                start_segment_idx: row.get(9)?,
-                end_segment_idx: row.get(10)?,
-                notes: row.get(11)?,
-            })
-        })?.filter_map(|r| r.ok()).collect();
+        let chapters = stmt
+            .query_map([episode_id], |row| {
+                Ok(models::EpisodeChapter {
+                    id: row.get(0)?,
+                    episode_id: row.get(1)?,
+                    chapter_type_id: row.get(2)?,
+                    chapter_type_name: row.get(3)?,
+                    chapter_type_color: row.get(4)?,
+                    chapter_type_icon: row.get(5)?,
+                    title: row.get(6)?,
+                    start_time: row.get(7)?,
+                    end_time: row.get(8)?,
+                    start_segment_idx: row.get(9)?,
+                    end_segment_idx: row.get(10)?,
+                    notes: row.get(11)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
         Ok(chapters)
     }
 
     pub fn create_episode_chapter(
-        &self, episode_id: i64, chapter_type_id: i64, title: Option<&str>,
-        start_time: f64, end_time: Option<f64>, start_segment_idx: Option<i32>, end_segment_idx: Option<i32>
+        &self,
+        episode_id: i64,
+        chapter_type_id: i64,
+        title: Option<&str>,
+        start_time: f64,
+        end_time: Option<f64>,
+        start_segment_idx: Option<i32>,
+        end_segment_idx: Option<i32>,
     ) -> Result<i64> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
@@ -3056,25 +3146,33 @@ Mark the start time of each segment.',
                JOIN chapter_types ct ON clr.chapter_type_id = ct.id
                ORDER BY clr.priority DESC, clr.id"#,
         )?;
-        let rules = stmt.query_map([], |row| {
-            Ok(models::ChapterLabelRule {
-                id: row.get(0)?,
-                chapter_type_id: row.get(1)?,
-                chapter_type_name: row.get(2)?,
-                chapter_type_color: row.get(3)?,
-                chapter_type_icon: row.get(4)?,
-                pattern: row.get(5)?,
-                match_type: row.get(6)?,
-                priority: row.get(7)?,
-                enabled: row.get::<_, i32>(8)? != 0,
-            })
-        })?.filter_map(|r| r.ok()).collect();
+        let rules = stmt
+            .query_map([], |row| {
+                Ok(models::ChapterLabelRule {
+                    id: row.get(0)?,
+                    chapter_type_id: row.get(1)?,
+                    chapter_type_name: row.get(2)?,
+                    chapter_type_color: row.get(3)?,
+                    chapter_type_icon: row.get(4)?,
+                    pattern: row.get(5)?,
+                    match_type: row.get(6)?,
+                    priority: row.get(7)?,
+                    enabled: row.get::<_, i32>(8)? != 0,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
         Ok(rules)
     }
 
     pub fn save_chapter_label_rule(
-        &self, id: Option<i64>, chapter_type_id: i64, pattern: &str,
-        match_type: &str, priority: i32, enabled: bool,
+        &self,
+        id: Option<i64>,
+        chapter_type_id: i64,
+        pattern: &str,
+        match_type: &str,
+        priority: i32,
+        enabled: bool,
     ) -> Result<i64> {
         let conn = self.conn.lock().unwrap();
         if let Some(rule_id) = id {
@@ -3099,14 +3197,24 @@ Mark the start time of each segment.',
     }
 
     /// Get raw transcript segments for an episode (for auto-labeling)
-    pub fn get_transcript_segments_for_episode(&self, episode_id: i64) -> Result<Vec<(i32, String, f64)>> {
+    pub fn get_transcript_segments_for_episode(
+        &self,
+        episode_id: i64,
+    ) -> Result<Vec<(i32, String, f64)>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT segment_idx, text, start_time FROM transcript_segments WHERE episode_id = ?1 ORDER BY segment_idx",
         )?;
-        let rows = stmt.query_map([episode_id], |row| {
-            Ok((row.get::<_, i32>(0)?, row.get::<_, String>(1)?, row.get::<_, f64>(2)?))
-        })?.filter_map(|r| r.ok()).collect();
+        let rows = stmt
+            .query_map([episode_id], |row| {
+                Ok((
+                    row.get::<_, i32>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, f64>(2)?,
+                ))
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
         Ok(rows)
     }
 
@@ -3119,16 +3227,17 @@ Mark the start time of each segment.',
         let mut stmt = conn.prepare(
             "SELECT segment_idx, text, start_time, end_time FROM transcript_segments WHERE episode_id = ?1 ORDER BY segment_idx",
         )?;
-        let rows = stmt.query_map([episode_id], |row| {
-            Ok((
-                row.get::<_, i32>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, f64>(2)?,
-                row.get::<_, Option<f64>>(3)?,
-            ))
-        })?
-        .filter_map(|r| r.ok())
-        .collect();
+        let rows = stmt
+            .query_map([episode_id], |row| {
+                Ok((
+                    row.get::<_, i32>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, f64>(2)?,
+                    row.get::<_, Option<f64>>(3)?,
+                ))
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
         Ok(rows)
     }
 
@@ -3148,25 +3257,35 @@ Mark the start time of each segment.',
                LEFT JOIN speakers s ON c.speaker_id = s.id
                ORDER BY c.name"#
         )?;
-        let chars = stmt.query_map([], |row| {
-            Ok(models::Character {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                short_name: row.get(2)?,
-                description: row.get(3)?,
-                catchphrase: row.get(4)?,
-                first_episode_id: row.get(5)?,
-                first_episode_title: row.get(6)?,
-                image_url: row.get(7)?,
-                speaker_id: row.get(8)?,
-                speaker_name: row.get(9)?,
-                appearance_count: row.get(10)?,
-            })
-        })?.filter_map(|r| r.ok()).collect();
+        let chars = stmt
+            .query_map([], |row| {
+                Ok(models::Character {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    short_name: row.get(2)?,
+                    description: row.get(3)?,
+                    catchphrase: row.get(4)?,
+                    first_episode_id: row.get(5)?,
+                    first_episode_title: row.get(6)?,
+                    image_url: row.get(7)?,
+                    speaker_id: row.get(8)?,
+                    speaker_name: row.get(9)?,
+                    appearance_count: row.get(10)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
         Ok(chars)
     }
 
-    pub fn create_character(&self, name: &str, short_name: Option<&str>, description: Option<&str>, catchphrase: Option<&str>, speaker_id: Option<i64>) -> Result<i64> {
+    pub fn create_character(
+        &self,
+        name: &str,
+        short_name: Option<&str>,
+        description: Option<&str>,
+        catchphrase: Option<&str>,
+        speaker_id: Option<i64>,
+    ) -> Result<i64> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "INSERT INTO characters (name, short_name, description, catchphrase, speaker_id) VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -3175,7 +3294,15 @@ Mark the start time of each segment.',
         Ok(conn.last_insert_rowid())
     }
 
-    pub fn update_character(&self, id: i64, name: &str, short_name: Option<&str>, description: Option<&str>, catchphrase: Option<&str>, speaker_id: Option<i64>) -> Result<()> {
+    pub fn update_character(
+        &self,
+        id: i64,
+        name: &str,
+        short_name: Option<&str>,
+        description: Option<&str>,
+        catchphrase: Option<&str>,
+        speaker_id: Option<i64>,
+    ) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "UPDATE characters SET name = ?1, short_name = ?2, description = ?3, catchphrase = ?4, speaker_id = ?5 WHERE id = ?6",
@@ -3200,7 +3327,14 @@ Mark the start time of each segment.',
         Ok(name)
     }
 
-    pub fn add_character_appearance(&self, character_id: i64, episode_id: i64, start_time: Option<f64>, end_time: Option<f64>, segment_idx: Option<i32>) -> Result<i64> {
+    pub fn add_character_appearance(
+        &self,
+        character_id: i64,
+        episode_id: i64,
+        start_time: Option<f64>,
+        end_time: Option<f64>,
+        segment_idx: Option<i32>,
+    ) -> Result<i64> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "INSERT INTO character_appearances (character_id, episode_id, start_time, end_time, segment_idx) VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -3223,32 +3357,48 @@ Mark the start time of each segment.',
                LEFT JOIN episodes e ON s.first_episode_id = e.id
                ORDER BY s.name"#
         )?;
-        let sponsors = stmt.query_map([], |row| {
-            Ok(models::Sponsor {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                tagline: row.get(2)?,
-                description: row.get(3)?,
-                is_real: row.get::<_, i32>(4)? == 1,
-                first_episode_id: row.get(5)?,
-                first_episode_title: row.get(6)?,
-                image_url: row.get(7)?,
-                mention_count: row.get(8)?,
-            })
-        })?.filter_map(|r| r.ok()).collect();
+        let sponsors = stmt
+            .query_map([], |row| {
+                Ok(models::Sponsor {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    tagline: row.get(2)?,
+                    description: row.get(3)?,
+                    is_real: row.get::<_, i32>(4)? == 1,
+                    first_episode_id: row.get(5)?,
+                    first_episode_title: row.get(6)?,
+                    image_url: row.get(7)?,
+                    mention_count: row.get(8)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
         Ok(sponsors)
     }
 
-    pub fn create_sponsor(&self, name: &str, tagline: Option<&str>, description: Option<&str>, is_real: bool) -> Result<i64> {
+    pub fn create_sponsor(
+        &self,
+        name: &str,
+        tagline: Option<&str>,
+        description: Option<&str>,
+        is_real: bool,
+    ) -> Result<i64> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "INSERT INTO sponsors (name, tagline, description, is_real) VALUES (?1, ?2, ?3, ?4)",
-            params![name, tagline, description, is_real as i32]
+            params![name, tagline, description, is_real as i32],
         )?;
         Ok(conn.last_insert_rowid())
     }
 
-    pub fn update_sponsor(&self, id: i64, name: &str, tagline: Option<&str>, description: Option<&str>, is_real: bool) -> Result<()> {
+    pub fn update_sponsor(
+        &self,
+        id: i64,
+        name: &str,
+        tagline: Option<&str>,
+        description: Option<&str>,
+        is_real: bool,
+    ) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "UPDATE sponsors SET name = ?1, tagline = ?2, description = ?3, is_real = ?4 WHERE id = ?5",
@@ -3263,7 +3413,14 @@ Mark the start time of each segment.',
         Ok(())
     }
 
-    pub fn add_sponsor_mention(&self, sponsor_id: i64, episode_id: i64, start_time: Option<f64>, end_time: Option<f64>, segment_idx: Option<i32>) -> Result<i64> {
+    pub fn add_sponsor_mention(
+        &self,
+        sponsor_id: i64,
+        episode_id: i64,
+        start_time: Option<f64>,
+        end_time: Option<f64>,
+        segment_idx: Option<i32>,
+    ) -> Result<i64> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "INSERT INTO sponsor_mentions (sponsor_id, episode_id, start_time, end_time, segment_idx) VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -3277,7 +3434,12 @@ Mark the start time of each segment.',
     // =========================================================================
 
     /// Search transcripts using full-text search
-    pub fn search_transcripts(&self, query: &str, limit: i64, offset: i64) -> Result<Vec<SearchResult>> {
+    pub fn search_transcripts(
+        &self,
+        query: &str,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<SearchResult>> {
         let conn = self.conn.lock().unwrap();
 
         // Use FTS5 MATCH with snippet for highlighting
@@ -3303,21 +3465,24 @@ Mark the start time of each segment.',
         "#;
 
         let mut stmt = conn.prepare(sql)?;
-        let results = stmt.query_map(params![query, limit, offset], |row| {
-            Ok(SearchResult {
-                id: row.get(0)?,
-                episode_id: row.get(1)?,
-                episode_title: row.get(2)?,
-                episode_number: row.get(3)?,
-                speaker: row.get(4)?,
-                text: row.get(5)?,
-                start_time: row.get(6)?,
-                end_time: row.get(7)?,
-                segment_idx: row.get(8)?,
-                snippet: row.get(9)?,
-                rank: row.get(10)?,
-            })
-        })?.filter_map(|r| r.ok()).collect();
+        let results = stmt
+            .query_map(params![query, limit, offset], |row| {
+                Ok(SearchResult {
+                    id: row.get(0)?,
+                    episode_id: row.get(1)?,
+                    episode_title: row.get(2)?,
+                    episode_number: row.get(3)?,
+                    speaker: row.get(4)?,
+                    text: row.get(5)?,
+                    start_time: row.get(6)?,
+                    end_time: row.get(7)?,
+                    segment_idx: row.get(8)?,
+                    snippet: row.get(9)?,
+                    rank: row.get(10)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
 
         Ok(results)
     }
@@ -3328,19 +3493,23 @@ Mark the start time of each segment.',
         let count: i64 = conn.query_row(
             "SELECT COUNT(*) FROM segments_fts WHERE segments_fts MATCH ?1",
             params![query],
-            |row| row.get(0)
+            |row| row.get(0),
         )?;
         Ok(count)
     }
 
     /// Index a transcript's segments for full-text search
-    pub fn index_transcript_segments(&self, episode_id: i64, segments: &[TranscriptSegment]) -> Result<()> {
+    pub fn index_transcript_segments(
+        &self,
+        episode_id: i64,
+        segments: &[TranscriptSegment],
+    ) -> Result<()> {
         let conn = self.conn.lock().unwrap();
 
         // Delete existing segments for this episode
         conn.execute(
             "DELETE FROM transcript_segments WHERE episode_id = ?1",
-            params![episode_id]
+            params![episode_id],
         )?;
 
         // Insert new segments (FTS trigger will auto-update)
@@ -3450,11 +3619,9 @@ Mark the start time of each segment.',
     /// Get count of indexed segments
     pub fn get_indexed_segment_count(&self) -> Result<i64> {
         let conn = self.conn.lock().unwrap();
-        let count: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM transcript_segments",
-            [],
-            |row| row.get(0)
-        )?;
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM transcript_segments", [], |row| {
+            row.get(0)
+        })?;
         Ok(count)
     }
 
@@ -3466,11 +3633,14 @@ Mark the start time of each segment.',
         let mut stmt = conn.prepare(
             "SELECT id, title FROM episodes
              WHERE is_transcribed = 1 AND transcript_path IS NOT NULL
-             ORDER BY published_date DESC"
+             ORDER BY published_date DESC",
         )?;
-        let rows = stmt.query_map([], |row| {
-            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
-        })?.filter_map(|r| r.ok()).collect();
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
         Ok(rows)
     }
 
@@ -3492,43 +3662,46 @@ Mark the start time of each segment.',
         "#;
 
         let mut stmt = conn.prepare(sql)?;
-        let episodes = stmt.query_map([], |row| {
-            Ok(Episode {
-                id: row.get(0)?,
-                episode_number: row.get(1)?,
-                title: row.get(2)?,
-                description: row.get(3)?,
-                audio_url: row.get(4)?,
-                audio_file_path: row.get(5)?,
-                duration: row.get(6)?,
-                file_size: row.get(7)?,
-                published_date: row.get(8)?,
-                added_date: row.get(9)?,
-                downloaded_date: row.get(10)?,
-                transcribed_date: row.get(11)?,
-                is_downloaded: row.get::<_, i32>(12)? == 1,
-                is_transcribed: row.get::<_, i32>(13)? == 1,
-                is_in_queue: row.get::<_, i32>(14)? == 1,
-                transcript_path: row.get(15)?,
-                transcription_status: row.get::<_, String>(16).unwrap_or_default().into(),
-                transcription_error: row.get(17)?,
-                processing_time: row.get(18)?,
-                feed_source: row.get(19)?,
-                metadata_json: row.get(20)?,
-                has_diarization: row.get::<_, i32>(21).unwrap_or(0) == 1,
-                num_speakers: row.get(22)?,
-                category: row.get(23)?,
-                category_number: row.get(24)?,
-                sub_series: row.get(25)?,
-                canonical_id: row.get(26)?,
-                download_duration: row.get(27)?,
-                transcribe_duration: row.get(28)?,
-                diarize_duration: row.get(29)?,
-                diarized_date: row.get(30)?,
-                unresolved_flag_count: 0,
-                pending_correction_count: 0,
-            })
-        })?.filter_map(|r| r.ok()).collect();
+        let episodes = stmt
+            .query_map([], |row| {
+                Ok(Episode {
+                    id: row.get(0)?,
+                    episode_number: row.get(1)?,
+                    title: row.get(2)?,
+                    description: row.get(3)?,
+                    audio_url: row.get(4)?,
+                    audio_file_path: row.get(5)?,
+                    duration: row.get(6)?,
+                    file_size: row.get(7)?,
+                    published_date: row.get(8)?,
+                    added_date: row.get(9)?,
+                    downloaded_date: row.get(10)?,
+                    transcribed_date: row.get(11)?,
+                    is_downloaded: row.get::<_, i32>(12)? == 1,
+                    is_transcribed: row.get::<_, i32>(13)? == 1,
+                    is_in_queue: row.get::<_, i32>(14)? == 1,
+                    transcript_path: row.get(15)?,
+                    transcription_status: row.get::<_, String>(16).unwrap_or_default().into(),
+                    transcription_error: row.get(17)?,
+                    processing_time: row.get(18)?,
+                    feed_source: row.get(19)?,
+                    metadata_json: row.get(20)?,
+                    has_diarization: row.get::<_, i32>(21).unwrap_or(0) == 1,
+                    num_speakers: row.get(22)?,
+                    category: row.get(23)?,
+                    category_number: row.get(24)?,
+                    sub_series: row.get(25)?,
+                    canonical_id: row.get(26)?,
+                    download_duration: row.get(27)?,
+                    transcribe_duration: row.get(28)?,
+                    diarize_duration: row.get(29)?,
+                    diarized_date: row.get(30)?,
+                    unresolved_flag_count: 0,
+                    pending_correction_count: 0,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
 
         Ok(episodes)
     }
@@ -3574,19 +3747,22 @@ Mark the start time of each segment.',
                ORDER BY pe.occurred_at DESC
                LIMIT ?1"#,
         )?;
-        let rows = stmt.query_map([limit], |row| {
-            Ok(models::PipelineError {
-                id: row.get(0)?,
-                occurred_at: row.get(1)?,
-                context: row.get(2)?,
-                episode_id: row.get(3)?,
-                error_kind: row.get(4)?,
-                error_detail: row.get(5)?,
-                retry_count: row.get(6)?,
-                resolved: row.get::<_, i32>(7)? == 1,
-                episode_title: row.get(8)?,
-            })
-        })?.filter_map(|r| r.ok()).collect();
+        let rows = stmt
+            .query_map([limit], |row| {
+                Ok(models::PipelineError {
+                    id: row.get(0)?,
+                    occurred_at: row.get(1)?,
+                    context: row.get(2)?,
+                    episode_id: row.get(3)?,
+                    error_kind: row.get(4)?,
+                    error_detail: row.get(5)?,
+                    retry_count: row.get(6)?,
+                    resolved: row.get::<_, i32>(7)? == 1,
+                    episode_title: row.get(8)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
         Ok(rows)
     }
 
@@ -3695,28 +3871,34 @@ Mark the start time of each segment.',
                       segment_idx, confidence, raw_text, created_at
                FROM detected_content
                WHERE episode_id = ?1
-               ORDER BY start_time NULLS LAST"#
+               ORDER BY start_time NULLS LAST"#,
         )?;
-        let content = stmt.query_map([episode_id], |row| {
-            Ok(DetectedContent {
-                id: row.get(0)?,
-                episode_id: row.get(1)?,
-                content_type: row.get(2)?,
-                name: row.get(3)?,
-                description: row.get(4)?,
-                start_time: row.get(5)?,
-                end_time: row.get(6)?,
-                segment_idx: row.get(7)?,
-                confidence: row.get(8)?,
-                raw_text: row.get(9)?,
-                created_at: row.get(10)?,
-            })
-        })?.filter_map(|r| r.ok()).collect();
+        let content = stmt
+            .query_map([episode_id], |row| {
+                Ok(DetectedContent {
+                    id: row.get(0)?,
+                    episode_id: row.get(1)?,
+                    content_type: row.get(2)?,
+                    name: row.get(3)?,
+                    description: row.get(4)?,
+                    start_time: row.get(5)?,
+                    end_time: row.get(6)?,
+                    segment_idx: row.get(7)?,
+                    confidence: row.get(8)?,
+                    raw_text: row.get(9)?,
+                    created_at: row.get(10)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
         Ok(content)
     }
 
     /// Get all detected content by type (e.g., all characters across all episodes)
-    pub fn get_detected_content_by_type(&self, content_type: &str) -> Result<Vec<DetectedContentWithEpisode>> {
+    pub fn get_detected_content_by_type(
+        &self,
+        content_type: &str,
+    ) -> Result<Vec<DetectedContentWithEpisode>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             r#"SELECT dc.id, dc.episode_id, e.title, e.episode_number, dc.content_type,
@@ -3725,25 +3907,28 @@ Mark the start time of each segment.',
                FROM detected_content dc
                JOIN episodes e ON dc.episode_id = e.id
                WHERE dc.content_type = ?1
-               ORDER BY dc.name, e.published_date DESC"#
+               ORDER BY dc.name, e.published_date DESC"#,
         )?;
-        let content = stmt.query_map([content_type], |row| {
-            Ok(DetectedContentWithEpisode {
-                id: row.get(0)?,
-                episode_id: row.get(1)?,
-                episode_title: row.get(2)?,
-                episode_number: row.get(3)?,
-                content_type: row.get(4)?,
-                name: row.get(5)?,
-                description: row.get(6)?,
-                start_time: row.get(7)?,
-                end_time: row.get(8)?,
-                segment_idx: row.get(9)?,
-                confidence: row.get(10)?,
-                raw_text: row.get(11)?,
-                created_at: row.get(12)?,
-            })
-        })?.filter_map(|r| r.ok()).collect();
+        let content = stmt
+            .query_map([content_type], |row| {
+                Ok(DetectedContentWithEpisode {
+                    id: row.get(0)?,
+                    episode_id: row.get(1)?,
+                    episode_title: row.get(2)?,
+                    episode_number: row.get(3)?,
+                    content_type: row.get(4)?,
+                    name: row.get(5)?,
+                    description: row.get(6)?,
+                    start_time: row.get(7)?,
+                    end_time: row.get(8)?,
+                    segment_idx: row.get(9)?,
+                    confidence: row.get(10)?,
+                    raw_text: row.get(11)?,
+                    created_at: row.get(12)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
         Ok(content)
     }
 
@@ -3758,24 +3943,27 @@ Mark the start time of each segment.',
             r#"SELECT id, name, description, content_type, prompt_text, system_prompt,
                       output_schema, is_active, run_count, last_run_at, created_at, updated_at
                FROM extraction_prompts
-               ORDER BY content_type, name"#
+               ORDER BY content_type, name"#,
         )?;
-        let prompts = stmt.query_map([], |row| {
-            Ok(ExtractionPrompt {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                description: row.get(2)?,
-                content_type: row.get(3)?,
-                prompt_text: row.get(4)?,
-                system_prompt: row.get(5)?,
-                output_schema: row.get(6)?,
-                is_active: row.get::<_, i32>(7)? != 0,
-                run_count: row.get(8)?,
-                last_run_at: row.get(9)?,
-                created_at: row.get(10)?,
-                updated_at: row.get(11)?,
-            })
-        })?.filter_map(|r| r.ok()).collect();
+        let prompts = stmt
+            .query_map([], |row| {
+                Ok(ExtractionPrompt {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    description: row.get(2)?,
+                    content_type: row.get(3)?,
+                    prompt_text: row.get(4)?,
+                    system_prompt: row.get(5)?,
+                    output_schema: row.get(6)?,
+                    is_active: row.get::<_, i32>(7)? != 0,
+                    run_count: row.get(8)?,
+                    last_run_at: row.get(9)?,
+                    created_at: row.get(10)?,
+                    updated_at: row.get(11)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
         Ok(prompts)
     }
 
@@ -3785,24 +3973,26 @@ Mark the start time of each segment.',
         let mut stmt = conn.prepare(
             r#"SELECT id, name, description, content_type, prompt_text, system_prompt,
                       output_schema, is_active, run_count, last_run_at, created_at, updated_at
-               FROM extraction_prompts WHERE id = ?1"#
+               FROM extraction_prompts WHERE id = ?1"#,
         )?;
-        let prompt = stmt.query_row([id], |row| {
-            Ok(ExtractionPrompt {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                description: row.get(2)?,
-                content_type: row.get(3)?,
-                prompt_text: row.get(4)?,
-                system_prompt: row.get(5)?,
-                output_schema: row.get(6)?,
-                is_active: row.get::<_, i32>(7)? != 0,
-                run_count: row.get(8)?,
-                last_run_at: row.get(9)?,
-                created_at: row.get(10)?,
-                updated_at: row.get(11)?,
+        let prompt = stmt
+            .query_row([id], |row| {
+                Ok(ExtractionPrompt {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    description: row.get(2)?,
+                    content_type: row.get(3)?,
+                    prompt_text: row.get(4)?,
+                    system_prompt: row.get(5)?,
+                    output_schema: row.get(6)?,
+                    is_active: row.get::<_, i32>(7)? != 0,
+                    run_count: row.get(8)?,
+                    last_run_at: row.get(9)?,
+                    created_at: row.get(10)?,
+                    updated_at: row.get(11)?,
+                })
             })
-        }).optional()?;
+            .optional()?;
         Ok(prompt)
     }
 
@@ -3856,12 +4046,17 @@ Mark the start time of each segment.',
     }
 
     /// Record the start of an extraction run
-    pub fn create_extraction_run(&self, prompt_id: i64, episode_id: i64, input_text: &str) -> Result<i64> {
+    pub fn create_extraction_run(
+        &self,
+        prompt_id: i64,
+        episode_id: i64,
+        input_text: &str,
+    ) -> Result<i64> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             r#"INSERT INTO extraction_runs (prompt_id, episode_id, status, input_text, started_at)
                VALUES (?1, ?2, 'running', ?3, datetime('now', 'localtime'))"#,
-            params![prompt_id, episode_id, input_text]
+            params![prompt_id, episode_id, input_text],
         )?;
         Ok(conn.last_insert_rowid())
     }
@@ -3889,13 +4084,18 @@ Mark the start time of each segment.',
             r#"UPDATE extraction_prompts
                SET run_count = run_count + 1, last_run_at = datetime('now', 'localtime')
                WHERE id = (SELECT prompt_id FROM extraction_runs WHERE id = ?1)"#,
-            params![run_id]
+            params![run_id],
         )?;
         Ok(())
     }
 
     /// Fail an extraction run
-    pub fn fail_extraction_run(&self, run_id: i64, error_message: &str, duration_ms: i64) -> Result<()> {
+    pub fn fail_extraction_run(
+        &self,
+        run_id: i64,
+        error_message: &str,
+        duration_ms: i64,
+    ) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             r#"UPDATE extraction_runs
@@ -3919,25 +4119,28 @@ Mark the start time of each segment.',
                WHERE er.episode_id = ?1
                ORDER BY er.created_at DESC"#
         )?;
-        let runs = stmt.query_map([episode_id], |row| {
-            Ok(ExtractionRun {
-                id: row.get(0)?,
-                prompt_id: row.get(1)?,
-                prompt_name: row.get(2)?,
-                episode_id: row.get(3)?,
-                episode_title: row.get(4)?,
-                status: row.get(5)?,
-                input_text: row.get(6)?,
-                raw_response: row.get(7)?,
-                parsed_json: row.get(8)?,
-                items_extracted: row.get(9)?,
-                error_message: row.get(10)?,
-                duration_ms: row.get(11)?,
-                started_at: row.get(12)?,
-                completed_at: row.get(13)?,
-                created_at: row.get(14)?,
-            })
-        })?.filter_map(|r| r.ok()).collect();
+        let runs = stmt
+            .query_map([episode_id], |row| {
+                Ok(ExtractionRun {
+                    id: row.get(0)?,
+                    prompt_id: row.get(1)?,
+                    prompt_name: row.get(2)?,
+                    episode_id: row.get(3)?,
+                    episode_title: row.get(4)?,
+                    status: row.get(5)?,
+                    input_text: row.get(6)?,
+                    raw_response: row.get(7)?,
+                    parsed_json: row.get(8)?,
+                    items_extracted: row.get(9)?,
+                    error_message: row.get(10)?,
+                    duration_ms: row.get(11)?,
+                    started_at: row.get(12)?,
+                    completed_at: row.get(13)?,
+                    created_at: row.get(14)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
         Ok(runs)
     }
 
@@ -3954,25 +4157,28 @@ Mark the start time of each segment.',
                ORDER BY er.created_at DESC
                LIMIT ?1"#
         )?;
-        let runs = stmt.query_map([limit], |row| {
-            Ok(ExtractionRun {
-                id: row.get(0)?,
-                prompt_id: row.get(1)?,
-                prompt_name: row.get(2)?,
-                episode_id: row.get(3)?,
-                episode_title: row.get(4)?,
-                status: row.get(5)?,
-                input_text: row.get(6)?,
-                raw_response: row.get(7)?,
-                parsed_json: row.get(8)?,
-                items_extracted: row.get(9)?,
-                error_message: row.get(10)?,
-                duration_ms: row.get(11)?,
-                started_at: row.get(12)?,
-                completed_at: row.get(13)?,
-                created_at: row.get(14)?,
-            })
-        })?.filter_map(|r| r.ok()).collect();
+        let runs = stmt
+            .query_map([limit], |row| {
+                Ok(ExtractionRun {
+                    id: row.get(0)?,
+                    prompt_id: row.get(1)?,
+                    prompt_name: row.get(2)?,
+                    episode_id: row.get(3)?,
+                    episode_title: row.get(4)?,
+                    status: row.get(5)?,
+                    input_text: row.get(6)?,
+                    raw_response: row.get(7)?,
+                    parsed_json: row.get(8)?,
+                    items_extracted: row.get(9)?,
+                    error_message: row.get(10)?,
+                    duration_ms: row.get(11)?,
+                    started_at: row.get(12)?,
+                    completed_at: row.get(13)?,
+                    created_at: row.get(14)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
         Ok(runs)
     }
 
@@ -4002,7 +4208,10 @@ Mark the start time of each segment.',
     }
 
     /// Get all flagged segments for an episode
-    pub fn get_flagged_segments_for_episode(&self, episode_id: i64) -> Result<Vec<models::FlaggedSegment>> {
+    pub fn get_flagged_segments_for_episode(
+        &self,
+        episode_id: i64,
+    ) -> Result<Vec<models::FlaggedSegment>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             r#"SELECT fs.id, fs.episode_id, fs.segment_idx, fs.flag_type,
@@ -4012,21 +4221,24 @@ Mark the start time of each segment.',
                WHERE fs.episode_id = ?1
                ORDER BY fs.segment_idx"#
         )?;
-        let flags = stmt.query_map([episode_id], |row| {
-            Ok(models::FlaggedSegment {
-                id: row.get(0)?,
-                episode_id: row.get(1)?,
-                segment_idx: row.get(2)?,
-                flag_type: row.get(3)?,
-                corrected_speaker: row.get(4)?,
-                character_id: row.get(5)?,
-                character_name: row.get(6)?,
-                notes: row.get(7)?,
-                speaker_ids: row.get(8)?,
-                resolved: row.get::<_, i32>(9)? != 0,
-                created_at: row.get(10)?,
-            })
-        })?.filter_map(|r| r.ok()).collect();
+        let flags = stmt
+            .query_map([episode_id], |row| {
+                Ok(models::FlaggedSegment {
+                    id: row.get(0)?,
+                    episode_id: row.get(1)?,
+                    segment_idx: row.get(2)?,
+                    flag_type: row.get(3)?,
+                    corrected_speaker: row.get(4)?,
+                    character_id: row.get(5)?,
+                    character_name: row.get(6)?,
+                    notes: row.get(7)?,
+                    speaker_ids: row.get(8)?,
+                    resolved: row.get::<_, i32>(9)? != 0,
+                    created_at: row.get(10)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
         Ok(flags)
     }
 
@@ -4101,7 +4313,7 @@ Mark the start time of each segment.',
         let count: i64 = conn.query_row(
             "SELECT COUNT(*) FROM flagged_segments WHERE episode_id = ?1 AND resolved = 0",
             [episode_id],
-            |row| row.get(0)
+            |row| row.get(0),
         )?;
         Ok(count)
     }
@@ -4118,7 +4330,10 @@ Mark the start time of each segment.',
     }
 
     /// Get unresolved speaker-related flags for an episode (wrong_speaker + multiple_speakers)
-    pub fn get_unresolved_speaker_flags(&self, episode_id: i64) -> Result<Vec<models::FlaggedSegment>> {
+    pub fn get_unresolved_speaker_flags(
+        &self,
+        episode_id: i64,
+    ) -> Result<Vec<models::FlaggedSegment>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             r#"SELECT fs.id, fs.episode_id, fs.segment_idx, fs.flag_type,
@@ -4128,21 +4343,24 @@ Mark the start time of each segment.',
                WHERE fs.episode_id = ?1 AND fs.flag_type IN ('wrong_speaker', 'multiple_speakers', 'character_voice') AND fs.resolved = 0
                ORDER BY fs.segment_idx"#
         )?;
-        let flags = stmt.query_map([episode_id], |row| {
-            Ok(models::FlaggedSegment {
-                id: row.get(0)?,
-                episode_id: row.get(1)?,
-                segment_idx: row.get(2)?,
-                flag_type: row.get(3)?,
-                corrected_speaker: row.get(4)?,
-                character_id: row.get(5)?,
-                character_name: row.get(6)?,
-                notes: row.get(7)?,
-                speaker_ids: row.get(8)?,
-                resolved: row.get::<_, i32>(9)? != 0,
-                created_at: row.get(10)?,
-            })
-        })?.filter_map(|r| r.ok()).collect();
+        let flags = stmt
+            .query_map([episode_id], |row| {
+                Ok(models::FlaggedSegment {
+                    id: row.get(0)?,
+                    episode_id: row.get(1)?,
+                    segment_idx: row.get(2)?,
+                    flag_type: row.get(3)?,
+                    corrected_speaker: row.get(4)?,
+                    character_id: row.get(5)?,
+                    character_name: row.get(6)?,
+                    notes: row.get(7)?,
+                    speaker_ids: row.get(8)?,
+                    resolved: row.get::<_, i32>(9)? != 0,
+                    created_at: row.get(10)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
         Ok(flags)
     }
 
@@ -4157,36 +4375,45 @@ Mark the start time of each segment.',
                WHERE fs.episode_id = ?1 AND fs.flag_type IN ('wrong_speaker', 'multiple_speakers', 'character_voice')
                ORDER BY fs.segment_idx"#
         )?;
-        let flags = stmt.query_map([episode_id], |row| {
-            Ok(models::FlaggedSegment {
-                id: row.get(0)?,
-                episode_id: row.get(1)?,
-                segment_idx: row.get(2)?,
-                flag_type: row.get(3)?,
-                corrected_speaker: row.get(4)?,
-                character_id: row.get(5)?,
-                character_name: row.get(6)?,
-                notes: row.get(7)?,
-                speaker_ids: row.get(8)?,
-                resolved: row.get::<_, i32>(9)? != 0,
-                created_at: row.get(10)?,
-            })
-        })?.filter_map(|r| r.ok()).collect();
+        let flags = stmt
+            .query_map([episode_id], |row| {
+                Ok(models::FlaggedSegment {
+                    id: row.get(0)?,
+                    episode_id: row.get(1)?,
+                    segment_idx: row.get(2)?,
+                    flag_type: row.get(3)?,
+                    corrected_speaker: row.get(4)?,
+                    character_id: row.get(5)?,
+                    character_name: row.get(6)?,
+                    notes: row.get(7)?,
+                    speaker_ids: row.get(8)?,
+                    resolved: row.get::<_, i32>(9)? != 0,
+                    created_at: row.get(10)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
         Ok(flags)
     }
 
     /// Get approved performance-bit segment classifications for an episode.
     /// Returns (segment_idx, character_name) for segments approved as character voices.
-    pub fn get_approved_performance_segments(&self, episode_id: i64) -> Result<Vec<(i32, Option<String>)>> {
+    pub fn get_approved_performance_segments(
+        &self,
+        episode_id: i64,
+    ) -> Result<Vec<(i32, Option<String>)>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT segment_idx, character_name FROM segment_classifications \
              WHERE episode_id = ?1 AND approved = 1 AND is_performance_bit = 1 \
-             ORDER BY segment_idx"
+             ORDER BY segment_idx",
         )?;
-        let rows = stmt.query_map([episode_id], |row| {
-            Ok((row.get::<_, i32>(0)?, row.get::<_, Option<String>>(1)?))
-        })?.filter_map(|r| r.ok()).collect();
+        let rows = stmt
+            .query_map([episode_id], |row| {
+                Ok((row.get::<_, i32>(0)?, row.get::<_, Option<String>>(1)?))
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
         Ok(rows)
     }
 
@@ -4197,11 +4424,12 @@ Mark the start time of each segment.',
         let mut stmt = conn.prepare(
             "SELECT segment_idx FROM transcript_corrections \
              WHERE episode_id = ?1 AND approved = 1 AND has_multiple_speakers = 1 \
-             ORDER BY segment_idx"
+             ORDER BY segment_idx",
         )?;
-        let rows = stmt.query_map([episode_id], |row| {
-            row.get::<_, i32>(0)
-        })?.filter_map(|r| r.ok()).collect();
+        let rows = stmt
+            .query_map([episode_id], |row| row.get::<_, i32>(0))?
+            .filter_map(|r| r.ok())
+            .collect();
         Ok(rows)
     }
 
@@ -4210,7 +4438,10 @@ Mark the start time of each segment.',
     // =========================================================================
 
     /// Get character appearances for an episode
-    pub fn get_character_appearances_for_episode(&self, episode_id: i64) -> Result<Vec<models::CharacterAppearance>> {
+    pub fn get_character_appearances_for_episode(
+        &self,
+        episode_id: i64,
+    ) -> Result<Vec<models::CharacterAppearance>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             r#"SELECT ca.id, ca.character_id, c.name, ca.episode_id, e.title,
@@ -4219,26 +4450,32 @@ Mark the start time of each segment.',
                JOIN characters c ON ca.character_id = c.id
                JOIN episodes e ON ca.episode_id = e.id
                WHERE ca.episode_id = ?1
-               ORDER BY ca.start_time NULLS LAST, ca.segment_idx NULLS LAST"#
+               ORDER BY ca.start_time NULLS LAST, ca.segment_idx NULLS LAST"#,
         )?;
-        let appearances = stmt.query_map([episode_id], |row| {
-            Ok(models::CharacterAppearance {
-                id: row.get(0)?,
-                character_id: row.get(1)?,
-                character_name: row.get(2)?,
-                episode_id: row.get(3)?,
-                episode_title: row.get(4)?,
-                start_time: row.get(5)?,
-                end_time: row.get(6)?,
-                segment_idx: row.get(7)?,
-                notes: row.get(8)?,
-            })
-        })?.filter_map(|r| r.ok()).collect();
+        let appearances = stmt
+            .query_map([episode_id], |row| {
+                Ok(models::CharacterAppearance {
+                    id: row.get(0)?,
+                    character_id: row.get(1)?,
+                    character_name: row.get(2)?,
+                    episode_id: row.get(3)?,
+                    episode_title: row.get(4)?,
+                    start_time: row.get(5)?,
+                    end_time: row.get(6)?,
+                    segment_idx: row.get(7)?,
+                    notes: row.get(8)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
         Ok(appearances)
     }
 
     /// Get character appearances for a character across episodes
-    pub fn get_character_appearances_for_character(&self, character_id: i64) -> Result<Vec<models::CharacterAppearance>> {
+    pub fn get_character_appearances_for_character(
+        &self,
+        character_id: i64,
+    ) -> Result<Vec<models::CharacterAppearance>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             r#"SELECT ca.id, ca.character_id, c.name, ca.episode_id, e.title,
@@ -4249,19 +4486,22 @@ Mark the start time of each segment.',
                WHERE ca.character_id = ?1
                ORDER BY e.episode_number DESC, ca.start_time NULLS LAST, ca.segment_idx NULLS LAST"#
         )?;
-        let appearances = stmt.query_map([character_id], |row| {
-            Ok(models::CharacterAppearance {
-                id: row.get(0)?,
-                character_id: row.get(1)?,
-                character_name: row.get(2)?,
-                episode_id: row.get(3)?,
-                episode_title: row.get(4)?,
-                start_time: row.get(5)?,
-                end_time: row.get(6)?,
-                segment_idx: row.get(7)?,
-                notes: row.get(8)?,
-            })
-        })?.filter_map(|r| r.ok()).collect();
+        let appearances = stmt
+            .query_map([character_id], |row| {
+                Ok(models::CharacterAppearance {
+                    id: row.get(0)?,
+                    character_id: row.get(1)?,
+                    character_name: row.get(2)?,
+                    episode_id: row.get(3)?,
+                    episode_title: row.get(4)?,
+                    start_time: row.get(5)?,
+                    end_time: row.get(6)?,
+                    segment_idx: row.get(7)?,
+                    notes: row.get(8)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
         Ok(appearances)
     }
 
@@ -4281,23 +4521,32 @@ Mark the start time of each segment.',
         let mut stmt = conn.prepare(
             "SELECT id, name, transcript_text, description, category, created_at, reference_audio_path, COALESCE(min_window, 1), COALESCE(max_window, 4) FROM audio_drops ORDER BY name"
         )?;
-        let drops = stmt.query_map([], |row| {
-            Ok(models::AudioDrop {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                transcript_text: row.get(2)?,
-                description: row.get(3)?,
-                category: row.get(4)?,
-                created_at: row.get(5)?,
-                reference_audio_path: row.get(6)?,
-                min_window: row.get(7)?,
-                max_window: row.get(8)?,
-            })
-        })?.filter_map(|r| r.ok()).collect();
+        let drops = stmt
+            .query_map([], |row| {
+                Ok(models::AudioDrop {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    transcript_text: row.get(2)?,
+                    description: row.get(3)?,
+                    category: row.get(4)?,
+                    created_at: row.get(5)?,
+                    reference_audio_path: row.get(6)?,
+                    min_window: row.get(7)?,
+                    max_window: row.get(8)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
         Ok(drops)
     }
 
-    pub fn create_audio_drop(&self, name: &str, transcript_text: Option<&str>, description: Option<&str>, category: Option<&str>) -> Result<i64> {
+    pub fn create_audio_drop(
+        &self,
+        name: &str,
+        transcript_text: Option<&str>,
+        description: Option<&str>,
+        category: Option<&str>,
+    ) -> Result<i64> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "INSERT INTO audio_drops (name, transcript_text, description, category) VALUES (?1, ?2, ?3, ?4)",
@@ -4321,7 +4570,12 @@ Mark the start time of each segment.',
         Ok(())
     }
 
-    pub fn update_audio_drop_window(&self, drop_id: i64, min_window: i64, max_window: i64) -> Result<()> {
+    pub fn update_audio_drop_window(
+        &self,
+        drop_id: i64,
+        min_window: i64,
+        max_window: i64,
+    ) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "UPDATE audio_drops SET min_window = ?1, max_window = ?2 WHERE id = ?3",
@@ -4339,7 +4593,10 @@ Mark the start time of each segment.',
         Ok(())
     }
 
-    pub fn get_audio_drop_instances_for_episode(&self, episode_id: i64) -> Result<Vec<models::AudioDropInstance>> {
+    pub fn get_audio_drop_instances_for_episode(
+        &self,
+        episode_id: i64,
+    ) -> Result<Vec<models::AudioDropInstance>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             r#"SELECT adi.id, adi.audio_drop_id, ad.name, adi.episode_id,
@@ -4347,21 +4604,24 @@ Mark the start time of each segment.',
                FROM audio_drop_instances adi
                JOIN audio_drops ad ON adi.audio_drop_id = ad.id
                WHERE adi.episode_id = ?1
-               ORDER BY adi.segment_idx NULLS LAST, adi.start_time NULLS LAST"#
+               ORDER BY adi.segment_idx NULLS LAST, adi.start_time NULLS LAST"#,
         )?;
-        let instances = stmt.query_map([episode_id], |row| {
-            Ok(models::AudioDropInstance {
-                id: row.get(0)?,
-                audio_drop_id: row.get(1)?,
-                audio_drop_name: row.get(2)?,
-                episode_id: row.get(3)?,
-                segment_idx: row.get(4)?,
-                start_time: row.get(5)?,
-                end_time: row.get(6)?,
-                notes: row.get(7)?,
-                created_at: row.get(8)?,
-            })
-        })?.filter_map(|r| r.ok()).collect();
+        let instances = stmt
+            .query_map([episode_id], |row| {
+                Ok(models::AudioDropInstance {
+                    id: row.get(0)?,
+                    audio_drop_id: row.get(1)?,
+                    audio_drop_name: row.get(2)?,
+                    episode_id: row.get(3)?,
+                    segment_idx: row.get(4)?,
+                    start_time: row.get(5)?,
+                    end_time: row.get(6)?,
+                    notes: row.get(7)?,
+                    created_at: row.get(8)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
         Ok(instances)
     }
 
@@ -4439,22 +4699,26 @@ Mark the start time of each segment.',
     /// Get just the audio_file_path for an episode (for subprocess calls).
     pub fn get_episode_audio_path(&self, episode_id: i64) -> Result<Option<String>> {
         let conn = self.conn.lock().unwrap();
-        let path = conn.query_row(
-            "SELECT audio_file_path FROM episodes WHERE id = ?1",
-            [episode_id],
-            |row| row.get(0),
-        ).optional()?;
+        let path = conn
+            .query_row(
+                "SELECT audio_file_path FROM episodes WHERE id = ?1",
+                [episode_id],
+                |row| row.get(0),
+            )
+            .optional()?;
         Ok(path)
     }
 
     /// Get the published_date for an episode (first 10 chars = YYYY-MM-DD).
     pub fn get_episode_published_date(&self, episode_id: i64) -> Result<Option<String>> {
         let conn = self.conn.lock().unwrap();
-        let date: Option<String> = conn.query_row(
-            "SELECT SUBSTR(published_date, 1, 10) FROM episodes WHERE id = ?1",
-            [episode_id],
-            |row| row.get(0),
-        ).optional()?;
+        let date: Option<String> = conn
+            .query_row(
+                "SELECT SUBSTR(published_date, 1, 10) FROM episodes WHERE id = ?1",
+                [episode_id],
+                |row| row.get(0),
+            )
+            .optional()?;
         Ok(date)
     }
 
@@ -4489,11 +4753,26 @@ Mark the start time of each segment.',
         let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
         for result in results {
-            let segment_idx = result.get("segment_idx").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-            let is_performance_bit = result.get("is_performance_bit").and_then(|v| v.as_bool()).unwrap_or(false) as i32;
-            let character_name = result.get("character_name").and_then(|v| v.as_str()).map(|s| s.to_string());
-            let speaker_note = result.get("speaker_note").and_then(|v| v.as_str()).map(|s| s.to_string());
-            let tone_description = result.get("tone_description").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let segment_idx = result
+                .get("segment_idx")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0) as i32;
+            let is_performance_bit = result
+                .get("is_performance_bit")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false) as i32;
+            let character_name = result
+                .get("character_name")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let speaker_note = result
+                .get("speaker_note")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let tone_description = result
+                .get("tone_description")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
             let confidence = result.get("confidence").and_then(|v| v.as_f64());
 
             // Try to resolve character_id from name
@@ -4502,7 +4781,9 @@ Mark the start time of each segment.',
                     "SELECT id FROM characters WHERE LOWER(name) = LOWER(?1) LIMIT 1",
                     params![name],
                     |row| row.get(0),
-                ).optional().unwrap_or(None)
+                )
+                .optional()
+                .unwrap_or(None)
             } else {
                 None
             };
@@ -4548,28 +4829,29 @@ Mark the start time of each segment.',
              WHERE sc.episode_id = ?1
              ORDER BY sc.segment_idx ASC",
         )?;
-        let rows = stmt.query_map([episode_id], |row| {
-            Ok(models::SegmentClassification {
-                id: row.get(0)?,
-                episode_id: row.get(1)?,
-                segment_idx: row.get(2)?,
-                classifier: row.get(3)?,
-                is_performance_bit: {
-                    let v: i32 = row.get(4)?;
-                    v != 0
-                },
-                character_name: row.get(5)?,
-                character_id: row.get(6)?,
-                speaker_note: row.get(7)?,
-                tone_description: row.get(8)?,
-                confidence: row.get(9)?,
-                approved: row.get(10)?,
-                created_at: row.get(11)?,
-                segment_text: row.get(12)?,
-                segment_start_time: row.get(13)?,
-            })
-        })?
-        .collect::<std::result::Result<Vec<_>, _>>()?;
+        let rows = stmt
+            .query_map([episode_id], |row| {
+                Ok(models::SegmentClassification {
+                    id: row.get(0)?,
+                    episode_id: row.get(1)?,
+                    segment_idx: row.get(2)?,
+                    classifier: row.get(3)?,
+                    is_performance_bit: {
+                        let v: i32 = row.get(4)?;
+                        v != 0
+                    },
+                    character_name: row.get(5)?,
+                    character_id: row.get(6)?,
+                    speaker_note: row.get(7)?,
+                    tone_description: row.get(8)?,
+                    confidence: row.get(9)?,
+                    approved: row.get(10)?,
+                    created_at: row.get(11)?,
+                    segment_text: row.get(12)?,
+                    segment_start_time: row.get(13)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(rows)
     }
 
@@ -4579,17 +4861,30 @@ Mark the start time of each segment.',
         let conn = self.conn.lock().unwrap();
 
         // Fetch the classification
-        let (episode_id, segment_idx, is_performance_bit, character_id, start_time_opt): (i64, i32, i32, Option<i64>, Option<f64>) =
-            conn.query_row(
-                "SELECT sc.episode_id, sc.segment_idx, sc.is_performance_bit, sc.character_id,
+        let (episode_id, segment_idx, is_performance_bit, character_id, start_time_opt): (
+            i64,
+            i32,
+            i32,
+            Option<i64>,
+            Option<f64>,
+        ) = conn.query_row(
+            "SELECT sc.episode_id, sc.segment_idx, sc.is_performance_bit, sc.character_id,
                         ts.start_time
                  FROM segment_classifications sc
                  LEFT JOIN transcript_segments ts
                    ON ts.episode_id = sc.episode_id AND ts.segment_idx = sc.segment_idx
                  WHERE sc.id = ?1",
-                [id],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
-            )?;
+            [id],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
+        )?;
 
         // Mark approved
         conn.execute(
@@ -4644,11 +4939,28 @@ Mark the start time of each segment.',
         let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
         for result in results {
-            let segment_idx = result.get("segment_idx").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-            let original_text = result.get("original_text").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let corrected_text = result.get("corrected_text").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let has_multiple = result.get("has_multiple_speakers").and_then(|v| v.as_bool()).unwrap_or(false) as i32;
-            let speaker_change_note = result.get("speaker_change_note").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let segment_idx = result
+                .get("segment_idx")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0) as i32;
+            let original_text = result
+                .get("original_text")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let corrected_text = result
+                .get("corrected_text")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let has_multiple = result
+                .get("has_multiple_speakers")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false) as i32;
+            let speaker_change_note = result
+                .get("speaker_change_note")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
             let confidence = result.get("confidence").and_then(|v| v.as_f64());
 
             // Replace existing pending correction for this segment
@@ -4663,8 +4975,14 @@ Mark the start time of each segment.',
                   has_multiple_speakers, speaker_change_note, confidence, approved, created_at)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, ?8)",
                 params![
-                    episode_id, segment_idx, original_text, corrected_text,
-                    has_multiple, speaker_change_note, confidence, now,
+                    episode_id,
+                    segment_idx,
+                    original_text,
+                    corrected_text,
+                    has_multiple,
+                    speaker_change_note,
+                    confidence,
+                    now,
                 ],
             )?;
         }
@@ -4690,25 +5008,26 @@ Mark the start time of each segment.',
              WHERE tc.episode_id = ?1
              ORDER BY tc.segment_idx ASC",
         )?;
-        let rows = stmt.query_map([episode_id], |row| {
-            Ok(models::TranscriptCorrection {
-                id: row.get(0)?,
-                episode_id: row.get(1)?,
-                segment_idx: row.get(2)?,
-                original_text: row.get(3)?,
-                corrected_text: row.get(4)?,
-                has_multiple_speakers: {
-                    let v: i32 = row.get(5)?;
-                    v != 0
-                },
-                speaker_change_note: row.get(6)?,
-                confidence: row.get(7)?,
-                approved: row.get(8)?,
-                created_at: row.get(9)?,
-                segment_start_time: row.get(10)?,
-            })
-        })?
-        .collect::<std::result::Result<Vec<_>, _>>()?;
+        let rows = stmt
+            .query_map([episode_id], |row| {
+                Ok(models::TranscriptCorrection {
+                    id: row.get(0)?,
+                    episode_id: row.get(1)?,
+                    segment_idx: row.get(2)?,
+                    original_text: row.get(3)?,
+                    corrected_text: row.get(4)?,
+                    has_multiple_speakers: {
+                        let v: i32 = row.get(5)?;
+                        v != 0
+                    },
+                    speaker_change_note: row.get(6)?,
+                    confidence: row.get(7)?,
+                    approved: row.get(8)?,
+                    created_at: row.get(9)?,
+                    segment_start_time: row.get(10)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(rows)
     }
 
@@ -4734,7 +5053,9 @@ Mark the start time of each segment.',
     }
 
     /// Get all pending transcript corrections across all episodes, enriched with episode metadata.
-    pub fn get_all_pending_corrections(&self) -> Result<Vec<models::TranscriptCorrectionWithEpisode>> {
+    pub fn get_all_pending_corrections(
+        &self,
+    ) -> Result<Vec<models::TranscriptCorrectionWithEpisode>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT tc.id, tc.episode_id, e.title, e.episode_number,
@@ -4744,27 +5065,30 @@ Mark the start time of each segment.',
              FROM transcript_corrections tc
              JOIN episodes e ON tc.episode_id = e.id
              WHERE tc.approved = 0
-             ORDER BY e.episode_number ASC, tc.segment_idx ASC"
+             ORDER BY e.episode_number ASC, tc.segment_idx ASC",
         )?;
-        let rows = stmt.query_map([], |row| {
-            Ok(models::TranscriptCorrectionWithEpisode {
-                id: row.get(0)?,
-                episode_id: row.get(1)?,
-                episode_title: row.get(2)?,
-                episode_number: row.get(3)?,
-                segment_idx: row.get(4)?,
-                original_text: row.get(5)?,
-                corrected_text: row.get(6)?,
-                has_multiple_speakers: {
-                    let v: i32 = row.get(7)?;
-                    v != 0
-                },
-                speaker_change_note: row.get(8)?,
-                confidence: row.get(9)?,
-                approved: row.get(10)?,
-                created_at: row.get(11)?,
-            })
-        })?.filter_map(|r| r.ok()).collect();
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(models::TranscriptCorrectionWithEpisode {
+                    id: row.get(0)?,
+                    episode_id: row.get(1)?,
+                    episode_title: row.get(2)?,
+                    episode_number: row.get(3)?,
+                    segment_idx: row.get(4)?,
+                    original_text: row.get(5)?,
+                    corrected_text: row.get(6)?,
+                    has_multiple_speakers: {
+                        let v: i32 = row.get(7)?;
+                        v != 0
+                    },
+                    speaker_change_note: row.get(8)?,
+                    confidence: row.get(9)?,
+                    approved: row.get(10)?,
+                    created_at: row.get(11)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
         Ok(rows)
     }
 
@@ -4823,7 +5147,6 @@ Mark the start time of each segment.',
         })?;
         Ok(rows.filter_map(|r| r.ok()).collect())
     }
-
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -5040,12 +5363,26 @@ fn parse_transcript_segments_from_str(content: &str) -> Option<Vec<TranscriptSeg
                 if text.is_empty() {
                     return None;
                 }
-                let start_time = seg.get("start").and_then(|v| v.as_f64())
-                    .or_else(|| seg.get("timestamps").and_then(|t| t.get(0)).and_then(|v| v.as_f64()))?;
-                let end_time = seg.get("end").and_then(|v| v.as_f64())
-                    .or_else(|| seg.get("timestamps").and_then(|t| t.get(1)).and_then(|v| v.as_f64()));
-                let speaker = seg.get("speaker").and_then(|s| s.as_str()).map(|s| s.to_string());
-                Some(TranscriptSegment { speaker, text, start_time, end_time })
+                let start_time = seg.get("start").and_then(|v| v.as_f64()).or_else(|| {
+                    seg.get("timestamps")
+                        .and_then(|t| t.get(0))
+                        .and_then(|v| v.as_f64())
+                })?;
+                let end_time = seg.get("end").and_then(|v| v.as_f64()).or_else(|| {
+                    seg.get("timestamps")
+                        .and_then(|t| t.get(1))
+                        .and_then(|v| v.as_f64())
+                });
+                let speaker = seg
+                    .get("speaker")
+                    .and_then(|s| s.as_str())
+                    .map(|s| s.to_string());
+                Some(TranscriptSegment {
+                    speaker,
+                    text,
+                    start_time,
+                    end_time,
+                })
             })
             .collect();
         if !result.is_empty() {
@@ -5062,14 +5399,38 @@ fn parse_transcript_segments_from_str(content: &str) -> Option<Vec<TranscriptSeg
                 if text.is_empty() {
                     return None;
                 }
-                let start_time = seg.get("timestamps").and_then(|t| t.get("from")).and_then(|v| v.as_str())
+                let start_time = seg
+                    .get("timestamps")
+                    .and_then(|t| t.get("from"))
+                    .and_then(|v| v.as_str())
                     .and_then(|s| parse_ts(s))
-                    .or_else(|| seg.get("offsets").and_then(|o| o.get("from")).and_then(|v| v.as_f64()).map(|ms| ms / 1000.0))?;
-                let end_time = seg.get("timestamps").and_then(|t| t.get("to")).and_then(|v| v.as_str())
+                    .or_else(|| {
+                        seg.get("offsets")
+                            .and_then(|o| o.get("from"))
+                            .and_then(|v| v.as_f64())
+                            .map(|ms| ms / 1000.0)
+                    })?;
+                let end_time = seg
+                    .get("timestamps")
+                    .and_then(|t| t.get("to"))
+                    .and_then(|v| v.as_str())
                     .and_then(|s| parse_ts(s))
-                    .or_else(|| seg.get("offsets").and_then(|o| o.get("to")).and_then(|v| v.as_f64()).map(|ms| ms / 1000.0));
-                let speaker = seg.get("speaker").and_then(|s| s.as_str()).map(|s| s.to_string());
-                Some(TranscriptSegment { speaker, text, start_time, end_time })
+                    .or_else(|| {
+                        seg.get("offsets")
+                            .and_then(|o| o.get("to"))
+                            .and_then(|v| v.as_f64())
+                            .map(|ms| ms / 1000.0)
+                    });
+                let speaker = seg
+                    .get("speaker")
+                    .and_then(|s| s.as_str())
+                    .map(|s| s.to_string());
+                Some(TranscriptSegment {
+                    speaker,
+                    text,
+                    start_time,
+                    end_time,
+                })
             })
             .collect();
         if !result.is_empty() {

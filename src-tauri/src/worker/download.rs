@@ -102,7 +102,11 @@ async fn download_episode(
                         if let Err(e) = db.update_episode_duration(episode.id, dur) {
                             log::warn!("Failed to update audio duration: {}", e);
                         } else {
-                            log::info!("Probed audio duration for episode {}: {:.1}s", episode.id, dur);
+                            log::info!(
+                                "Probed audio duration for episode {}: {:.1}s",
+                                episode.id,
+                                dur
+                            );
                         }
                     }
                 }
@@ -136,9 +140,12 @@ async fn download_episode(
 async fn probe_audio_duration(file_path: &PathBuf) -> Option<f64> {
     let output = tokio::process::Command::new("ffprobe")
         .args([
-            "-v", "quiet",
-            "-show_entries", "format=duration",
-            "-of", "csv=p=0",
+            "-v",
+            "quiet",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "csv=p=0",
         ])
         .arg(file_path)
         .output()
@@ -154,10 +161,7 @@ async fn probe_audio_duration(file_path: &PathBuf) -> Option<f64> {
 }
 
 /// Single download attempt with streaming and validation
-async fn try_download(
-    episode: &Episode,
-    file_path: &PathBuf,
-) -> Result<i64, String> {
+async fn try_download(episode: &Episode, file_path: &PathBuf) -> Result<i64, String> {
     log::info!("Downloading to: {:?}", file_path);
 
     let client = reqwest::Client::builder()
@@ -187,8 +191,7 @@ async fn try_download(
     let mut downloaded: u64 = 0;
 
     while let Some(chunk_result) = stream.next().await {
-        let chunk = chunk_result
-            .map_err(|e| format!("Error reading download stream: {}", e))?;
+        let chunk = chunk_result.map_err(|e| format!("Error reading download stream: {}", e))?;
         file.write_all(&chunk)
             .await
             .map_err(|e| format!("Failed to write chunk: {}", e))?;

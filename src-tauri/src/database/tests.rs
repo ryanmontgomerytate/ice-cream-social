@@ -20,7 +20,9 @@ mod character_tests {
     #[test]
     fn test_create_character_basic() {
         let (db, _temp) = setup_test_db();
-        let id = db.create_character("Sweet Bean", None, None, None, None).unwrap();
+        let id = db
+            .create_character("Sweet Bean", None, None, None, None)
+            .unwrap();
         assert!(id > 0);
 
         let chars = db.get_characters().unwrap();
@@ -31,24 +33,33 @@ mod character_tests {
     #[test]
     fn test_create_character_with_all_fields() {
         let (db, _temp) = setup_test_db();
-        let _id = db.create_character(
-            "Count Absorbo",
-            Some("Absorbo"),
-            Some("A vampire who absorbs things"),
-            Some("I vant to absorb your blood!"),
-            None
-        ).unwrap();
+        let _id = db
+            .create_character(
+                "Count Absorbo",
+                Some("Absorbo"),
+                Some("A vampire who absorbs things"),
+                Some("I vant to absorb your blood!"),
+                None,
+            )
+            .unwrap();
 
         let chars = db.get_characters().unwrap();
         assert_eq!(chars[0].short_name, Some("Absorbo".to_string()));
-        assert_eq!(chars[0].description, Some("A vampire who absorbs things".to_string()));
-        assert_eq!(chars[0].catchphrase, Some("I vant to absorb your blood!".to_string()));
+        assert_eq!(
+            chars[0].description,
+            Some("A vampire who absorbs things".to_string())
+        );
+        assert_eq!(
+            chars[0].catchphrase,
+            Some("I vant to absorb your blood!".to_string())
+        );
     }
 
     #[test]
     fn test_create_character_duplicate_name_fails() {
         let (db, _temp) = setup_test_db();
-        db.create_character("Sweet Bean", None, None, None, None).unwrap();
+        db.create_character("Sweet Bean", None, None, None, None)
+            .unwrap();
 
         // Duplicate should fail due to UNIQUE constraint
         let result = db.create_character("Sweet Bean", None, None, None, None);
@@ -59,7 +70,8 @@ mod character_tests {
     fn test_create_character_case_sensitivity() {
         let (db, _temp) = setup_test_db();
         // SQLite is case-insensitive by default for UNIQUE
-        db.create_character("Sweet Bean", None, None, None, None).unwrap();
+        db.create_character("Sweet Bean", None, None, None, None)
+            .unwrap();
 
         // These might or might not fail depending on collation
         // Test documents current behavior
@@ -86,7 +98,9 @@ mod character_tests {
     #[test]
     fn test_create_character_unicode_name() {
         let (db, _temp) = setup_test_db();
-        let id = db.create_character("Señor 日本語 🎉", None, None, None, None).unwrap();
+        let id = db
+            .create_character("Señor 日本語 🎉", None, None, None, None)
+            .unwrap();
         assert!(id > 0);
 
         let chars = db.get_characters().unwrap();
@@ -128,16 +142,18 @@ mod character_tests {
         let (db, temp) = setup_test_db();
 
         // Create a test episode
-        let (episode_id, _) = db.upsert_episode(
-            Some("123"),
-            "Test Episode",
-            None,
-            "http://example.com/test.mp3",
-            Some(3600.0),
-            None,
-            Some("2024-01-01"),
-            "test"
-        ).unwrap();
+        let (episode_id, _) = db
+            .upsert_episode(
+                Some("123"),
+                "Test Episode",
+                None,
+                "http://example.com/test.mp3",
+                Some(3600.0),
+                None,
+                Some("2024-01-01"),
+                "test",
+            )
+            .unwrap();
 
         (db, temp, episode_id)
     }
@@ -145,31 +161,41 @@ mod character_tests {
     #[test]
     fn test_add_appearance_basic() {
         let (db, _temp, episode_id) = setup_db_with_episode();
-        let char_id = db.create_character("Test Char", None, None, None, None).unwrap();
+        let char_id = db
+            .create_character("Test Char", None, None, None, None)
+            .unwrap();
 
-        let app_id = db.add_character_appearance(char_id, episode_id, None, None, None).unwrap();
+        let app_id = db
+            .add_character_appearance(char_id, episode_id, None, None, None)
+            .unwrap();
         assert!(app_id > 0);
     }
 
     #[test]
     fn test_add_appearance_with_timestamp() {
         let (db, _temp, episode_id) = setup_db_with_episode();
-        let char_id = db.create_character("Test Char", None, None, None, None).unwrap();
+        let char_id = db
+            .create_character("Test Char", None, None, None, None)
+            .unwrap();
 
-        let app_id = db.add_character_appearance(
-            char_id,
-            episode_id,
-            Some(125.5),  // 2:05.5
-            Some(180.0),  // 3:00
-            Some(5)
-        ).unwrap();
+        let app_id = db
+            .add_character_appearance(
+                char_id,
+                episode_id,
+                Some(125.5), // 2:05.5
+                Some(180.0), // 3:00
+                Some(5),
+            )
+            .unwrap();
         assert!(app_id > 0);
     }
 
     #[test]
     fn test_add_appearance_negative_start_time() {
         let (db, _temp, episode_id) = setup_db_with_episode();
-        let char_id = db.create_character("Test Char", None, None, None, None).unwrap();
+        let char_id = db
+            .create_character("Test Char", None, None, None, None)
+            .unwrap();
 
         // Negative time - DB accepts it (validation should be at API level)
         let result = db.add_character_appearance(char_id, episode_id, Some(-100.0), None, None);
@@ -179,15 +205,17 @@ mod character_tests {
     #[test]
     fn test_add_appearance_start_after_end() {
         let (db, _temp, episode_id) = setup_db_with_episode();
-        let char_id = db.create_character("Test Char", None, None, None, None).unwrap();
+        let char_id = db
+            .create_character("Test Char", None, None, None, None)
+            .unwrap();
 
         // start > end - DB accepts it (validation should be at API level)
         let result = db.add_character_appearance(
             char_id,
             episode_id,
-            Some(500.0),  // start
-            Some(100.0),  // end (before start)
-            None
+            Some(500.0), // start
+            Some(100.0), // end (before start)
+            None,
         );
         assert!(result.is_ok());
     }
@@ -195,23 +223,22 @@ mod character_tests {
     #[test]
     fn test_add_appearance_very_large_timestamp() {
         let (db, _temp, episode_id) = setup_db_with_episode();
-        let char_id = db.create_character("Test Char", None, None, None, None).unwrap();
+        let char_id = db
+            .create_character("Test Char", None, None, None, None)
+            .unwrap();
 
         // Very large timestamp (beyond any episode length)
-        let result = db.add_character_appearance(
-            char_id,
-            episode_id,
-            Some(999999999.0),
-            None,
-            None
-        );
+        let result =
+            db.add_character_appearance(char_id, episode_id, Some(999999999.0), None, None);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_add_appearance_zero_timestamp() {
         let (db, _temp, episode_id) = setup_db_with_episode();
-        let char_id = db.create_character("Test Char", None, None, None, None).unwrap();
+        let char_id = db
+            .create_character("Test Char", None, None, None, None)
+            .unwrap();
 
         let result = db.add_character_appearance(char_id, episode_id, Some(0.0), None, None);
         assert!(result.is_ok());
@@ -229,7 +256,9 @@ mod character_tests {
     #[test]
     fn test_add_appearance_nonexistent_episode() {
         let (db, _temp, _) = setup_db_with_episode();
-        let char_id = db.create_character("Test Char", None, None, None, None).unwrap();
+        let char_id = db
+            .create_character("Test Char", None, None, None, None)
+            .unwrap();
 
         // Episode ID 99999 doesn't exist - should fail due to FK constraint
         let result = db.add_character_appearance(char_id, 99999, None, None, None);
@@ -239,11 +268,17 @@ mod character_tests {
     #[test]
     fn test_add_multiple_appearances_same_episode() {
         let (db, _temp, episode_id) = setup_db_with_episode();
-        let char_id = db.create_character("Test Char", None, None, None, None).unwrap();
+        let char_id = db
+            .create_character("Test Char", None, None, None, None)
+            .unwrap();
 
         // Same character can appear multiple times in same episode (different timestamps)
-        let app1 = db.add_character_appearance(char_id, episode_id, Some(100.0), None, None).unwrap();
-        let app2 = db.add_character_appearance(char_id, episode_id, Some(500.0), None, None).unwrap();
+        let app1 = db
+            .add_character_appearance(char_id, episode_id, Some(100.0), None, None)
+            .unwrap();
+        let app2 = db
+            .add_character_appearance(char_id, episode_id, Some(500.0), None, None)
+            .unwrap();
 
         assert_ne!(app1, app2);
     }
@@ -251,11 +286,17 @@ mod character_tests {
     #[test]
     fn test_add_duplicate_appearance_exact_same() {
         let (db, _temp, episode_id) = setup_db_with_episode();
-        let char_id = db.create_character("Test Char", None, None, None, None).unwrap();
+        let char_id = db
+            .create_character("Test Char", None, None, None, None)
+            .unwrap();
 
         // No UNIQUE constraint on appearances - duplicates allowed
-        let app1 = db.add_character_appearance(char_id, episode_id, Some(100.0), None, None).unwrap();
-        let app2 = db.add_character_appearance(char_id, episode_id, Some(100.0), None, None).unwrap();
+        let app1 = db
+            .add_character_appearance(char_id, episode_id, Some(100.0), None, None)
+            .unwrap();
+        let app2 = db
+            .add_character_appearance(char_id, episode_id, Some(100.0), None, None)
+            .unwrap();
 
         // Both should succeed (potential data quality issue)
         assert!(app1 > 0);
@@ -265,7 +306,9 @@ mod character_tests {
     #[test]
     fn test_add_appearance_negative_segment_idx() {
         let (db, _temp, episode_id) = setup_db_with_episode();
-        let char_id = db.create_character("Test Char", None, None, None, None).unwrap();
+        let char_id = db
+            .create_character("Test Char", None, None, None, None)
+            .unwrap();
 
         let result = db.add_character_appearance(char_id, episode_id, None, None, Some(-1));
         assert!(result.is_ok()); // DB accepts it
@@ -278,9 +321,12 @@ mod character_tests {
     #[test]
     fn test_update_character_basic() {
         let (db, _temp) = setup_test_db();
-        let id = db.create_character("Old Name", None, None, None, None).unwrap();
+        let id = db
+            .create_character("Old Name", None, None, None, None)
+            .unwrap();
 
-        db.update_character(id, "New Name", None, None, None, None).unwrap();
+        db.update_character(id, "New Name", None, None, None, None)
+            .unwrap();
 
         let chars = db.get_characters().unwrap();
         assert_eq!(chars[0].name, "New Name");
@@ -289,8 +335,12 @@ mod character_tests {
     #[test]
     fn test_update_character_to_duplicate_name() {
         let (db, _temp) = setup_test_db();
-        let _id1 = db.create_character("Character 1", None, None, None, None).unwrap();
-        let id2 = db.create_character("Character 2", None, None, None, None).unwrap();
+        let _id1 = db
+            .create_character("Character 1", None, None, None, None)
+            .unwrap();
+        let id2 = db
+            .create_character("Character 2", None, None, None, None)
+            .unwrap();
 
         // Try to rename character 2 to same name as character 1
         let result = db.update_character(id2, "Character 1", None, None, None, None);
@@ -313,7 +363,9 @@ mod character_tests {
     #[test]
     fn test_delete_character_basic() {
         let (db, _temp) = setup_test_db();
-        let id = db.create_character("To Delete", None, None, None, None).unwrap();
+        let id = db
+            .create_character("To Delete", None, None, None, None)
+            .unwrap();
 
         db.delete_character(id).unwrap();
 
@@ -324,11 +376,15 @@ mod character_tests {
     #[test]
     fn test_delete_character_cascades_appearances() {
         let (db, _temp, episode_id) = setup_db_with_episode();
-        let char_id = db.create_character("Test Char", None, None, None, None).unwrap();
+        let char_id = db
+            .create_character("Test Char", None, None, None, None)
+            .unwrap();
 
         // Add appearances
-        db.add_character_appearance(char_id, episode_id, Some(100.0), None, None).unwrap();
-        db.add_character_appearance(char_id, episode_id, Some(200.0), None, None).unwrap();
+        db.add_character_appearance(char_id, episode_id, Some(100.0), None, None)
+            .unwrap();
+        db.add_character_appearance(char_id, episode_id, Some(200.0), None, None)
+            .unwrap();
 
         // Delete character - should cascade to appearances
         db.delete_character(char_id).unwrap();
@@ -361,11 +417,14 @@ mod character_tests {
     #[test]
     fn test_get_characters_appearance_count() {
         let (db, _temp, episode_id) = setup_db_with_episode();
-        let char_id = db.create_character("Test Char", None, None, None, None).unwrap();
+        let char_id = db
+            .create_character("Test Char", None, None, None, None)
+            .unwrap();
 
         // Add 3 appearances
         for i in 0..3 {
-            db.add_character_appearance(char_id, episode_id, Some(i as f64 * 100.0), None, None).unwrap();
+            db.add_character_appearance(char_id, episode_id, Some(i as f64 * 100.0), None, None)
+                .unwrap();
         }
 
         let chars = db.get_characters().unwrap();
@@ -388,7 +447,9 @@ mod sponsor_tests {
     #[test]
     fn test_create_sponsor_fake() {
         let (db, _temp) = setup_test_db();
-        let _id = db.create_sponsor("Fake Corp", Some("We're not real!"), None, false).unwrap();
+        let _id = db
+            .create_sponsor("Fake Corp", Some("We're not real!"), None, false)
+            .unwrap();
 
         let sponsors = db.get_sponsors().unwrap();
         assert_eq!(sponsors[0].is_real, false);
@@ -406,7 +467,8 @@ mod sponsor_tests {
     #[test]
     fn test_sponsor_duplicate_name_fails() {
         let (db, _temp) = setup_test_db();
-        db.create_sponsor("Test Sponsor", None, None, false).unwrap();
+        db.create_sponsor("Test Sponsor", None, None, false)
+            .unwrap();
         let result = db.create_sponsor("Test Sponsor", None, None, true);
         assert!(result.is_err()); // UNIQUE constraint
     }
@@ -416,10 +478,18 @@ mod sponsor_tests {
         let (db, _temp) = setup_test_db();
 
         // Create an episode first
-        let (episode_id, _) = db.upsert_episode(
-            Some("1"), "Test", None, "http://test.mp3",
-            None, None, None, "test"
-        ).unwrap();
+        let (episode_id, _) = db
+            .upsert_episode(
+                Some("1"),
+                "Test",
+                None,
+                "http://test.mp3",
+                None,
+                None,
+                None,
+                "test",
+            )
+            .unwrap();
 
         // Non-existent sponsor - should fail FK constraint
         let result = db.add_sponsor_mention(99999, episode_id, None, None, None);
@@ -453,19 +523,25 @@ mod search_tests {
     fn test_search_basic() {
         let (db, _temp) = setup_test_db();
 
-        let (episode_id, _) = db.upsert_episode(
-            Some("1"), "Test Episode", None, "http://test.mp3",
-            None, None, None, "test"
-        ).unwrap();
+        let (episode_id, _) = db
+            .upsert_episode(
+                Some("1"),
+                "Test Episode",
+                None,
+                "http://test.mp3",
+                None,
+                None,
+                None,
+                "test",
+            )
+            .unwrap();
 
-        let segments = vec![
-            TranscriptSegment {
-                speaker: Some("Matt".to_string()),
-                text: "Hello world, this is a test segment".to_string(),
-                start_time: 0.0,
-                end_time: Some(5.0),
-            }
-        ];
+        let segments = vec![TranscriptSegment {
+            speaker: Some("Matt".to_string()),
+            text: "Hello world, this is a test segment".to_string(),
+            start_time: 0.0,
+            end_time: Some(5.0),
+        }];
 
         db.index_transcript_segments(episode_id, &segments).unwrap();
 
@@ -478,19 +554,25 @@ mod search_tests {
     fn test_search_no_results() {
         let (db, _temp) = setup_test_db();
 
-        let (episode_id, _) = db.upsert_episode(
-            Some("1"), "Test Episode", None, "http://test.mp3",
-            None, None, None, "test"
-        ).unwrap();
+        let (episode_id, _) = db
+            .upsert_episode(
+                Some("1"),
+                "Test Episode",
+                None,
+                "http://test.mp3",
+                None,
+                None,
+                None,
+                "test",
+            )
+            .unwrap();
 
-        let segments = vec![
-            TranscriptSegment {
-                speaker: None,
-                text: "Hello world".to_string(),
-                start_time: 0.0,
-                end_time: None,
-            }
-        ];
+        let segments = vec![TranscriptSegment {
+            speaker: None,
+            text: "Hello world".to_string(),
+            start_time: 0.0,
+            end_time: None,
+        }];
 
         db.index_transcript_segments(episode_id, &segments).unwrap();
 
@@ -502,20 +584,28 @@ mod search_tests {
     fn test_search_pagination() {
         let (db, _temp) = setup_test_db();
 
-        let (episode_id, _) = db.upsert_episode(
-            Some("1"), "Test Episode", None, "http://test.mp3",
-            None, None, None, "test"
-        ).unwrap();
+        let (episode_id, _) = db
+            .upsert_episode(
+                Some("1"),
+                "Test Episode",
+                None,
+                "http://test.mp3",
+                None,
+                None,
+                None,
+                "test",
+            )
+            .unwrap();
 
         // Create 10 segments all containing "test"
-        let segments: Vec<TranscriptSegment> = (0..10).map(|i| {
-            TranscriptSegment {
+        let segments: Vec<TranscriptSegment> = (0..10)
+            .map(|i| TranscriptSegment {
                 speaker: None,
                 text: format!("Test segment number {}", i),
                 start_time: i as f64 * 10.0,
                 end_time: Some((i + 1) as f64 * 10.0),
-            }
-        }).collect();
+            })
+            .collect();
 
         db.index_transcript_segments(episode_id, &segments).unwrap();
 
@@ -535,10 +625,18 @@ mod search_tests {
     fn test_index_empty_segments() {
         let (db, _temp) = setup_test_db();
 
-        let (episode_id, _) = db.upsert_episode(
-            Some("1"), "Test", None, "http://test.mp3",
-            None, None, None, "test"
-        ).unwrap();
+        let (episode_id, _) = db
+            .upsert_episode(
+                Some("1"),
+                "Test",
+                None,
+                "http://test.mp3",
+                None,
+                None,
+                None,
+                "test",
+            )
+            .unwrap();
 
         let result = db.index_transcript_segments(episode_id, &[]);
         assert!(result.is_ok());
@@ -548,19 +646,25 @@ mod search_tests {
     fn test_index_segment_with_empty_text() {
         let (db, _temp) = setup_test_db();
 
-        let (episode_id, _) = db.upsert_episode(
-            Some("1"), "Test", None, "http://test.mp3",
-            None, None, None, "test"
-        ).unwrap();
+        let (episode_id, _) = db
+            .upsert_episode(
+                Some("1"),
+                "Test",
+                None,
+                "http://test.mp3",
+                None,
+                None,
+                None,
+                "test",
+            )
+            .unwrap();
 
-        let segments = vec![
-            TranscriptSegment {
-                speaker: None,
-                text: "".to_string(),
-                start_time: 0.0,
-                end_time: None,
-            }
-        ];
+        let segments = vec![TranscriptSegment {
+            speaker: None,
+            text: "".to_string(),
+            start_time: 0.0,
+            end_time: None,
+        }];
 
         let result = db.index_transcript_segments(episode_id, &segments);
         assert!(result.is_ok());
@@ -570,32 +674,38 @@ mod search_tests {
     fn test_reindex_episode_replaces_segments() {
         let (db, _temp) = setup_test_db();
 
-        let (episode_id, _) = db.upsert_episode(
-            Some("1"), "Test", None, "http://test.mp3",
-            None, None, None, "test"
-        ).unwrap();
+        let (episode_id, _) = db
+            .upsert_episode(
+                Some("1"),
+                "Test",
+                None,
+                "http://test.mp3",
+                None,
+                None,
+                None,
+                "test",
+            )
+            .unwrap();
 
         // Index first set
-        let segments1 = vec![
-            TranscriptSegment {
-                speaker: None,
-                text: "Original content".to_string(),
-                start_time: 0.0,
-                end_time: None,
-            }
-        ];
-        db.index_transcript_segments(episode_id, &segments1).unwrap();
+        let segments1 = vec![TranscriptSegment {
+            speaker: None,
+            text: "Original content".to_string(),
+            start_time: 0.0,
+            end_time: None,
+        }];
+        db.index_transcript_segments(episode_id, &segments1)
+            .unwrap();
 
         // Reindex with new content
-        let segments2 = vec![
-            TranscriptSegment {
-                speaker: None,
-                text: "Updated content".to_string(),
-                start_time: 0.0,
-                end_time: None,
-            }
-        ];
-        db.index_transcript_segments(episode_id, &segments2).unwrap();
+        let segments2 = vec![TranscriptSegment {
+            speaker: None,
+            text: "Updated content".to_string(),
+            start_time: 0.0,
+            end_time: None,
+        }];
+        db.index_transcript_segments(episode_id, &segments2)
+            .unwrap();
 
         // Search for old content - should not find
         let old_results = db.search_transcripts("Original", 50, 0).unwrap();
@@ -610,19 +720,27 @@ mod search_tests {
     fn test_search_count() {
         let (db, _temp) = setup_test_db();
 
-        let (episode_id, _) = db.upsert_episode(
-            Some("1"), "Test", None, "http://test.mp3",
-            None, None, None, "test"
-        ).unwrap();
+        let (episode_id, _) = db
+            .upsert_episode(
+                Some("1"),
+                "Test",
+                None,
+                "http://test.mp3",
+                None,
+                None,
+                None,
+                "test",
+            )
+            .unwrap();
 
-        let segments: Vec<TranscriptSegment> = (0..5).map(|i| {
-            TranscriptSegment {
+        let segments: Vec<TranscriptSegment> = (0..5)
+            .map(|i| TranscriptSegment {
                 speaker: None,
                 text: format!("Searchable segment {}", i),
                 start_time: i as f64,
                 end_time: None,
-            }
-        }).collect();
+            })
+            .collect();
 
         db.index_transcript_segments(episode_id, &segments).unwrap();
 
@@ -647,16 +765,18 @@ mod episode_tests {
     fn test_upsert_new_episode() {
         let (db, _temp) = setup_test_db();
 
-        let (id, is_new) = db.upsert_episode(
-            Some("100"),
-            "Test Episode",
-            Some("Description"),
-            "http://example.com/test.mp3",
-            Some(3600.0),
-            Some(50_000_000),
-            Some("2024-01-01"),
-            "patreon"
-        ).unwrap();
+        let (id, is_new) = db
+            .upsert_episode(
+                Some("100"),
+                "Test Episode",
+                Some("Description"),
+                "http://example.com/test.mp3",
+                Some(3600.0),
+                Some(50_000_000),
+                Some("2024-01-01"),
+                "patreon",
+            )
+            .unwrap();
 
         assert!(id > 0);
         assert!(is_new);
@@ -667,30 +787,34 @@ mod episode_tests {
         let (db, _temp) = setup_test_db();
 
         // Insert first time
-        let (id1, is_new1) = db.upsert_episode(
-            Some("100"),
-            "Original Title",
-            None,
-            "http://example.com/test.mp3",
-            None,
-            None,
-            None,
-            "patreon"
-        ).unwrap();
+        let (id1, is_new1) = db
+            .upsert_episode(
+                Some("100"),
+                "Original Title",
+                None,
+                "http://example.com/test.mp3",
+                None,
+                None,
+                None,
+                "patreon",
+            )
+            .unwrap();
 
         assert!(is_new1);
 
         // Upsert again with same URL
-        let (id2, is_new2) = db.upsert_episode(
-            Some("100"),
-            "Updated Title",
-            Some("New description"),
-            "http://example.com/test.mp3", // Same URL
-            Some(3600.0),
-            None,
-            None,
-            "patreon"
-        ).unwrap();
+        let (id2, is_new2) = db
+            .upsert_episode(
+                Some("100"),
+                "Updated Title",
+                Some("New description"),
+                "http://example.com/test.mp3", // Same URL
+                Some(3600.0),
+                None,
+                None,
+                "patreon",
+            )
+            .unwrap();
 
         assert_eq!(id1, id2); // Same episode
         assert!(!is_new2); // Not new
@@ -713,16 +837,18 @@ mod episode_tests {
         ];
 
         for (i, title) in titles.iter().enumerate() {
-            let (id, _) = db.upsert_episode(
-                Some(&format!("{}", i)),
-                title,
-                None,
-                &format!("http://test{}.mp3", i),
-                None,
-                None,
-                None,
-                "test"
-            ).unwrap();
+            let (id, _) = db
+                .upsert_episode(
+                    Some(&format!("{}", i)),
+                    title,
+                    None,
+                    &format!("http://test{}.mp3", i),
+                    None,
+                    None,
+                    None,
+                    "test",
+                )
+                .unwrap();
 
             let episode = db.get_episode_by_id(id).unwrap().unwrap();
             assert_eq!(&episode.title, title);
@@ -754,14 +880,16 @@ mod extraction_tests {
     fn test_create_custom_prompt() {
         let (db, _temp) = setup_test_db();
 
-        let id = db.create_extraction_prompt(
-            "Custom Prompt",
-            Some("Test description"),
-            "custom",
-            "Extract things from: {text}",
-            Some("You are a helpful assistant"),
-            Some(r#"{"type":"array"}"#)
-        ).unwrap();
+        let id = db
+            .create_extraction_prompt(
+                "Custom Prompt",
+                Some("Test description"),
+                "custom",
+                "Extract things from: {text}",
+                Some("You are a helpful assistant"),
+                Some(r#"{"type":"array"}"#),
+            )
+            .unwrap();
 
         let prompt = db.get_extraction_prompt(id).unwrap().unwrap();
         assert_eq!(prompt.name, "Custom Prompt");
@@ -772,14 +900,9 @@ mod extraction_tests {
     fn test_update_prompt() {
         let (db, _temp) = setup_test_db();
 
-        let id = db.create_extraction_prompt(
-            "Original",
-            None,
-            "custom",
-            "Original text",
-            None,
-            None
-        ).unwrap();
+        let id = db
+            .create_extraction_prompt("Original", None, "custom", "Original text", None, None)
+            .unwrap();
 
         db.update_extraction_prompt(
             id,
@@ -789,8 +912,9 @@ mod extraction_tests {
             "Updated text",
             None,
             None,
-            true
-        ).unwrap();
+            true,
+        )
+        .unwrap();
 
         let prompt = db.get_extraction_prompt(id).unwrap().unwrap();
         assert_eq!(prompt.name, "Updated");
@@ -802,32 +926,32 @@ mod extraction_tests {
         let (db, _temp) = setup_test_db();
 
         // Create episode
-        let (episode_id, _) = db.upsert_episode(
-            Some("1"), "Test", None, "http://test.mp3",
-            None, None, None, "test"
-        ).unwrap();
+        let (episode_id, _) = db
+            .upsert_episode(
+                Some("1"),
+                "Test",
+                None,
+                "http://test.mp3",
+                None,
+                None,
+                None,
+                "test",
+            )
+            .unwrap();
 
         // Create prompt
-        let prompt_id = db.create_extraction_prompt(
-            "Test Prompt",
-            None,
-            "custom",
-            "Extract",
-            None,
-            None
-        ).unwrap();
+        let prompt_id = db
+            .create_extraction_prompt("Test Prompt", None, "custom", "Extract", None, None)
+            .unwrap();
 
         // Start run
-        let run_id = db.create_extraction_run(prompt_id, episode_id, "input text").unwrap();
+        let run_id = db
+            .create_extraction_run(prompt_id, episode_id, "input text")
+            .unwrap();
 
         // Complete run
-        db.complete_extraction_run(
-            run_id,
-            "raw response",
-            Some(r#"[{"item": 1}]"#),
-            1,
-            500
-        ).unwrap();
+        db.complete_extraction_run(run_id, "raw response", Some(r#"[{"item": 1}]"#), 1, 500)
+            .unwrap();
 
         // Verify
         let runs = db.get_extraction_runs_for_episode(episode_id).unwrap();
@@ -840,26 +964,35 @@ mod extraction_tests {
     fn test_extraction_run_failure() {
         let (db, _temp) = setup_test_db();
 
-        let (episode_id, _) = db.upsert_episode(
-            Some("1"), "Test", None, "http://test.mp3",
-            None, None, None, "test"
-        ).unwrap();
+        let (episode_id, _) = db
+            .upsert_episode(
+                Some("1"),
+                "Test",
+                None,
+                "http://test.mp3",
+                None,
+                None,
+                None,
+                "test",
+            )
+            .unwrap();
 
-        let prompt_id = db.create_extraction_prompt(
-            "Test",
-            None,
-            "custom",
-            "Extract",
-            None,
-            None
-        ).unwrap();
+        let prompt_id = db
+            .create_extraction_prompt("Test", None, "custom", "Extract", None, None)
+            .unwrap();
 
-        let run_id = db.create_extraction_run(prompt_id, episode_id, "input").unwrap();
+        let run_id = db
+            .create_extraction_run(prompt_id, episode_id, "input")
+            .unwrap();
 
-        db.fail_extraction_run(run_id, "Connection timeout", 1000).unwrap();
+        db.fail_extraction_run(run_id, "Connection timeout", 1000)
+            .unwrap();
 
         let runs = db.get_extraction_runs_for_episode(episode_id).unwrap();
         assert_eq!(runs[0].status, "failed");
-        assert_eq!(runs[0].error_message, Some("Connection timeout".to_string()));
+        assert_eq!(
+            runs[0].error_message,
+            Some("Connection timeout".to_string())
+        );
     }
 }

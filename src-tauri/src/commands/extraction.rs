@@ -5,10 +5,10 @@
 use crate::database::{Database, ExtractionPrompt, ExtractionRun};
 use crate::error::AppError;
 use crate::ollama::OllamaClient;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Instant;
 use tauri::State;
-use serde::{Deserialize, Serialize};
 
 // ============================================================================
 // Ollama Status
@@ -121,7 +121,8 @@ pub async fn delete_extraction_prompt(
     prompt_id: i64,
 ) -> Result<(), AppError> {
     log::info!("Deleting extraction prompt: {}", prompt_id);
-    db.delete_extraction_prompt(prompt_id).map_err(AppError::from)
+    db.delete_extraction_prompt(prompt_id)
+        .map_err(AppError::from)
 }
 
 // ============================================================================
@@ -148,45 +149,55 @@ pub async fn run_extraction(
 ) -> Result<ExtractionRunResult, AppError> {
     use tauri::Emitter;
 
-    log::info!("Running extraction: prompt={}, episode={}", prompt_id, episode_id);
+    log::info!(
+        "Running extraction: prompt={}, episode={}",
+        prompt_id,
+        episode_id
+    );
 
     // Get the prompt
     let prompt = db
-        .get_extraction_prompt(prompt_id)
-        ?
+        .get_extraction_prompt(prompt_id)?
         .ok_or("Prompt not found")?;
 
     // Get the transcript
     let transcript = db
-        .get_transcript(episode_id)
-        ?
+        .get_transcript(episode_id)?
         .ok_or("Transcript not found")?;
 
     // Limit transcript length to avoid token limits (roughly 4000 words)
     let transcript_text = if transcript.full_text.len() > 20000 {
-        format!("{}...\n\n[Transcript truncated]", &transcript.full_text[..20000])
+        format!(
+            "{}...\n\n[Transcript truncated]",
+            &transcript.full_text[..20000]
+        )
     } else {
         transcript.full_text.clone()
     };
 
     // Create extraction run record
-    let run_id = db
-        .create_extraction_run(prompt_id, episode_id, &transcript_text)
-        ?;
+    let run_id = db.create_extraction_run(prompt_id, episode_id, &transcript_text)?;
 
     // Emit event that extraction started
-    let _ = app_handle.emit("extraction_started", serde_json::json!({
-        "run_id": run_id,
-        "prompt_name": prompt.name,
-        "episode_id": episode_id,
-    }));
+    let _ = app_handle.emit(
+        "extraction_started",
+        serde_json::json!({
+            "run_id": run_id,
+            "prompt_name": prompt.name,
+            "episode_id": episode_id,
+        }),
+    );
 
     let start = Instant::now();
 
     // Run the extraction
     let client = OllamaClient::new();
     let result = client
-        .extract_content(&transcript_text, &prompt.prompt_text, prompt.system_prompt.as_deref())
+        .extract_content(
+            &transcript_text,
+            &prompt.prompt_text,
+            prompt.system_prompt.as_deref(),
+        )
         .await;
 
     let duration_ms = start.elapsed().as_millis() as i64;
@@ -213,15 +224,17 @@ pub async fn run_extraction(
                 parsed_str.as_deref(),
                 items_extracted,
                 duration_ms,
-            )
-            ?;
+            )?;
 
             // Emit completion event
-            let _ = app_handle.emit("extraction_completed", serde_json::json!({
-                "run_id": run_id,
-                "items_extracted": items_extracted,
-                "duration_ms": duration_ms,
-            }));
+            let _ = app_handle.emit(
+                "extraction_completed",
+                serde_json::json!({
+                    "run_id": run_id,
+                    "items_extracted": items_extracted,
+                    "duration_ms": duration_ms,
+                }),
+            );
 
             Ok(ExtractionRunResult {
                 run_id,
@@ -239,10 +252,13 @@ pub async fn run_extraction(
                 .map_err(|err| err.to_string())?;
 
             // Emit failure event
-            let _ = app_handle.emit("extraction_failed", serde_json::json!({
-                "run_id": run_id,
-                "error": e,
-            }));
+            let _ = app_handle.emit(
+                "extraction_failed",
+                serde_json::json!({
+                    "run_id": run_id,
+                    "error": e,
+                }),
+            );
 
             Ok(ExtractionRunResult {
                 run_id,
@@ -323,9 +339,11 @@ pub async fn get_extraction_runs(
 ) -> Result<Vec<ExtractionRun>, AppError> {
     if let Some(ep_id) = episode_id {
         log::info!("Getting extraction runs for episode: {}", ep_id);
-        db.get_extraction_runs_for_episode(ep_id).map_err(AppError::from)
+        db.get_extraction_runs_for_episode(ep_id)
+            .map_err(AppError::from)
     } else {
         log::info!("Getting recent extraction runs");
-        db.get_recent_extraction_runs(limit.unwrap_or(50)).map_err(AppError::from)
+        db.get_recent_extraction_runs(limit.unwrap_or(50))
+            .map_err(AppError::from)
     }
 }

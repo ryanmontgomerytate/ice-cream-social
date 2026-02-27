@@ -1,4 +1,4 @@
-use crate::database::{Database, Speaker, SpeakerStats, EpisodeSpeakerAssignment};
+use crate::database::{Database, EpisodeSpeakerAssignment, Speaker, SpeakerStats};
 use crate::error::AppError;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -57,9 +57,7 @@ fn parse_episode_date_for_voice(iso: Option<String>) -> Option<String> {
 
 /// Get all speakers
 #[tauri::command]
-pub async fn get_speakers(
-    db: State<'_, Arc<Database>>,
-) -> Result<Vec<Speaker>, AppError> {
+pub async fn get_speakers(db: State<'_, Arc<Database>>) -> Result<Vec<Speaker>, AppError> {
     db.get_speakers().map_err(AppError::from)
 }
 
@@ -73,9 +71,20 @@ pub async fn create_speaker(
     is_guest: Option<bool>,
     is_scoop: Option<bool>,
 ) -> Result<i64, AppError> {
-    log::info!("Creating speaker: {} (short: {:?}, host: {})", name, short_name, is_host);
-    db.create_speaker(&name, short_name.as_deref(), is_host, is_guest.unwrap_or(false), is_scoop.unwrap_or(false))
-        .map_err(AppError::from)
+    log::info!(
+        "Creating speaker: {} (short: {:?}, host: {})",
+        name,
+        short_name,
+        is_host
+    );
+    db.create_speaker(
+        &name,
+        short_name.as_deref(),
+        is_host,
+        is_guest.unwrap_or(false),
+        is_scoop.unwrap_or(false),
+    )
+    .map_err(AppError::from)
 }
 
 /// Update a speaker
@@ -89,17 +98,27 @@ pub async fn update_speaker(
     is_guest: Option<bool>,
     is_scoop: Option<bool>,
 ) -> Result<(), AppError> {
-    log::info!("Updating speaker {}: {} (short: {:?}, host: {})", id, name, short_name, is_host);
-    db.update_speaker(id, &name, short_name.as_deref(), is_host, is_guest.unwrap_or(false), is_scoop.unwrap_or(false))
-        .map_err(AppError::from)
+    log::info!(
+        "Updating speaker {}: {} (short: {:?}, host: {})",
+        id,
+        name,
+        short_name,
+        is_host
+    );
+    db.update_speaker(
+        id,
+        &name,
+        short_name.as_deref(),
+        is_host,
+        is_guest.unwrap_or(false),
+        is_scoop.unwrap_or(false),
+    )
+    .map_err(AppError::from)
 }
 
 /// Delete a speaker
 #[tauri::command]
-pub async fn delete_speaker(
-    db: State<'_, Arc<Database>>,
-    id: i64,
-) -> Result<(), AppError> {
+pub async fn delete_speaker(db: State<'_, Arc<Database>>, id: i64) -> Result<(), AppError> {
     log::info!("Deleting speaker {}", id);
     db.delete_speaker(id).map_err(AppError::from)
 }
@@ -120,7 +139,12 @@ pub async fn link_episode_speaker(
     diarization_label: String,
     speaker_id: i64,
 ) -> Result<(), AppError> {
-    log::info!("Linking episode {} speaker {} to speaker_id {}", episode_id, diarization_label, speaker_id);
+    log::info!(
+        "Linking episode {} speaker {} to speaker_id {}",
+        episode_id,
+        diarization_label,
+        speaker_id
+    );
     db.link_episode_speaker(episode_id, &diarization_label, speaker_id)
         .map_err(AppError::from)
 }
@@ -133,7 +157,12 @@ pub async fn link_episode_audio_drop(
     diarization_label: String,
     audio_drop_id: i64,
 ) -> Result<(), AppError> {
-    log::info!("Linking episode {} label {} to audio_drop_id {}", episode_id, diarization_label, audio_drop_id);
+    log::info!(
+        "Linking episode {} label {} to audio_drop_id {}",
+        episode_id,
+        diarization_label,
+        audio_drop_id
+    );
     db.link_episode_audio_drop(episode_id, &diarization_label, audio_drop_id)
         .map_err(AppError::from)
 }
@@ -145,7 +174,11 @@ pub async fn unlink_episode_speaker(
     episode_id: i64,
     diarization_label: String,
 ) -> Result<(), AppError> {
-    log::info!("Unlinking episode {} label {}", episode_id, diarization_label);
+    log::info!(
+        "Unlinking episode {} label {}",
+        episode_id,
+        diarization_label
+    );
     db.unlink_episode_speaker(episode_id, &diarization_label)
         .map_err(AppError::from)
 }
@@ -161,9 +194,7 @@ pub async fn get_episode_speaker_assignments(
 }
 
 #[tauri::command]
-pub async fn get_embedding_model(
-    db: State<'_, Arc<Database>>,
-) -> Result<String, AppError> {
+pub async fn get_embedding_model(db: State<'_, Arc<Database>>) -> Result<String, AppError> {
     Ok(configured_embedding_backend(db.inner()))
 }
 
@@ -173,9 +204,12 @@ pub async fn set_embedding_model(
     db: State<'_, Arc<Database>>,
 ) -> Result<(), AppError> {
     if backend != EMBEDDING_BACKEND_ECAPA && backend != EMBEDDING_BACKEND_PYANNOTE {
-        return Err(AppError::from("Invalid embedding backend. Use 'ecapa-tdnn' or 'pyannote'."));
+        return Err(AppError::from(
+            "Invalid embedding backend. Use 'ecapa-tdnn' or 'pyannote'.",
+        ));
     }
-    db.set_setting("embedding_model", &backend).map_err(AppError::from)
+    db.set_setting("embedding_model", &backend)
+        .map_err(AppError::from)
 }
 
 /// Voice library speaker info
@@ -212,8 +246,14 @@ pub async fn get_voice_library(
     let venv_python = project_dir.join("venv").join("bin").join("python");
     let db_path = project_dir.join("data").join("ice_cream_social.db");
 
-    let samples_dir = project_dir.join("scripts").join("voice_library").join("samples");
-    let sound_bites_dir = project_dir.join("scripts").join("voice_library").join("sound_bites");
+    let samples_dir = project_dir
+        .join("scripts")
+        .join("voice_library")
+        .join("samples");
+    let sound_bites_dir = project_dir
+        .join("scripts")
+        .join("voice_library")
+        .join("sound_bites");
 
     let mut speakers: Vec<VoiceLibrarySpeaker> = Vec::new();
     let mut embedded_names: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -241,17 +281,28 @@ pub async fn get_voice_library(
                         for s in arr {
                             if let Some(name) = s.get("name").and_then(|n| n.as_str()) {
                                 embedded_names.insert(name.to_string());
-                                let file_count = count_audio_files_for(name, &samples_dir, &sound_bites_dir);
+                                let file_count =
+                                    count_audio_files_for(name, &samples_dir, &sound_bites_dir);
                                 let episode_count = *episode_counts.get(name).unwrap_or(&0);
-                                let short_name = s.get("short_name")
+                                let short_name = s
+                                    .get("short_name")
                                     .and_then(|f| f.as_str())
-                                    .unwrap_or_else(|| name.split_whitespace().next().unwrap_or(name))
+                                    .unwrap_or_else(|| {
+                                        name.split_whitespace().next().unwrap_or(name)
+                                    })
                                     .to_string();
                                 speakers.push(VoiceLibrarySpeaker {
                                     name: name.to_string(),
                                     short_name,
-                                    sample_count: s.get("sample_count").and_then(|c| c.as_i64()).unwrap_or(1) as i32,
-                                    sample_file: s.get("sample_file").and_then(|f| f.as_str()).map(|s| s.to_string()),
+                                    sample_count: s
+                                        .get("sample_count")
+                                        .and_then(|c| c.as_i64())
+                                        .unwrap_or(1)
+                                        as i32,
+                                    sample_file: s
+                                        .get("sample_file")
+                                        .and_then(|f| f.as_str())
+                                        .map(|s| s.to_string()),
                                     file_count,
                                     episode_count,
                                     has_embedding: true,
@@ -270,16 +321,29 @@ pub async fn get_voice_library(
         if let Ok(entries) = std::fs::read_dir(&samples_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if !path.is_dir() { continue; }
+                if !path.is_dir() {
+                    continue;
+                }
                 let dir_name = entry.file_name().to_string_lossy().to_string();
-                if dir_name.starts_with('.') { continue; }
+                if dir_name.starts_with('.') {
+                    continue;
+                }
                 let speaker_name = dir_name.replace('_', " ");
-                if embedded_names.contains(&speaker_name) { continue; }
+                if embedded_names.contains(&speaker_name) {
+                    continue;
+                }
 
-                let file_count = count_audio_files_for(&speaker_name, &samples_dir, &sound_bites_dir);
-                if file_count == 0 { continue; }
+                let file_count =
+                    count_audio_files_for(&speaker_name, &samples_dir, &sound_bites_dir);
+                if file_count == 0 {
+                    continue;
+                }
 
-                let short_name = speaker_name.split_whitespace().next().unwrap_or(&speaker_name).to_string();
+                let short_name = speaker_name
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or(&speaker_name)
+                    .to_string();
                 let episode_count = *episode_counts.get(&speaker_name).unwrap_or(&0);
                 speakers.push(VoiceLibrarySpeaker {
                     name: speaker_name,
@@ -300,16 +364,29 @@ pub async fn get_voice_library(
         if let Ok(entries) = std::fs::read_dir(&sound_bites_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if !path.is_dir() { continue; }
+                if !path.is_dir() {
+                    continue;
+                }
                 let dir_name = entry.file_name().to_string_lossy().to_string();
-                if dir_name.starts_with('.') { continue; }
+                if dir_name.starts_with('.') {
+                    continue;
+                }
                 let speaker_name = dir_name.replace('_', " ");
-                if embedded_names.contains(&speaker_name) { continue; }
+                if embedded_names.contains(&speaker_name) {
+                    continue;
+                }
 
-                let file_count = count_audio_files_for(&speaker_name, &samples_dir, &sound_bites_dir);
-                if file_count == 0 { continue; }
+                let file_count =
+                    count_audio_files_for(&speaker_name, &samples_dir, &sound_bites_dir);
+                if file_count == 0 {
+                    continue;
+                }
 
-                let short_name = speaker_name.split_whitespace().next().unwrap_or(&speaker_name).to_string();
+                let short_name = speaker_name
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or(&speaker_name)
+                    .to_string();
                 let episode_count = *episode_counts.get(&speaker_name).unwrap_or(&0);
                 speakers.push(VoiceLibrarySpeaker {
                     name: speaker_name,
@@ -400,7 +477,8 @@ pub async fn get_voice_samples(
 ) -> Result<Vec<VoiceSampleFile>, AppError> {
     // Legacy filesystem-only compatibility has been removed.
     // Audio ID shows DB-backed samples only (manual/harvest/auto).
-    let db_samples = db.get_voice_samples_for_speaker(&speaker_name)
+    let db_samples = db
+        .get_voice_samples_for_speaker(&speaker_name)
         .unwrap_or_default();
 
     let mut samples: Vec<VoiceSampleFile> = Vec::new();
@@ -418,7 +496,10 @@ pub async fn get_voice_samples(
         samples.push(VoiceSampleFile {
             id: Some(record.id),
             file_path: record.file_path.clone(),
-            file_name: path.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default(),
+            file_name: path
+                .file_name()
+                .map(|f| f.to_string_lossy().to_string())
+                .unwrap_or_default(),
             file_size,
             created: record.created_at.clone(),
             episode_id: record.episode_id,
@@ -450,7 +531,11 @@ pub async fn update_voice_sample_rating(
 
 fn is_audio_file(name: &str) -> bool {
     let lower = name.to_lowercase();
-    lower.ends_with(".wav") || lower.ends_with(".mp3") || lower.ends_with(".m4a") || lower.ends_with(".ogg") || lower.ends_with(".flac")
+    lower.ends_with(".wav")
+        || lower.ends_with(".mp3")
+        || lower.ends_with(".m4a")
+        || lower.ends_with(".ogg")
+        || lower.ends_with(".flac")
 }
 
 /// Delete a specific voice sample file (by file_path or by DB id)
@@ -473,8 +558,7 @@ pub async fn delete_voice_sample(
     // Determine the file to delete
     let target_path = if let Some(id) = sample_id {
         // Delete by DB id — get path from DB record and delete record
-        let path = db.delete_voice_sample_record(id)
-            .map_err(AppError::from)?;
+        let path = db.delete_voice_sample_record(id).map_err(AppError::from)?;
         path.or(file_path.clone())
     } else {
         file_path.clone()
@@ -482,7 +566,9 @@ pub async fn delete_voice_sample(
 
     if let Some(ref path) = target_path {
         // Security: ensure the path is within voice_library/
-        let canonical_voice_lib = voice_lib_dir.canonicalize().map_err(|e| format!("Failed to resolve voice library path: {}", e))?;
+        let canonical_voice_lib = voice_lib_dir
+            .canonicalize()
+            .map_err(|e| format!("Failed to resolve voice library path: {}", e))?;
         if let Ok(canonical_file) = std::path::Path::new(path).canonicalize() {
             if canonical_file.starts_with(&canonical_voice_lib) {
                 std::fs::remove_file(&canonical_file)
@@ -498,7 +584,9 @@ pub async fn delete_voice_sample(
     if sample_id.is_none() {
         if let Some(ref path) = file_path {
             // Best-effort: delete any DB record that matches this file_path
-            let samples = db.get_voice_samples_for_speaker(&speaker_name).unwrap_or_default();
+            let samples = db
+                .get_voice_samples_for_speaker(&speaker_name)
+                .unwrap_or_default();
             for s in samples {
                 if s.file_path == *path {
                     let _ = db.delete_voice_sample_record(s.id);
@@ -520,16 +608,16 @@ pub async fn delete_voice_sample(
     if venv_python.exists() && voice_library_script.exists() {
         let mut cmd = std::process::Command::new(&venv_python);
         cmd.args([
-                voice_library_script.to_str().unwrap(),
-                "rebuild-speaker",
-                &speaker_name,
-                "--backend",
-                &backend,
-                "--db-path",
-                db_path.to_str().unwrap(),
-                "--store-mode",
-                "sqlite",
-            ]);
+            voice_library_script.to_str().unwrap(),
+            "rebuild-speaker",
+            &speaker_name,
+            "--backend",
+            &backend,
+            "--db-path",
+            db_path.to_str().unwrap(),
+            "--store-mode",
+            "sqlite",
+        ]);
         apply_hf_runtime_env_std(&mut cmd, false);
         let _ = cmd.output();
     }
@@ -565,16 +653,16 @@ pub async fn delete_voice_print(
 
     let mut cmd = std::process::Command::new(&venv_python);
     cmd.args([
-            voice_library_script.to_str().unwrap(),
-            "remove",
-            &speaker_name,
-            "--backend",
-            &backend,
-            "--db-path",
-            db_path.to_str().unwrap(),
-            "--store-mode",
-            "sqlite",
-        ]);
+        voice_library_script.to_str().unwrap(),
+        "remove",
+        &speaker_name,
+        "--backend",
+        &backend,
+        "--db-path",
+        db_path.to_str().unwrap(),
+        "--store-mode",
+        "sqlite",
+    ]);
     apply_hf_runtime_env_std(&mut cmd, false);
     let output = cmd
         .output()
@@ -585,7 +673,10 @@ pub async fn delete_voice_print(
         Ok(())
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(AppError::from(format!("Failed to delete voice print: {}", stderr)))
+        Err(AppError::from(format!(
+            "Failed to delete voice print: {}",
+            stderr
+        )))
     }
 }
 
@@ -615,16 +706,16 @@ pub async fn rebuild_voice_print_for_speaker(
 
     let mut cmd = std::process::Command::new(&venv_python);
     cmd.args([
-            voice_library_script.to_str().unwrap(),
-            "rebuild-speaker",
-            &speaker_name,
-            "--backend",
-            &backend,
-            "--db-path",
-            db_path.to_str().unwrap(),
-            "--store-mode",
-            "sqlite",
-        ]);
+        voice_library_script.to_str().unwrap(),
+        "rebuild-speaker",
+        &speaker_name,
+        "--backend",
+        &backend,
+        "--db-path",
+        db_path.to_str().unwrap(),
+        "--store-mode",
+        "sqlite",
+    ]);
     apply_hf_runtime_env_std(&mut cmd, false);
     let output = cmd
         .output()
@@ -635,12 +726,19 @@ pub async fn rebuild_voice_print_for_speaker(
         Ok(())
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(AppError::from(format!("Failed to rebuild voice print: {}", stderr)))
+        Err(AppError::from(format!(
+            "Failed to rebuild voice print: {}",
+            stderr
+        )))
     }
 }
 
 /// Count actual audio files for a speaker/sound bite
-fn count_audio_files_for(name: &str, samples_dir: &std::path::Path, sound_bites_dir: &std::path::Path) -> i32 {
+fn count_audio_files_for(
+    name: &str,
+    samples_dir: &std::path::Path,
+    sound_bites_dir: &std::path::Path,
+) -> i32 {
     let mut count = 0;
     let normalized = name.replace(' ', "_");
 
@@ -705,7 +803,9 @@ pub async fn get_voice_sample_path(speaker_name: String) -> Result<Option<String
             let file_name = entry.file_name().to_string_lossy().to_string();
             // Sample files are named like "Matt_Donnelly_sample.wav"
             let normalized_name = speaker_name.replace(' ', "_");
-            if file_name.starts_with(&normalized_name) && (file_name.ends_with(".wav") || file_name.ends_with(".mp3")) {
+            if file_name.starts_with(&normalized_name)
+                && (file_name.ends_with(".wav") || file_name.ends_with(".mp3"))
+            {
                 return Ok(Some(entry.path().to_string_lossy().to_string()));
             }
         }
@@ -802,7 +902,10 @@ pub async fn purge_voice_library_entry(
     speaker_name: String,
 ) -> Result<PurgeVoiceLibraryEntryResult, AppError> {
     if !is_placeholder_speaker_name(&speaker_name) {
-        log::info!("Purging non-placeholder voice library entry '{}'", speaker_name);
+        log::info!(
+            "Purging non-placeholder voice library entry '{}'",
+            speaker_name
+        );
     }
     let home_dir = dirs::home_dir().ok_or("Failed to get home directory")?;
     let project_dir = home_dir
@@ -837,7 +940,9 @@ pub async fn purge_voice_library_entry(
     }
 
     // Remove DB-backed sample files + rows
-    let db_samples = db.get_voice_samples_for_speaker(&speaker_name).unwrap_or_default();
+    let db_samples = db
+        .get_voice_samples_for_speaker(&speaker_name)
+        .unwrap_or_default();
     for sample in db_samples {
         if std::path::Path::new(&sample.file_path).exists()
             && std::fs::remove_file(&sample.file_path).is_ok()
@@ -850,7 +955,10 @@ pub async fn purge_voice_library_entry(
 
     // Remove filesystem-only sample files (best-effort)
     let normalized = speaker_name.replace(' ', "_");
-    delete_audio_files_in_dir(&voice_library_dir.join("samples").join(&normalized), &mut deleted_files);
+    delete_audio_files_in_dir(
+        &voice_library_dir.join("samples").join(&normalized),
+        &mut deleted_files,
+    );
 
     // Legacy flat sample naming: samples/Speaker_Name_*.wav
     let flat_samples = voice_library_dir.join("samples");
@@ -862,7 +970,10 @@ pub async fn purge_voice_library_entry(
                     continue;
                 }
                 let name = p.file_name().and_then(|n| n.to_str()).unwrap_or_default();
-                if name.starts_with(&normalized) && is_audio_file(name) && std::fs::remove_file(&p).is_ok() {
+                if name.starts_with(&normalized)
+                    && is_audio_file(name)
+                    && std::fs::remove_file(&p).is_ok()
+                {
                     deleted_files += 1;
                 }
             }
@@ -871,9 +982,11 @@ pub async fn purge_voice_library_entry(
 
     // Sound bite dir variant
     delete_audio_files_in_dir(
-        &voice_library_dir
-            .join("sound_bites")
-            .join(speaker_name.trim_start_matches("🔊 ").trim_start_matches("🔊")),
+        &voice_library_dir.join("sound_bites").join(
+            speaker_name
+                .trim_start_matches("🔊 ")
+                .trim_start_matches("🔊"),
+        ),
         &mut deleted_files,
     );
 
@@ -901,9 +1014,14 @@ pub async fn rebuild_voice_library(
     db: State<'_, Arc<Database>>,
     backend: Option<String>,
 ) -> Result<RebuildResult, AppError> {
-    let backend = normalize_embedding_backend(backend.or_else(|| db.get_setting("embedding_model").unwrap_or(None)));
+    let backend = normalize_embedding_backend(
+        backend.or_else(|| db.get_setting("embedding_model").unwrap_or(None)),
+    );
     let home_dir = dirs::home_dir().ok_or("Failed to get home directory")?;
-    let project_dir = home_dir.join("Desktop").join("Projects").join("ice-cream-social-app");
+    let project_dir = home_dir
+        .join("Desktop")
+        .join("Projects")
+        .join("ice-cream-social-app");
     let venv_python = project_dir.join("venv").join("bin").join("python");
     let script = project_dir.join("scripts").join("voice_library.py");
     let db_path = project_dir.join("data").join("ice_cream_social.db");
@@ -923,8 +1041,8 @@ pub async fn rebuild_voice_library(
         "--store-mode",
         "sqlite",
     ])
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
+    .stdout(std::process::Stdio::piped())
+    .stderr(std::process::Stdio::piped());
     apply_hf_runtime_env_tokio(&mut cmd, false);
     let mut child = cmd
         .spawn()
@@ -940,7 +1058,10 @@ pub async fn rebuild_voice_library(
             Ok(Some(line)) => {
                 if line.starts_with("REBUILD_PROGRESS:") {
                     if let Some(n) = line.split(':').nth(1) {
-                        let _ = app_handle.emit("voice_library_progress", n.trim().parse::<i32>().unwrap_or(0));
+                        let _ = app_handle.emit(
+                            "voice_library_progress",
+                            n.trim().parse::<i32>().unwrap_or(0),
+                        );
                     }
                 } else if !line.is_empty() {
                     last_line = line;
@@ -951,7 +1072,9 @@ pub async fn rebuild_voice_library(
         }
     }
 
-    let output = child.wait_with_output().await
+    let output = child
+        .wait_with_output()
+        .await
         .map_err(|e| format!("Failed to wait for rebuild: {}", e))?;
 
     if !output.status.success() {
@@ -960,8 +1083,13 @@ pub async fn rebuild_voice_library(
     }
 
     // Parse the JSON result from last line
-    let result: RebuildResult = serde_json::from_str(&last_line)
-        .unwrap_or(RebuildResult { status: "success".into(), rebuilt: 0, skipped: 0, errors: 0, speaker_count: 0 });
+    let result: RebuildResult = serde_json::from_str(&last_line).unwrap_or(RebuildResult {
+        status: "success".into(),
+        rebuilt: 0,
+        skipped: 0,
+        errors: 0,
+        speaker_count: 0,
+    });
 
     Ok(result)
 }
@@ -986,7 +1114,10 @@ pub async fn run_voice_harvest(
 ) -> Result<HarvestResult, AppError> {
     let backend = configured_embedding_backend(db.inner());
     let home_dir = dirs::home_dir().ok_or("Failed to get home directory")?;
-    let project_dir = home_dir.join("Desktop").join("Projects").join("ice-cream-social-app");
+    let project_dir = home_dir
+        .join("Desktop")
+        .join("Projects")
+        .join("ice-cream-social-app");
     let venv_python = project_dir.join("venv").join("bin").join("python");
     let script = project_dir.join("scripts").join("harvest_voice_samples.py");
 
@@ -1006,13 +1137,20 @@ pub async fn run_voice_harvest(
     let mut child = tokio::process::Command::new(&venv_python)
         .args([
             script.to_str().unwrap(),
-            "--db-path", db_path.to_str().unwrap(),
-            "--library-dir", library_dir.to_str().unwrap(),
-            "--audio-base", audio_base.to_str().unwrap(),
-            "--min-secs", &min_secs_str,
-            "--max-per-speaker-per-episode", &max_per_str,
-            "--backend", &backend,
-            "--store-mode", "sqlite",
+            "--db-path",
+            db_path.to_str().unwrap(),
+            "--library-dir",
+            library_dir.to_str().unwrap(),
+            "--audio-base",
+            audio_base.to_str().unwrap(),
+            "--min-secs",
+            &min_secs_str,
+            "--max-per-speaker-per-episode",
+            &max_per_str,
+            "--backend",
+            &backend,
+            "--store-mode",
+            "sqlite",
         ])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -1028,7 +1166,10 @@ pub async fn run_voice_harvest(
         match reader.next_line().await {
             Ok(Some(line)) => {
                 if line.starts_with("HARVEST_PROGRESS:") {
-                    let _ = app_handle.emit("harvest_progress", line.trim_start_matches("HARVEST_PROGRESS:").trim());
+                    let _ = app_handle.emit(
+                        "harvest_progress",
+                        line.trim_start_matches("HARVEST_PROGRESS:").trim(),
+                    );
                 } else if !line.is_empty() {
                     last_line = line;
                 }
@@ -1038,7 +1179,9 @@ pub async fn run_voice_harvest(
         }
     }
 
-    let output = child.wait_with_output().await
+    let output = child
+        .wait_with_output()
+        .await
         .map_err(|e| format!("Failed to wait for harvest: {}", e))?;
 
     if !output.status.success() {
@@ -1046,8 +1189,12 @@ pub async fn run_voice_harvest(
         return Err(AppError::from(format!("Harvest failed: {}", stderr)));
     }
 
-    let result: HarvestResult = serde_json::from_str(&last_line)
-        .unwrap_or(HarvestResult { status: "success".into(), episodes_processed: 0, samples_added: 0, skipped: 0 });
+    let result: HarvestResult = serde_json::from_str(&last_line).unwrap_or(HarvestResult {
+        status: "success".into(),
+        episodes_processed: 0,
+        samples_added: 0,
+        skipped: 0,
+    });
 
     Ok(result)
 }
@@ -1078,10 +1225,11 @@ pub async fn extract_voice_sample_from_segment(
     let published_date = db.get_episode_published_date(episode_id).unwrap_or(None);
 
     // Get segment start/end times and text
-    let (start_time, end_time, transcript_text) = match db.get_segment_times(episode_id, segment_idx)? {
-        Some(t) => t,
-        None => return Ok(()),
-    };
+    let (start_time, end_time, transcript_text) =
+        match db.get_segment_times(episode_id, segment_idx)? {
+            Some(t) => t,
+            None => return Ok(()),
+        };
 
     let duration = end_time - start_time;
     if duration < 4.0 {
@@ -1089,7 +1237,10 @@ pub async fn extract_voice_sample_from_segment(
     }
 
     let home_dir = dirs::home_dir().ok_or("Failed to get home directory")?;
-    let project_dir = home_dir.join("Desktop").join("Projects").join("ice-cream-social-app");
+    let project_dir = home_dir
+        .join("Desktop")
+        .join("Projects")
+        .join("ice-cream-social-app");
     let venv_python = project_dir.join("venv").join("bin").join("python");
     let script = project_dir.join("scripts").join("extract_voice_sample.py");
     let db_path = project_dir.join("data").join("ice_cream_social.db");
@@ -1100,15 +1251,24 @@ pub async fn extract_voice_sample_from_segment(
 
     let mut args = vec![
         script.to_str().unwrap().to_string(),
-        "--audio-file".to_string(), audio_path,
-        "--start".to_string(), start_time.to_string(),
-        "--end".to_string(), end_time.to_string(),
-        "--speaker-name".to_string(), speaker_name,
-        "--episode-id".to_string(), episode_id.to_string(),
-        "--segment-idx".to_string(), segment_idx.to_string(),
-        "--db-path".to_string(), db_path.to_str().unwrap().to_string(),
-        "--backend".to_string(), backend,
-        "--store-mode".to_string(), "sqlite".to_string(),
+        "--audio-file".to_string(),
+        audio_path,
+        "--start".to_string(),
+        start_time.to_string(),
+        "--end".to_string(),
+        end_time.to_string(),
+        "--speaker-name".to_string(),
+        speaker_name,
+        "--episode-id".to_string(),
+        episode_id.to_string(),
+        "--segment-idx".to_string(),
+        segment_idx.to_string(),
+        "--db-path".to_string(),
+        db_path.to_str().unwrap().to_string(),
+        "--backend".to_string(),
+        backend,
+        "--store-mode".to_string(),
+        "sqlite".to_string(),
     ];
     if let Some(date) = published_date {
         args.push("--sample-date".to_string());
@@ -1160,7 +1320,9 @@ pub async fn compare_embedding_backends(
     let base = PathBuf::from(&transcript_path);
     let diarized = base.with_file_name(format!(
         "{}_with_speakers.json",
-        base.file_stem().and_then(|s| s.to_str()).unwrap_or("transcript")
+        base.file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("transcript")
     ));
     let diarization_json = if diarized.exists() { diarized } else { base };
     if !diarization_json.exists() {
@@ -1197,7 +1359,9 @@ pub async fn compare_embedding_backends(
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         if looks_like_hf_network_failure(&stderr) {
-            log::warn!("compare_embedding_backends: retrying in HF offline mode after network failure");
+            log::warn!(
+                "compare_embedding_backends: retrying in HF offline mode after network failure"
+            );
             output = run_compare_once(true)?;
         }
     }
@@ -1219,7 +1383,10 @@ pub async fn compare_embedding_backends(
                     return Ok(parsed);
                 }
             }
-            Err(AppError::from(format!("Failed to parse compare JSON: {}", first_err)))
+            Err(AppError::from(format!(
+                "Failed to parse compare JSON: {}",
+                first_err
+            )))
         }
     }
 }

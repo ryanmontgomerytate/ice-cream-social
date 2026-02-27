@@ -115,7 +115,11 @@ pub async fn get_diagnostics(
 
     // Check config
     let config_path = project_dir.join("config.yaml");
-    let config_status = if config_path.exists() { "OK" } else { "NOT FOUND" };
+    let config_status = if config_path.exists() {
+        "OK"
+    } else {
+        "NOT FOUND"
+    };
 
     // Check whisper-cli
     let whisper_cli_path = home_dir

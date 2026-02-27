@@ -68,7 +68,10 @@ pub async fn add_to_queue(
 
 /// DELETE /api/v2/queue/remove/:id -> remove_from_queue command
 #[tauri::command]
-pub async fn remove_from_queue(db: State<'_, Arc<Database>>, episode_id: i64) -> Result<(), AppError> {
+pub async fn remove_from_queue(
+    db: State<'_, Arc<Database>>,
+    episode_id: i64,
+) -> Result<(), AppError> {
     db.remove_from_queue(episode_id)?;
     Ok(())
 }

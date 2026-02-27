@@ -91,7 +91,11 @@ pub async fn get_episodes(
         )
         .map_err(AppError::from)?;
 
-    log::info!("get_episodes returning {} episodes, total: {}", episodes.len(), total);
+    log::info!(
+        "get_episodes returning {} episodes, total: {}",
+        episodes.len(),
+        total
+    );
 
     Ok(EpisodesResponse {
         has_more: offset + (episodes.len() as i64) < total,
@@ -112,8 +116,12 @@ pub async fn sync_feed(db: &Arc<Database>, source: &str) -> Result<RefreshResult
         .join("Projects")
         .join("ice-cream-social-app");
 
-    let rss_url = resolve_feed_url(&project_dir, source)
-        .ok_or_else(|| format!("RSS feed URL not found for source: {}. Check your .env file.", source))?;
+    let rss_url = resolve_feed_url(&project_dir, source).ok_or_else(|| {
+        format!(
+            "RSS feed URL not found for source: {}. Check your .env file.",
+            source
+        )
+    })?;
 
     log::info!("Fetching RSS from: {}", rss_url);
 
@@ -136,7 +144,8 @@ pub async fn sync_feed(db: &Arc<Database>, source: &str) -> Result<RefreshResult
             "RSS feed returned HTTP {}: {}",
             status.as_u16(),
             status.canonical_reason().unwrap_or("Unknown")
-        ).into());
+        )
+        .into());
     }
 
     let content_type = response
@@ -189,7 +198,9 @@ pub async fn sync_feed(db: &Arc<Database>, source: &str) -> Result<RefreshResult
             .and_then(|c| c.url.as_ref())
             .map(|u| u.to_string())
             .or_else(|| {
-                entry.links.iter()
+                entry
+                    .links
+                    .iter()
                     .find(|l| l.media_type.as_deref() == Some("audio/mpeg"))
                     .map(|l| l.href.clone())
             });
@@ -206,7 +217,9 @@ pub async fn sync_feed(db: &Arc<Database>, source: &str) -> Result<RefreshResult
         // Categorize episode from title using rules
         let cat_result = categorize_episode(&title, &rules);
         // Use category-derived episode_number if available, else fallback to basic extraction
-        let episode_number = cat_result.episode_number.or_else(|| extract_episode_number(&title));
+        let episode_number = cat_result
+            .episode_number
+            .or_else(|| extract_episode_number(&title));
 
         // Get duration from media content if available
         let duration = entry
@@ -287,7 +300,9 @@ pub async fn get_transcript(
         let path = std::path::Path::new(transcript_path);
         let with_speakers_path = path.with_file_name(format!(
             "{}_with_speakers.json",
-            path.file_stem().and_then(|s| s.to_str()).unwrap_or("transcript")
+            path.file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("transcript")
         ));
 
         let (content, actual_path) = if with_speakers_path.exists() {
@@ -344,17 +359,20 @@ struct ParsedTranscript {
 fn parse_transcript_json(content: &str) -> ParsedTranscript {
     // Try to parse as JSON
     if let Ok(json) = serde_json::from_str::<serde_json::Value>(content) {
-        let language = json.get("language")
+        let language = json
+            .get("language")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
 
         // Extract diarization info
         let (has_diarization, num_speakers, diarization_method) =
             if let Some(diarization) = json.get("diarization") {
-                let num = diarization.get("num_speakers")
+                let num = diarization
+                    .get("num_speakers")
                     .and_then(|v| v.as_i64())
                     .map(|n| n as i32);
-                let method = diarization.get("method")
+                let method = diarization
+                    .get("method")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
                 (num.map(|n| n > 0).unwrap_or(false), num, method)
@@ -363,7 +381,8 @@ fn parse_transcript_json(content: &str) -> ParsedTranscript {
             };
 
         // Extract speaker names mapping - check both top-level and diarization.identified_speakers
-        let speaker_names = json.get("speaker_names")
+        let speaker_names = json
+            .get("speaker_names")
             .and_then(|v| v.as_object())
             .map(|obj| {
                 obj.iter()
@@ -386,9 +405,14 @@ fn parse_transcript_json(content: &str) -> ParsedTranscript {
             });
 
         // Extract marked_samples (voice sample segment indices)
-        let marked_samples: Option<Vec<i32>> = json.get("marked_samples")
+        let marked_samples: Option<Vec<i32>> = json
+            .get("marked_samples")
             .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_i64().map(|n| n as i32)).collect());
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_i64().map(|n| n as i32))
+                    .collect()
+            });
 
         // Extract text from segments (faster-whisper format)
         if let Some(segments) = json.get("segments").and_then(|v| v.as_array()) {
@@ -569,13 +593,18 @@ fn categorize_episode(title: &str, rules: &[crate::database::CategoryRule]) -> C
 /// Extract the sub-series name from a Scoopflix/Not Furlong title
 fn extract_scoopflix_sub_series(title: &str) -> Option<String> {
     // "Not Furlong" sub-series
-    if regex::Regex::new(r"(?i)not\s+furlong").unwrap().is_match(title) {
+    if regex::Regex::new(r"(?i)not\s+furlong")
+        .unwrap()
+        .is_match(title)
+    {
         return Some("Not Furlong".to_string());
     }
 
     // Scoopflix show name patterns:
     // "ScoopFlix and Chill: Highway to Heaven" / "Scoopflix: Arrow" etc.
-    if let Ok(re) = regex::Regex::new(r"(?i)scoopfl?i?x\s*(?:and Chill)?[:\s]+(.+?)(?:\s*[-–]\s*Episode|\s*\d+\s*$|\s*$)") {
+    if let Ok(re) = regex::Regex::new(
+        r"(?i)scoopfl?i?x\s*(?:and Chill)?[:\s]+(.+?)(?:\s*[-–]\s*Episode|\s*\d+\s*$|\s*$)",
+    ) {
         if let Some(caps) = re.captures(title) {
             if let Some(show) = caps.get(1) {
                 let show_name = show.as_str().trim().to_string();
@@ -597,7 +626,9 @@ pub async fn recategorize_all_episodes(
     log::info!("recategorize_all_episodes called");
 
     let rules = db.get_category_rules().map_err(AppError::from)?;
-    let episodes = db.get_all_episodes_for_categorization().map_err(AppError::from)?;
+    let episodes = db
+        .get_all_episodes_for_categorization()
+        .map_err(AppError::from)?;
 
     let mut counts: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
 
@@ -640,13 +671,16 @@ pub async fn link_cross_feed_episodes(
 
     // Get all episode-category rows with a category_number, grouped by feed
     // We need episodes with category info to group by number
-    let (all_episodes, _) = db.get_episodes(
-        None, false, false, false, false, false, false,
-        None, true, None, 10000, 0, None, true, false, // include_variants = true, has_pending_work_only = false
-    ).map_err(AppError::from)?;
+    let (all_episodes, _) = db
+        .get_episodes(
+            None, false, false, false, false, false, false, None, true, None, 10000, 0, None, true,
+            false, // include_variants = true, has_pending_work_only = false
+        )
+        .map_err(AppError::from)?;
 
     // Group episode-category episodes by category_number
-    let mut by_number: std::collections::HashMap<String, Vec<&crate::database::Episode>> = std::collections::HashMap::new();
+    let mut by_number: std::collections::HashMap<String, Vec<&crate::database::Episode>> =
+        std::collections::HashMap::new();
     for ep in &all_episodes {
         if ep.category.as_deref() == Some("episode") {
             if let Some(ref num) = ep.category_number {
@@ -722,10 +756,7 @@ pub async fn update_category_rule(
 
 /// Delete a category rule (protects the bonus catch-all)
 #[tauri::command]
-pub async fn delete_category_rule(
-    db: State<'_, Arc<Database>>,
-    id: i64,
-) -> Result<(), AppError> {
+pub async fn delete_category_rule(db: State<'_, Arc<Database>>, id: i64) -> Result<(), AppError> {
     log::info!("delete_category_rule called for id: {}", id);
 
     // Check if this is the bonus catch-all rule
@@ -751,7 +782,9 @@ pub async fn test_category_rule(
     // Validate regex
     let re = regex::Regex::new(&pattern).map_err(|e| format!("Invalid regex: {}", e))?;
 
-    let episodes = db.get_all_episodes_for_categorization().map_err(AppError::from)?;
+    let episodes = db
+        .get_all_episodes_for_categorization()
+        .map_err(AppError::from)?;
 
     let keyword_list: Vec<String> = keywords
         .as_ref()
@@ -786,7 +819,6 @@ pub async fn test_category_rule(
     }))
 }
 
-
 /// Resolve feed URL: check .env first, then fall back to config.yaml
 fn resolve_feed_url(project_dir: &std::path::Path, source: &str) -> Option<String> {
     // Map source name to .env variable name
@@ -813,13 +845,18 @@ fn resolve_feed_url(project_dir: &std::path::Path, source: &str) -> Option<Strin
         if let Some(url) = parse_feed_url_from_config(&config_content, source) {
             log::warn!(
                 "Feed URL for {} loaded from config.yaml - move to .env as {} for security",
-                source, env_key
+                source,
+                env_key
             );
             return Some(url);
         }
     }
 
-    log::warn!("No feed URL found for source: {}. Set {} in .env", source, env_key);
+    log::warn!(
+        "No feed URL found for source: {}. Set {} in .env",
+        source,
+        env_key
+    );
     None
 }
 
@@ -842,9 +879,12 @@ fn parse_feed_url_from_config(config_content: &str, source: &str) -> Option<Stri
                     return Some(url.to_string());
                 }
             }
-            if trimmed.ends_with(':') && !trimmed.starts_with("url")
-                && !trimmed.starts_with("name") && !trimmed.starts_with("enabled")
-                && !trimmed.starts_with("env_var") {
+            if trimmed.ends_with(':')
+                && !trimmed.starts_with("url")
+                && !trimmed.starts_with("name")
+                && !trimmed.starts_with("enabled")
+                && !trimmed.starts_with("env_var")
+            {
                 found_source = false;
             }
         }
@@ -967,7 +1007,8 @@ pub async fn download_episode(
             return Err(format!(
                 "Download incomplete: got {} bytes, expected {}",
                 downloaded, expected
-            ).into());
+            )
+            .into());
         }
     }
 
@@ -1012,7 +1053,11 @@ pub async fn update_speaker_names(
     speaker_names: std::collections::HashMap<String, String>,
     marked_samples: Option<Vec<i32>>,
 ) -> Result<(), AppError> {
-    log::info!("update_speaker_names called for episode: {}, names: {:?}", episode_id, speaker_names);
+    log::info!(
+        "update_speaker_names called for episode: {}, names: {:?}",
+        episode_id,
+        speaker_names
+    );
 
     // Get episode to find transcript path
     let episode = db
@@ -1026,7 +1071,9 @@ pub async fn update_speaker_names(
     let path = std::path::Path::new(&transcript_path);
     let with_speakers_path = path.with_file_name(format!(
         "{}_with_speakers.json",
-        path.file_stem().and_then(|s| s.to_str()).unwrap_or("transcript")
+        path.file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("transcript")
     ));
 
     // Use _with_speakers.json if it exists, otherwise use the base transcript
@@ -1072,14 +1119,26 @@ pub async fn update_speaker_names(
     // every SPEAKER_XX assignment. Non-fatal — a failure here doesn't affect the save.
     match db.sync_episode_speaker_names(episode_id, &speaker_names) {
         Ok(()) => log::info!("Synced episode_speakers for episode {}", episode_id),
-        Err(e) => log::warn!("Failed to sync episode_speakers for episode {}: {}", episode_id, e),
+        Err(e) => log::warn!(
+            "Failed to sync episode_speakers for episode {}: {}",
+            episode_id,
+            e
+        ),
     }
 
     // Re-index FTS5 so search reflects the new speaker names (non-fatal)
     match db.index_episode_from_file(episode_id) {
-        Ok(n) if n > 0 => log::info!("Re-indexed {} segments for episode {} after speaker name update", n, episode_id),
-        Ok(_) => {},
-        Err(e) => log::warn!("FTS re-index failed after speaker name update for episode {}: {}", episode_id, e),
+        Ok(n) if n > 0 => log::info!(
+            "Re-indexed {} segments for episode {} after speaker name update",
+            n,
+            episode_id
+        ),
+        Ok(_) => {}
+        Err(e) => log::warn!(
+            "FTS re-index failed after speaker name update for episode {}: {}",
+            episode_id,
+            e
+        ),
     }
 
     Ok(())
@@ -1105,7 +1164,9 @@ pub async fn save_transcript_edits(
     let path = std::path::Path::new(&transcript_path);
     let with_speakers_path = path.with_file_name(format!(
         "{}_with_speakers.json",
-        path.file_stem().and_then(|s| s.to_str()).unwrap_or("transcript")
+        path.file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("transcript")
     ));
 
     let actual_path = if with_speakers_path.exists() {
@@ -1122,7 +1183,8 @@ pub async fn save_transcript_edits(
         .map_err(|e| format!("Failed to parse transcript JSON: {}", e))?;
 
     // Get the transcription array
-    let segments = json.get_mut("transcription")
+    let segments = json
+        .get_mut("transcription")
         .and_then(|t| t.as_array_mut())
         .ok_or("No transcription segments found")?;
 
@@ -1149,9 +1211,17 @@ pub async fn save_transcript_edits(
 
     // Re-index FTS5 so search reflects the updated text/speakers (non-fatal)
     match db.index_episode_from_file(episode_id) {
-        Ok(n) if n > 0 => log::info!("Re-indexed {} segments for episode {} after transcript edit", n, episode_id),
-        Ok(_) => {},
-        Err(e) => log::warn!("FTS re-index failed after transcript edit for episode {}: {}", episode_id, e),
+        Ok(n) if n > 0 => log::info!(
+            "Re-indexed {} segments for episode {} after transcript edit",
+            n,
+            episode_id
+        ),
+        Ok(_) => {}
+        Err(e) => log::warn!(
+            "FTS re-index failed after transcript edit for episode {}: {}",
+            episode_id,
+            e
+        ),
     }
 
     Ok(())
@@ -1220,18 +1290,23 @@ pub async fn reprocess_diarization(
     }
     let prioritize_top = prioritize_top.unwrap_or(true);
 
-    let transcript_path = episode.transcript_path.ok_or("No transcript for this episode")?;
+    let transcript_path = episode
+        .transcript_path
+        .ok_or("No transcript for this episode")?;
 
     // Get ALL speaker-related flags (resolved + unresolved) for comprehensive hints
-    let flags = db.get_all_speaker_flags(episode_id)
+    let flags = db
+        .get_all_speaker_flags(episode_id)
         .map_err(AppError::from)?;
 
     // Get approved Qwen performance-bit classifications (character voices to exclude from voiceprint)
-    let performance_segments = db.get_approved_performance_segments(episode_id)
+    let performance_segments = db
+        .get_approved_performance_segments(episode_id)
         .map_err(AppError::from)?;
 
     // Get approved transcript corrections that note multiple speakers
-    let multispeaker_correction_indices = db.get_approved_multispeaker_corrections(episode_id)
+    let multispeaker_correction_indices = db
+        .get_approved_multispeaker_corrections(episode_id)
         .map_err(AppError::from)?;
 
     // Build hints JSON
@@ -1240,7 +1315,8 @@ pub async fn reprocess_diarization(
     let mut exclude_from_voiceprint: Vec<i32> = Vec::new();
     let mut all_speakers = std::collections::HashSet::new();
     // Track segment indices that already have a multiple_speakers entry
-    let mut multi_speaker_idx_set: std::collections::HashSet<i32> = std::collections::HashSet::new();
+    let mut multi_speaker_idx_set: std::collections::HashSet<i32> =
+        std::collections::HashSet::new();
 
     for flag in &flags {
         match flag.flag_type.as_str() {
@@ -1254,7 +1330,9 @@ pub async fn reprocess_diarization(
                 }
             }
             "multiple_speakers" => {
-                let speaker_ids_parsed: Vec<String> = flag.speaker_ids.as_ref()
+                let speaker_ids_parsed: Vec<String> = flag
+                    .speaker_ids
+                    .as_ref()
                     .and_then(|s| serde_json::from_str(s).ok())
                     .unwrap_or_default();
                 for sid in &speaker_ids_parsed {
@@ -1292,7 +1370,10 @@ pub async fn reprocess_diarization(
     // Add approved Qwen performance bits: character voices that should be excluded from voiceprint
     for (seg_idx, char_name) in &performance_segments {
         let already_in_corrections = corrections.iter().any(|c| {
-            c.get("segment_idx").and_then(|v| v.as_i64()).map(|v| v as i32) == Some(*seg_idx)
+            c.get("segment_idx")
+                .and_then(|v| v.as_i64())
+                .map(|v| v as i32)
+                == Some(*seg_idx)
         });
         if !already_in_corrections {
             let name = char_name.as_deref().unwrap_or("CHARACTER");
@@ -1328,7 +1409,11 @@ pub async fn reprocess_diarization(
         }
     }
 
-    let num_speakers_hint = if all_speakers.len() > 1 { Some(all_speakers.len()) } else { None };
+    let num_speakers_hint = if all_speakers.len() > 1 {
+        Some(all_speakers.len())
+    } else {
+        None
+    };
 
     exclude_from_voiceprint.sort();
     exclude_from_voiceprint.dedup();
@@ -1341,7 +1426,8 @@ pub async fn reprocess_diarization(
     });
 
     // Write hints file next to transcript
-    let transcript_dir = std::path::Path::new(&transcript_path).parent()
+    let transcript_dir = std::path::Path::new(&transcript_path)
+        .parent()
         .ok_or("Invalid transcript path")?;
     let hints_path = transcript_dir.join(format!("{}_hints.json", episode_id));
     std::fs::write(&hints_path, serde_json::to_string_pretty(&hints).unwrap())
@@ -1357,10 +1443,14 @@ pub async fn reprocess_diarization(
     // Use race-condition-safe requeue method
     db.requeue_for_diarization_with_backend(
         episode_id,
-        if prioritize_top { PRIORITY_REPROCESS_TOP } else { 100 },
+        if prioritize_top {
+            PRIORITY_REPROCESS_TOP
+        } else {
+            100
+        },
         embedding_backend.as_deref(),
     )
-        .map_err(|e| format!("Failed to requeue for diarization: {}", e))?;
+    .map_err(|e| format!("Failed to requeue for diarization: {}", e))?;
 
     // Optional: pause new transcribe starts during priority reprocess for maximum diarize resources.
     let should_pause_transcribe = db
@@ -1401,17 +1491,20 @@ pub async fn reprocess_diarization(
     );
 
     // Notify frontend so queue display updates
-    let _ = app_handle.emit("queue_update", serde_json::json!({
-        "action": "diarization_queued",
-        "episode_id": episode_id,
-        "backend": embedding_backend,
-        "priority_top": prioritize_top,
-        "pause_transcribe": should_pause_transcribe,
-        "hints": {
-            "corrections": corrections.len(),
-            "multiple_speakers_segments": multiple_speakers_segments.len(),
-        }
-    }));
+    let _ = app_handle.emit(
+        "queue_update",
+        serde_json::json!({
+            "action": "diarization_queued",
+            "episode_id": episode_id,
+            "backend": embedding_backend,
+            "priority_top": prioritize_top,
+            "pause_transcribe": should_pause_transcribe,
+            "hints": {
+                "corrections": corrections.len(),
+                "multiple_speakers_segments": multiple_speakers_segments.len(),
+            }
+        }),
+    );
 
     Ok(())
 }
@@ -1444,7 +1537,11 @@ pub async fn save_voice_samples(
     episode_id: i64,
     samples: Vec<VoiceSample>,
 ) -> Result<i32, AppError> {
-    log::info!("save_voice_samples called for episode: {}, {} samples", episode_id, samples.len());
+    log::info!(
+        "save_voice_samples called for episode: {}, {} samples",
+        episode_id,
+        samples.len()
+    );
 
     // Get episode to find audio path
     let episode = db
@@ -1452,7 +1549,9 @@ pub async fn save_voice_samples(
         .map_err(AppError::from)?
         .ok_or("Episode not found")?;
 
-    let audio_path = episode.audio_file_path.ok_or("No audio file for this episode")?;
+    let audio_path = episode
+        .audio_file_path
+        .ok_or("No audio file for this episode")?;
 
     // Get project directory
     let home_dir = dirs::home_dir().ok_or("Failed to get home directory")?;
@@ -1471,7 +1570,10 @@ pub async fn save_voice_samples(
         .filter(|s| s.len() == 10);
 
     // Sound bite samples directory
-    let sound_bites_dir = project_dir.join("scripts").join("voice_library").join("sound_bites");
+    let sound_bites_dir = project_dir
+        .join("scripts")
+        .join("voice_library")
+        .join("sound_bites");
 
     let mut saved_count = 0;
     let embedding_backend = db
@@ -1496,7 +1598,11 @@ pub async fn save_voice_samples(
         let display_ep = episode
             .episode_number
             .as_deref()
-            .map(|n| n.chars().filter(|c| c.is_ascii_alphanumeric()).collect::<String>())
+            .map(|n| {
+                n.chars()
+                    .filter(|c| c.is_ascii_alphanumeric())
+                    .collect::<String>()
+            })
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| episode_id.to_string());
         let sample_filename = format!(
@@ -1508,7 +1614,10 @@ pub async fn save_voice_samples(
             // This is a sound bite — save to sound_bites dir
             log::info!(
                 "Extracting sound bite sample for '{}' (drop_id={}): {:.2}s - {:.2}s",
-                sample.speaker_name, drop_id, sample.start_time, sample.end_time
+                sample.speaker_name,
+                drop_id,
+                sample.start_time,
+                sample.end_time
             );
 
             let drop_dir = sound_bites_dir.join(&sample.speaker_name);
@@ -1521,11 +1630,16 @@ pub async fn save_voice_samples(
             let output = std::process::Command::new("ffmpeg")
                 .args([
                     "-y",
-                    "-i", audio_path.as_str(),
-                    "-ss", &format!("{:.3}", sample.start_time),
-                    "-to", &format!("{:.3}", sample.end_time),
-                    "-ar", "16000",
-                    "-ac", "1",
+                    "-i",
+                    audio_path.as_str(),
+                    "-ss",
+                    &format!("{:.3}", sample.start_time),
+                    "-to",
+                    &format!("{:.3}", sample.end_time),
+                    "-ar",
+                    "16000",
+                    "-ac",
+                    "1",
                     sample_path.to_str().unwrap(),
                 ])
                 .output()
@@ -1540,16 +1654,18 @@ pub async fn save_voice_samples(
                 let _ = db.update_audio_drop_reference(drop_id, &path_str);
 
                 // Insert DB record for this voice sample
-                let voice_sample_id = db.insert_voice_sample(
-                    &sample.speaker_name,
-                    Some(episode_id),
-                    sample.segment_idx,
-                    sample.start_time,
-                    sample.end_time,
-                    Some(&sample.text),
-                    &path_str,
-                    Some("manual"),
-                ).ok();
+                let voice_sample_id = db
+                    .insert_voice_sample(
+                        &sample.speaker_name,
+                        Some(episode_id),
+                        sample.segment_idx,
+                        sample.start_time,
+                        sample.end_time,
+                        Some(&sample.text),
+                        &path_str,
+                        Some("manual"),
+                    )
+                    .ok();
 
                 // Train the voice embedding immediately from the extracted WAV so the
                 // user doesn't have to manually hit "Recalibrate All".
@@ -1589,15 +1705,27 @@ pub async fn save_voice_samples(
                     }
                     Ok(o) => {
                         let stderr = String::from_utf8_lossy(&o.stderr);
-                        log::warn!("Sound bite embedding training failed for '{}': {}", sample.speaker_name, stderr);
+                        log::warn!(
+                            "Sound bite embedding training failed for '{}': {}",
+                            sample.speaker_name,
+                            stderr
+                        );
                     }
                     Err(e) => {
-                        log::warn!("Could not run voice_library.py for sound bite '{}': {}", sample.speaker_name, e);
+                        log::warn!(
+                            "Could not run voice_library.py for sound bite '{}': {}",
+                            sample.speaker_name,
+                            e
+                        );
                     }
                 }
             } else {
                 let stderr = String::from_utf8_lossy(&output.stderr);
-                log::error!("Failed to extract sound bite for '{}': {}", sample.speaker_name, stderr);
+                log::error!(
+                    "Failed to extract sound bite for '{}': {}",
+                    sample.speaker_name,
+                    stderr
+                );
             }
         } else {
             // This is a real speaker — extract audio AND add to voice library
@@ -1625,11 +1753,16 @@ pub async fn save_voice_samples(
             let ffmpeg_output = std::process::Command::new("ffmpeg")
                 .args([
                     "-y",
-                    "-i", audio_path.as_str(),
-                    "-ss", &format!("{:.3}", sample.start_time),
-                    "-to", &format!("{:.3}", sample.end_time),
-                    "-ar", "16000",
-                    "-ac", "1",
+                    "-i",
+                    audio_path.as_str(),
+                    "-ss",
+                    &format!("{:.3}", sample.start_time),
+                    "-to",
+                    &format!("{:.3}", sample.end_time),
+                    "-ar",
+                    "16000",
+                    "-ac",
+                    "1",
                     sample_path.to_str().unwrap(),
                 ])
                 .output()
@@ -1639,19 +1772,25 @@ pub async fn save_voice_samples(
                 log::info!("Extracted speaker audio to '{}'", path_str);
 
                 // Insert DB record for this voice sample
-                voice_sample_id = db.insert_voice_sample(
-                    &sample.speaker_name,
-                    Some(episode_id),
-                    sample.segment_idx,
-                    sample.start_time,
-                    sample.end_time,
-                    Some(&sample.text),
-                    &path_str,
-                    Some("manual"),
-                ).ok();
+                voice_sample_id = db
+                    .insert_voice_sample(
+                        &sample.speaker_name,
+                        Some(episode_id),
+                        sample.segment_idx,
+                        sample.start_time,
+                        sample.end_time,
+                        Some(&sample.text),
+                        &path_str,
+                        Some("manual"),
+                    )
+                    .ok();
             } else {
                 let stderr = String::from_utf8_lossy(&ffmpeg_output.stderr);
-                log::error!("Failed to extract audio for '{}': {}", sample.speaker_name, stderr);
+                log::error!(
+                    "Failed to extract audio for '{}': {}",
+                    sample.speaker_name,
+                    stderr
+                );
             }
 
             // 2. Also add to voice library for embedding (existing flow)
@@ -1694,7 +1833,11 @@ pub async fn save_voice_samples(
                 log::info!("Added voice sample for '{}'", sample.speaker_name);
             } else {
                 let stderr = String::from_utf8_lossy(&output.stderr);
-                log::error!("Failed to add voice sample for '{}': {}", sample.speaker_name, stderr);
+                log::error!(
+                    "Failed to add voice sample for '{}': {}",
+                    sample.speaker_name,
+                    stderr
+                );
             }
         }
     }
@@ -1739,7 +1882,9 @@ pub async fn analyze_episode_content(
         .map_err(AppError::from)?
         .ok_or("Episode not found")?;
 
-    let transcript_path = episode.transcript_path.ok_or("No transcript for this episode")?;
+    let transcript_path = episode
+        .transcript_path
+        .ok_or("No transcript for this episode")?;
 
     // Get project directory
     let home_dir = dirs::home_dir().ok_or("Failed to get home directory")?;

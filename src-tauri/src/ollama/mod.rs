@@ -38,7 +38,8 @@ impl OllamaClient {
     pub async fn health_check(&self) -> Result<OllamaStatus, String> {
         // Check if server is running
         let tags_url = format!("{}/api/tags", self.base_url);
-        let response = self.client
+        let response = self
+            .client
             .get(&tags_url)
             .send()
             .await
@@ -53,7 +54,10 @@ impl OllamaClient {
             .await
             .map_err(|e| format!("Failed to parse Ollama response: {}", e))?;
 
-        let model_available = tags.models.iter().any(|m| m.name.starts_with(&self.model.split(':').next().unwrap_or(&self.model)));
+        let model_available = tags.models.iter().any(|m| {
+            m.name
+                .starts_with(&self.model.split(':').next().unwrap_or(&self.model))
+        });
 
         Ok(OllamaStatus {
             running: true,
@@ -78,9 +82,14 @@ impl OllamaClient {
             }),
         };
 
-        log::info!("Sending request to Ollama: model={}, prompt_len={}", self.model, prompt.len());
+        log::info!(
+            "Sending request to Ollama: model={}, prompt_len={}",
+            self.model,
+            prompt.len()
+        );
 
-        let response = self.client
+        let response = self
+            .client
             .post(&url)
             .json(&request)
             .send()
@@ -98,9 +107,11 @@ impl OllamaClient {
             .await
             .map_err(|e| format!("Failed to parse Ollama response: {}", e))?;
 
-        log::info!("Ollama response received: {} chars, eval_duration={:?}ms",
+        log::info!(
+            "Ollama response received: {} chars, eval_duration={:?}ms",
             result.response.len(),
-            result.eval_duration.map(|d| d / 1_000_000));
+            result.eval_duration.map(|d| d / 1_000_000)
+        );
 
         Ok(result.response)
     }
@@ -255,15 +266,18 @@ mod tests {
         assert!(json.is_some());
 
         // Markdown code block
-        let json = extract_json_from_response(r#"Here's the result:
+        let json = extract_json_from_response(
+            r#"Here's the result:
 ```json
 {"items": [1, 2, 3]}
 ```
-"#);
+"#,
+        );
         assert!(json.is_some());
 
         // JSON embedded in text
-        let json = extract_json_from_response(r#"The extracted data is: {"value": 42} and that's it."#);
+        let json =
+            extract_json_from_response(r#"The extracted data is: {"value": 42} and that's it."#);
         assert!(json.is_some());
     }
 }

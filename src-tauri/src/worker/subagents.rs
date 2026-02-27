@@ -30,7 +30,10 @@ pub async fn quality_scan_agent(db: Arc<Database>, app_handle: tauri::AppHandle)
         let unresolved_labels = match db.count_unresolved_speaker_labels() {
             Ok(n) => n,
             Err(e) => {
-                log::warn!("quality_scan: count_unresolved_speaker_labels failed: {}", e);
+                log::warn!(
+                    "quality_scan: count_unresolved_speaker_labels failed: {}",
+                    e
+                );
                 0
             }
         };
@@ -38,7 +41,10 @@ pub async fn quality_scan_agent(db: Arc<Database>, app_handle: tauri::AppHandle)
         let unindexed = match db.count_unindexed_completed_episodes() {
             Ok(n) => n,
             Err(e) => {
-                log::warn!("quality_scan: count_unindexed_completed_episodes failed: {}", e);
+                log::warn!(
+                    "quality_scan: count_unindexed_completed_episodes failed: {}",
+                    e
+                );
                 0
             }
         };
@@ -79,13 +85,19 @@ pub async fn extraction_coordinator_agent(db: Arc<Database>, app_handle: tauri::
         let ids = match db.get_unextracted_episode_ids(50) {
             Ok(v) => v,
             Err(e) => {
-                log::warn!("extraction_coordinator: get_unextracted_episode_ids failed: {}", e);
+                log::warn!(
+                    "extraction_coordinator: get_unextracted_episode_ids failed: {}",
+                    e
+                );
                 continue;
             }
         };
 
         if !ids.is_empty() {
-            log::info!("Extraction coordinator: {} episodes awaiting extraction", ids.len());
+            log::info!(
+                "Extraction coordinator: {} episodes awaiting extraction",
+                ids.len()
+            );
             let _ = app_handle.emit(
                 "extraction_queued",
                 serde_json::json!({ "count": ids.len() }),
@@ -107,10 +119,7 @@ pub async fn wiki_sync_agent(_db: Arc<Database>, app_handle: tauri::AppHandle) {
 
     loop {
         let now = Local::now();
-        let today_target = now
-            .date_naive()
-            .and_hms_opt(3, 0, 0)
-            .unwrap();
+        let today_target = now.date_naive().and_hms_opt(3, 0, 0).unwrap();
 
         let next_run = if now.naive_local() < today_target {
             today_target
@@ -170,7 +179,10 @@ pub async fn hints_prefetch_agent(db: Arc<Database>, app_handle: tauri::AppHandl
         let episode_ids = match db.get_episodes_with_unresolved_speaker_flags() {
             Ok(v) => v,
             Err(e) => {
-                log::warn!("hints_prefetch: get_episodes_with_unresolved_speaker_flags failed: {}", e);
+                log::warn!(
+                    "hints_prefetch: get_episodes_with_unresolved_speaker_flags failed: {}",
+                    e
+                );
                 continue;
             }
         };
@@ -186,7 +198,11 @@ pub async fn hints_prefetch_agent(db: Arc<Database>, app_handle: tauri::AppHandl
             }
 
             if let Err(e) = write_hints_file(*episode_id, &hints_path, &db) {
-                log::warn!("hints_prefetch: failed to write hints for episode {}: {}", episode_id, e);
+                log::warn!(
+                    "hints_prefetch: failed to write hints for episode {}: {}",
+                    episode_id,
+                    e
+                );
             } else {
                 prefetched += 1;
             }

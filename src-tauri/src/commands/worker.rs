@@ -151,7 +151,10 @@ pub async fn set_prevent_sleep(
         Ok(true)
     } else {
         if let Some(mut child) = guard.take() {
-            log::info!("Prevent sleep disabled (killing caffeinate pid: {})", child.id());
+            log::info!(
+                "Prevent sleep disabled (killing caffeinate pid: {})",
+                child.id()
+            );
             let _ = child.kill();
             let _ = child.wait();
         }
@@ -161,9 +164,7 @@ pub async fn set_prevent_sleep(
 
 /// Check if prevent-sleep is active
 #[tauri::command]
-pub async fn get_prevent_sleep(
-    caffeinate: State<'_, CaffeinateProcess>,
-) -> Result<bool, AppError> {
+pub async fn get_prevent_sleep(caffeinate: State<'_, CaffeinateProcess>) -> Result<bool, AppError> {
     let mut guard = caffeinate.0.lock().map_err(|e| e.to_string())?;
     // Check if process is still alive
     if let Some(ref mut child) = *guard {

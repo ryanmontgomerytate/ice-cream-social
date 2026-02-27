@@ -21,7 +21,7 @@ Source strategy:
 
 | Phase | Status | What is complete | What is next |
 |---|---|---|---|
-| Phase 0: SDLC foundation | `in_progress` | CI workflow restored; issue/PR templates; deployment + backup runbooks; architecture doc restored. | Fix existing Rust fmt failure in CI so full pipeline is green. |
+| Phase 0: SDLC foundation | `done` | CI workflow restored; issue/PR templates; deployment + backup runbooks; architecture doc restored; Rust fmt violations fixed in `src-tauri`. | Monitor CI for regressions and enforce formatting pre-commit/PR. |
 | Phase 1: Web read + hosted model | `in_progress` | Supabase schema + import pipeline; hosted import/verify modes; web episodes/search/wiki/episode detail reads live; hosted verify job wired in Actions. | Add wiki index/discovery page and tighten search ranking relevance. |
 | Phase 2: Community editing + moderation | `not_started` | Requirements captured in `feedTheScoops.md`. | Implement auth, revision model, moderation queue, and abuse controls. |
 | Phase 3: Phone-first polish | `not_started` | Responsive foundations present in web pages. | Add PWA manifest/install flow and mobile UX performance/accessibility pass. |
@@ -41,14 +41,13 @@ Source strategy:
 
 | Blocker | Impact | Resolution path |
 |---|---|---|
-| Rust `cargo fmt --check` failing in CI | Full CI workflow red | Run formatter and commit formatting changes in Rust crate(s). |
 | No `SQLITE_DB_URL` secret for Actions | Full source-vs-hosted parity check skipped on hosted runner | Add downloadable DB snapshot URL secret or run verify on self-hosted runner with local DB. |
 
 ## Next 3 Priority Tasks
 
-1. Make CI fully green by fixing Rust fmt violations.
-2. Add wiki index/discovery route and nav link in web app.
-3. Start Phase 2 schema + API foundation for revisions/moderation queue.
+1. Add wiki index/discovery route and nav link in web app.
+2. Start Phase 2 schema + API foundation for revisions/moderation queue.
+3. Add guardrails to keep Rust formatting enforced before CI (local hook or dedicated check guidance).
 
 ## Update Rule
 

@@ -2,6 +2,28 @@
 
 ## Session: February 27, 2026
 
+### Current State Update (Phase 0 SDLC Foundation: Rust fmt Blocker Cleared)
+
+**Done:**
+- Resolved the outstanding Rust formatting blocker by running `cargo fmt --all` for the `src-tauri` crate.
+- Verified formatting, compile, and Rust unit tests all pass locally after formatting changes.
+- Updated `docs/EVOLVE_ICS_TRACKER.md`:
+  - `Phase 0: SDLC foundation` moved from `in_progress` -> `done`
+  - removed Rust fmt blocker row
+  - updated next priority tasks accordingly.
+
+**Pending:**
+- Trigger and confirm CI run from GitHub Actions to validate the previous `cargo fmt --check` failure is cleared in hosted CI.
+- Update issue `#1` (`[Evolve] Phase 0: SDLC foundation`) to `status:done` and close once CI confirmation is complete.
+
+**Blockers:**
+- None locally.
+
+**Tests Run:**
+- `cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check` — **pass**
+- `cargo check --manifest-path src-tauri/Cargo.toml` — **pass**
+- `cargo test --manifest-path src-tauri/Cargo.toml --lib` — **pass** (49 passed, 0 failed)
+
 ### Current State Update (Uncommitted Changes Reviewed + Pushed)
 
 **Done:**

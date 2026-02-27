@@ -22,9 +22,7 @@ pub async fn get_pipeline_stats(
 }
 
 #[tauri::command]
-pub async fn get_pipeline_health(
-    db: State<'_, Arc<Database>>,
-) -> Result<PipelineHealth, AppError> {
+pub async fn get_pipeline_health(db: State<'_, Arc<Database>>) -> Result<PipelineHealth, AppError> {
     db.get_pipeline_health_stats().map_err(AppError::from)
 }
 
@@ -60,27 +58,35 @@ pub async fn get_queue_episode_lists(
 ) -> Result<QueueEpisodeLists, AppError> {
     let (transcribe, diarize) = db.get_queue_episode_lists().map_err(AppError::from)?;
     Ok(QueueEpisodeLists {
-        transcribe: transcribe.into_iter().map(|(id, title, episode_number, added_date, is_downloaded)| {
-            QueueEpisodeItem {
-                id,
-                title,
-                episode_number,
-                added_date,
-                is_downloaded,
-                embedding_backend_override: None,
-                priority: None,
-            }
-        }).collect(),
-        diarize: diarize.into_iter().map(|(id, title, episode_number, added_date, embedding_backend_override, priority)| {
-            QueueEpisodeItem {
-                id,
-                title,
-                episode_number,
-                added_date,
-                is_downloaded: true,
-                embedding_backend_override,
-                priority: Some(priority),
-            }
-        }).collect(),
+        transcribe: transcribe
+            .into_iter()
+            .map(
+                |(id, title, episode_number, added_date, is_downloaded)| QueueEpisodeItem {
+                    id,
+                    title,
+                    episode_number,
+                    added_date,
+                    is_downloaded,
+                    embedding_backend_override: None,
+                    priority: None,
+                },
+            )
+            .collect(),
+        diarize: diarize
+            .into_iter()
+            .map(
+                |(id, title, episode_number, added_date, embedding_backend_override, priority)| {
+                    QueueEpisodeItem {
+                        id,
+                        title,
+                        episode_number,
+                        added_date,
+                        is_downloaded: true,
+                        embedding_backend_override,
+                        priority: Some(priority),
+                    }
+                },
+            )
+            .collect(),
     })
 }
