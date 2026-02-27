@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type {
   AdminPaginatedResponse,
   ContentRevision,
+  ModerationActionType,
   ModerationQueueItemWithRef,
   PendingEditWithRevision,
 } from "@/lib/types";
@@ -47,6 +48,8 @@ export default function AdminDashboard() {
   const [queueType, setQueueType] = useState("all");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionQueueId, setActionQueueId] = useState<number | null>(null);
   const [pendingEdits, setPendingEdits] = useState<AdminPaginatedResponse<PendingEditWithRevision> | null>(
     null
   );
@@ -119,6 +122,42 @@ export default function AdminDashboard() {
       setIsLoading(false);
     }
   }, [adminKey, pendingStatus, queueStatus, queueType]);
+
+  const runQueueAction = useCallback(
+    async (queueItemId: number, action: ModerationActionType) => {
+      setActionError(null);
+      setActionQueueId(queueItemId);
+
+      try {
+        const response = await fetch("/api/v1/admin/moderation-actions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            queue_item_id: queueItemId,
+            action,
+          }),
+        });
+
+        const payload = await response.json();
+        if (!response.ok) {
+          const message =
+            typeof payload?.error === "string" ? payload.error : "Moderation action failed";
+          throw new Error(message);
+        }
+
+        await loadData();
+      } catch (requestError) {
+        const message =
+          requestError instanceof Error ? requestError.message : "Moderation action failed";
+        setActionError(message);
+      } finally {
+        setActionQueueId(null);
+      }
+    },
+    [loadData]
+  );
 
   const summary = useMemo(
     () => [
@@ -208,6 +247,10 @@ export default function AdminDashboard() {
           </button>
           {error && <p className="text-sm text-red-400">{error}</p>}
         </div>
+        <p className="mt-2 text-xs text-gray-500">
+          Write actions use authenticated moderator/admin role checks (no API key bypass).
+        </p>
+        {actionError && <p className="mt-2 text-sm text-red-400">{actionError}</p>}
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -267,6 +310,7 @@ export default function AdminDashboard() {
                   <th className="pb-2 pr-4">Status</th>
                   <th className="pb-2 pr-4">Priority</th>
                   <th className="pb-2 pr-4">Reference</th>
+                  <th className="pb-2 pr-4">Actions</th>
                 </tr>
               </thead>
               <tbody className="text-gray-300">
@@ -278,6 +322,56 @@ export default function AdminDashboard() {
                     <td className="py-2 pr-4">{item.priority}</td>
                     <td className="py-2 pr-4">
                       {item.ref ? `#${item.ref_id}` : `#${item.ref_id} (not hydrated)`}
+                    </td>
+                    <td className="py-2 pr-4">
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => runQueueAction(item.id, "assign")}
+                          disabled={actionQueueId === item.id}
+                          className="rounded border border-gray-700 px-2 py-1 text-xs text-gray-300 hover:border-gray-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          Assign me
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => runQueueAction(item.id, "unassign")}
+                          disabled={actionQueueId === item.id}
+                          className="rounded border border-gray-700 px-2 py-1 text-xs text-gray-300 hover:border-gray-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          Unassign
+                        </button>
+                        {item.queue_type === "pending_edit" &&
+                          item.status !== "resolved" &&
+                          item.status !== "dismissed" && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => runQueueAction(item.id, "approve")}
+                                disabled={actionQueueId === item.id}
+                                className="rounded border border-emerald-700/70 px-2 py-1 text-xs text-emerald-300 hover:border-emerald-500 hover:text-emerald-200 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                Approve
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => runQueueAction(item.id, "needs_changes")}
+                                disabled={actionQueueId === item.id}
+                                className="rounded border border-amber-700/70 px-2 py-1 text-xs text-amber-300 hover:border-amber-500 hover:text-amber-200 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                Needs changes
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => runQueueAction(item.id, "reject")}
+                                disabled={actionQueueId === item.id}
+                                className="rounded border border-red-700/70 px-2 py-1 text-xs text-red-300 hover:border-red-500 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                Reject
+                              </button>
+                            </>
+                          )}
+                      </div>
                     </td>
                   </tr>
                 ))}

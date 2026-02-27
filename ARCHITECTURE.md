@@ -305,6 +305,32 @@ Security posture for this initial slice:
 Admin review UI:
 - `/admin` now renders a minimal dashboard that loads pending edits, queue items, and unapproved revisions through these API routes.
 
+### Moderation Write Path (Phase 2 progression)
+
+Moderation write action endpoint is now added:
+- `POST /api/v1/admin/moderation-actions`
+
+Write behavior:
+- Uses authenticated Supabase session + role check (`admin`/`moderator`) via `public.current_user_has_role(text[])`.
+- Calls transactional RPC `public.apply_moderation_action(...)` for:
+  - `approve`
+  - `reject`
+  - `needs_changes`
+  - `assign`
+  - `unassign`
+- RPC runs as `SECURITY INVOKER` so RLS policies are enforced for the caller.
+
+RLS updates introduced in migration `web/supabase/migrations/005_phase2_moderation_actions.sql`:
+- Moderator/admin SELECT/UPDATE policies on:
+  - `content_revisions`
+  - `pending_edits`
+  - `moderation_queue`
+- Moderator/admin SELECT/INSERT policies on:
+  - `moderation_actions`
+
+Current auth gap:
+- `/login` is still a stub in the web app, so write actions require an existing authenticated moderator/admin session provisioned out-of-band.
+
 ## Target Direction (Short Version)
 
 Near-term (desktop quality):

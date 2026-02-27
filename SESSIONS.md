@@ -2,6 +2,36 @@
 
 ## Session: February 27, 2026
 
+### Current State Update (Phase 2: Role-Aware Moderation Write Actions + RLS Policies)
+
+**Done:**
+- Added hosted migration `web/supabase/migrations/005_phase2_moderation_actions.sql` and applied it to Supabase:
+  - added `public.current_user_has_role(text[])` helper
+  - expanded `moderation_actions.action` check to include `assign` / `unassign`
+  - added transactional RPC `public.apply_moderation_action(...)` for approve/reject/needs_changes/assign/unassign
+  - added moderator/admin RLS policies for `content_revisions`, `pending_edits`, `moderation_queue`, and `moderation_actions`.
+- Added authenticated moderator guard `web/lib/moderation-auth.ts` (session + role check via RPC).
+- Added `POST /api/v1/admin/moderation-actions` endpoint at:
+  - `web/app/api/v1/admin/moderation-actions/route.ts`
+- Extended `/admin` dashboard actions (`web/components/admin/AdminDashboard.tsx`) with queue action buttons:
+  - Assign me / Unassign
+  - Approve / Needs changes / Reject (for pending_edit queue items)
+- Updated roadmap + architecture docs for this Phase 2 write-action milestone.
+
+**Pending:**
+- Build login/auth UX and role-bootstrap provisioning so write actions are usable without manual moderator session setup.
+- Expand moderation actions beyond pending edits (reports/system flags).
+
+**Blockers:**
+- Web login page remains a Phase 3 stub (`/login`), so moderator write flow requires existing authenticated Supabase session.
+
+**Tests Run:**
+- `mcp__supabase__apply_migration(name=\"phase2_moderation_actions\", ...)` — **pass**
+- `mcp__supabase__execute_sql(\"select proname from pg_proc where proname in ('current_user_has_role','apply_moderation_action')\")` — **pass**
+- `mcp__supabase__execute_sql(\"select ... from pg_constraint ... moderation_actions_action_check\")` — **pass**
+- `mcp__supabase__execute_sql(\"select policyname, tablename, cmd from pg_policies ... moderator_%\")` — **pass**
+- `npm --prefix web run build` — **pass** (route map includes `/api/v1/admin/moderation-actions`)
+
 ### Current State Update (Phase 2: First Admin API Surface + Dashboard)
 
 **Done:**

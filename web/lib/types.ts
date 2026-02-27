@@ -257,6 +257,13 @@ export type ModerationQueueStatus = "open" | "in_review" | "resolved" | "dismiss
 
 export type ModerationQueueType = "pending_edit" | "report" | "system_flag";
 
+export type ModerationActionType =
+  | "approve"
+  | "reject"
+  | "needs_changes"
+  | "assign"
+  | "unassign";
+
 export interface ContentRevision {
   id: number;
   show_id: number | null;
@@ -314,6 +321,14 @@ export interface ModerationQueueItem {
 
 export interface ModerationQueueItemWithRef extends ModerationQueueItem {
   ref: PendingEdit | ReportSummary | null;
+}
+
+export interface ModerationActionResult {
+  queue_item_id: number;
+  action: ModerationActionType;
+  status: ModerationQueueStatus | "open";
+  pending_edit_id?: number;
+  revision_id?: number;
 }
 
 export interface AdminPaginatedResponse<T> {
