@@ -23,7 +23,7 @@ Source strategy:
 |---|---|---|---|
 | Phase 0: SDLC foundation | `done` | CI workflow restored; issue/PR templates; deployment + backup runbooks; architecture doc restored; Rust fmt violations fixed in `src-tauri`. | Monitor CI for regressions and enforce formatting pre-commit/PR. |
 | Phase 1: Web read + hosted model | `in_progress` | Supabase schema + import pipeline; hosted import/verify modes; web episodes/search/wiki/episode detail reads live; hosted verify job wired in Actions; wiki index/discovery route shipped; ranked search RPC + fallback path implemented; migration applied and validated in hosted Supabase; fast search RPC timeout-degrade path added and validated. | Tune ranking quality for broad/common queries and refine tie-break behavior. |
-| Phase 2: Community editing + moderation | `not_started` | Requirements captured in `feedTheScoops.md`. | Implement auth, revision model, moderation queue, and abuse controls. |
+| Phase 2: Community editing + moderation | `in_progress` | Hosted Phase 2 schema foundation migration added/applied (`profiles`, roles/memberships, revisions, pending edits, moderation queue/actions, reports, trust/rate-limit/audit, import batch items). | Implement auth + first revision/pending-edit/moderation queue API endpoints and admin review surface. |
 | Phase 3: Phone-first polish | `not_started` | Responsive foundations present in web pages. | Add PWA manifest/install flow and mobile UX performance/accessibility pass. |
 | Phase 4: Multi-show generalization | `not_started` | `shows` support exists in hosted schema. | Add show-scoped routing/config and API/UI show selection patterns. |
 
@@ -34,6 +34,7 @@ Source strategy:
 | Hosted import parity | `done` | Full local import-source vs hosted verification passing locally. |
 | GitHub hosted verification | `in_progress` | Secret/env wiring done; fallback hosted checks run in Actions; optional `SQLITE_DB_URL` still not configured. |
 | Voice library SQLite migration | `in_progress` | Core runtime paths switched to SQLite store mode; optional UI actions pending. |
+| Phase 2 moderation schema | `done` | Phase 2 foundation tables migrated and validated in hosted Supabase. |
 | Playwright modernization | `done` | Deterministic test harness in place and workflow enabled. |
 | TikTok-style clip feed | `not_started` | Dedicated tracker created; implementation phases pending. |
 
@@ -46,7 +47,7 @@ Source strategy:
 ## Next 3 Priority Tasks
 
 1. Tune search ranking quality for broad/common queries and refine tie-break behavior.
-2. Start Phase 2 schema + API foundation for revisions/moderation queue.
+2. Build first Phase 2 API endpoints for revisions/pending edits/moderation queue reads.
 3. Add guardrails to keep Rust formatting enforced before CI (local hook or dedicated check guidance).
 
 ## Update Rule

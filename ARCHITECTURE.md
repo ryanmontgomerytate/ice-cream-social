@@ -248,7 +248,10 @@ These should be used for release execution and incident response.
 ## Hosted Phase 1 Bridge Artifacts
 
 Phase 1 web migration artifacts are now staged in-repo:
-- Hosted schema migration: `web/supabase/migrations/001_initial_schema.sql`
+- Hosted schema migrations:
+  - `web/supabase/migrations/001_initial_schema.sql`
+  - `web/supabase/migrations/002_search_ranked_rpc.sql`
+  - `web/supabase/migrations/003_search_fast_rpc.sql`
 - SQLite -> hosted export/import pipeline: `scripts/export_to_hosted.py`
 - Hosted env templates:
   - `web/.env.example`
@@ -258,6 +261,34 @@ Current intent:
 - Keep desktop SQLite as the source of truth while hosted Postgres is populated by idempotent upsert imports.
 - Restrict hosted scope to read-first public experience tables (episodes, transcript segments, speakers, characters, chapters, wiki, drops) plus import auditing.
 - Preserve FK-safe import order and chunked segment loading to handle large transcript tables safely.
+
+## Hosted Phase 2 Foundation (Community Editing + Moderation)
+
+Phase 2 foundation schema is now added and migrated in hosted Supabase:
+- `web/supabase/migrations/004_phase2_community_foundation.sql`
+
+Added domains:
+- Auth-linked profiles and role assignment:
+  - `profiles`
+  - `roles`
+  - `user_role_assignments`
+  - `show_memberships`
+- Revision and moderation workflow:
+  - `content_revisions`
+  - `pending_edits`
+  - `moderation_queue`
+  - `moderation_actions`
+  - `reports`
+- Trust/abuse/audit telemetry:
+  - `rate_limit_events`
+  - `trust_scores`
+  - `audit_log`
+- Import observability extension:
+  - `import_batch_items`
+
+Current Phase 2 schema posture:
+- RLS enabled on new tables.
+- Anonymous access remains closed by default until auth + API policies are introduced.
 
 ## Target Direction (Short Version)
 

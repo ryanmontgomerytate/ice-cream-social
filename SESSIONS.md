@@ -2,6 +2,31 @@
 
 ## Session: February 27, 2026
 
+### Current State Update (Phase 2 Started: Community/Moderation Schema Foundation)
+
+**Done:**
+- Added migration `web/supabase/migrations/004_phase2_community_foundation.sql` with Phase 2 foundation tables:
+  - profiles/roles/memberships
+  - content revisions + pending edits
+  - moderation queue/actions + reports
+  - trust/rate-limit/audit telemetry
+  - import batch items extension.
+- Applied migration in hosted Supabase (`phase2_community_foundation`).
+- Verified all expected Phase 2 tables exist in hosted DB.
+- Updated `docs/EVOLVE_ICS_TRACKER.md` and `ARCHITECTURE.md` to reflect Phase 2 start and migrated schema.
+- Commit scope intentionally limited to active phase files only.
+
+**Pending:**
+- Implement first Phase 2 API endpoints for revisions/pending edits/moderation queue reads.
+- Add RLS policies for authenticated/admin flows once auth/API layer is in place.
+
+**Blockers:**
+- None.
+
+**Tests Run:**
+- `mcp__supabase__apply_migration(name=\"phase2_community_foundation\", ...)` — **pass**
+- `mcp__supabase__execute_sql(\"select table_name from information_schema.tables ...\")` — **pass** (all Phase 2 tables present)
+
 ### Current State Update (Phase 1 Search Reliability: Fast RPC Live for Broad Queries)
 
 **Done:**
