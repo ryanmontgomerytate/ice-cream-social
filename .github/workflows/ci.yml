@@ -70,7 +70,7 @@ jobs:
   hosted-verify:
     name: Hosted Import Verify
     runs-on: ubuntu-latest
-    if: ${{ github.event_name != 'pull_request' && secrets.DATABASE_URL != '' }}
+    if: ${{ github.event_name != 'pull_request' }}
     environment: hosted
     steps:
       - uses: actions/checkout@v4
@@ -85,18 +85,27 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install psycopg2-binary
 
-      - name: Check SQLite source presence
-        id: sqlite_check
+      - name: Check verify prerequisites
+        id: verify_prereqs
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
+          if [ -n "${DATABASE_URL:-}" ]; then
+            echo "database_url_set=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Skipping hosted verify: DATABASE_URL secret is not available to this job."
+            echo "database_url_set=false" >> "$GITHUB_OUTPUT"
+          fi
+
           if [ -f data/ice_cream_social.db ]; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "sqlite_exists=true" >> "$GITHUB_OUTPUT"
           else
             echo "::warning::Skipping hosted verify: data/ice_cream_social.db is not present in this checkout."
-            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "sqlite_exists=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Verify hosted row parity
-        if: ${{ steps.sqlite_check.outputs.exists == 'true' }}
+        if: ${{ steps.verify_prereqs.outputs.database_url_set == 'true' && steps.verify_prereqs.outputs.sqlite_exists == 'true' }}
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python scripts/export_to_hosted.py --mode verify
