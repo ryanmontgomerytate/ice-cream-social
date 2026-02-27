@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { queueAPI, episodesAPI, isTauri } from '../services/api'
+import { queueAPI, episodesAPI } from '../services/api'
 import TranscriptModal from './TranscriptModal'
 
 export default function EpisodeCard({ episode, onNotification, onUpdate, queue }) {

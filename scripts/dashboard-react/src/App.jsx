@@ -32,80 +32,41 @@ function App() {
   const [transcriptEpisode, setTranscriptEpisode] = useState(null)
   const [openEpisodeId, setOpenEpisodeId] = useState(null)
 
-  // Initialize connection (Tauri events or Socket.IO)
+  // Initialize Tauri event listeners
   useEffect(() => {
-    if (isTauri) {
-      // Use Tauri events
-      console.log('Running in Tauri mode')
-      setConnected(true)
+    setConnected(true)
 
-      let cleanupFn = null
-      let cancelled = false
+    let cleanupFn = null
+    let cancelled = false
 
-      setupEventListeners({
-        onStatusUpdate: (data) => {
-          loadCurrentActivity()
-        },
-        onQueueUpdate: () => {
-          loadStats()
-        },
-        onStatsUpdate: () => {
-          loadStats()
-        },
-        onTranscriptionComplete: (episodeId) => {
-          showNotification(`Transcription completed for episode ${episodeId}`, 'success')
-          loadStats()
-        },
-        onTranscriptionFailed: ([episodeId, error]) => {
-          showNotification(`Transcription failed: ${error}`, 'error')
-        },
-      }).then(cleanup => {
-        if (cancelled) {
-          cleanup()
-        } else {
-          cleanupFn = cleanup
-        }
-      })
-
-      return () => {
-        cancelled = true
-        cleanupFn?.()
+    setupEventListeners({
+      onStatusUpdate: (data) => {
+        loadCurrentActivity()
+      },
+      onQueueUpdate: () => {
+        loadStats()
+      },
+      onStatsUpdate: () => {
+        loadStats()
+      },
+      onTranscriptionComplete: (episodeId) => {
+        showNotification(`Transcription completed for episode ${episodeId}`, 'success')
+        loadStats()
+      },
+      onTranscriptionFailed: ([episodeId, error]) => {
+        showNotification(`Transcription failed: ${error}`, 'error')
+      },
+    }).then(cleanup => {
+      if (cancelled) {
+        cleanup()
+      } else {
+        cleanupFn = cleanup
       }
-    } else {
-      // Fall back to Socket.IO for development
-      console.log('Running in browser mode (Socket.IO)')
-      import('socket.io-client').then(({ io }) => {
-        const newSocket = io()
+    })
 
-        newSocket.on('connect', () => {
-          console.log('Connected to server')
-          setConnected(true)
-          newSocket.emit('request_update')
-        })
-
-        newSocket.on('disconnect', () => {
-          console.log('Disconnected from server')
-          setConnected(false)
-        })
-
-        newSocket.on('status_update', (data) => {
-          setCurrentActivity(data)
-        })
-
-        newSocket.on('stats_update', (data) => {
-          setStats(data)
-        })
-
-        newSocket.on('download_complete', (data) => {
-          showNotification(`Downloaded: ${data.episode}`, 'success')
-        })
-
-        newSocket.on('download_error', (data) => {
-          showNotification(`Error: ${data.error}`, 'error')
-        })
-
-        return () => newSocket.close()
-      })
+    return () => {
+      cancelled = true
+      cleanupFn?.()
     }
   }, [])
 

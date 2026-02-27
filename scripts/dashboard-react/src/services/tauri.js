@@ -1,22 +1,9 @@
 /**
  * Tauri API Service - Handles communication with Rust backend via IPC
- * Falls back to HTTP when not running in Tauri
  */
 
-// Check if running in Tauri (v2 detection) or in Playwright mock mode.
-const hasWindow = typeof window !== 'undefined';
-const hasTauriGlobal = hasWindow && window.__TAURI__ !== undefined;
-const hasTauriMock = hasWindow && window.__TAURI_MOCK__ !== undefined;
-export const isTauri = hasTauriGlobal || hasTauriMock;
-
-// Debug logging for Tauri detection
-console.log('Tauri detection:', {
-  isTauri,
-  hasWindow,
-  hasTauriGlobal,
-  hasTauriMock,
-  tauriObject: hasWindow ? window.__TAURI__ : 'N/A'
-});
+// Check if running in Tauri (v2 detection)
+export const isTauri = typeof window !== 'undefined' && window.__TAURI__ !== undefined;
 
 /**
  * Get Tauri invoke function
@@ -24,9 +11,6 @@ console.log('Tauri detection:', {
 async function getInvoke() {
   if (!isTauri) {
     throw new Error('Not running in Tauri');
-  }
-  if (hasWindow && window.__TAURI_MOCK__ && typeof window.__TAURI_MOCK__.invoke === 'function') {
-    return window.__TAURI_MOCK__.invoke;
   }
   const { invoke } = await import('@tauri-apps/api/core');
   return invoke;
@@ -38,9 +22,6 @@ async function getInvoke() {
 async function getListen() {
   if (!isTauri) {
     throw new Error('Not running in Tauri');
-  }
-  if (hasWindow && window.__TAURI_MOCK__ && typeof window.__TAURI_MOCK__.listen === 'function') {
-    return window.__TAURI_MOCK__.listen;
   }
   const { listen } = await import('@tauri-apps/api/event');
   return listen;
