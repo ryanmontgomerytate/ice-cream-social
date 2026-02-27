@@ -94,3 +94,9 @@ Every “Current State” update must include at minimum 3 bullets:
   - short output summary (or blocker explanation)
 - Minimum default backend unit test command for this repo (when relevant): `cargo test --manifest-path src-tauri/Cargo.toml`
 - If only a subset is run for speed, state why that subset is sufficient.
+
+## Selective Commit Policy
+- Commit only files touched for the active task.
+- If other unrelated files are modified in the working tree, do not block on them.
+- Use selective staging (`git add <paths>`) instead of `git add -A` for task commits.
+- Mention in handoff/`SESSIONS.md` that commit scope was intentionally limited when applicable.

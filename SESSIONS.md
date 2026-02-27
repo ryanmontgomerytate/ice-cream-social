@@ -2,6 +2,21 @@
 
 ## Session: February 27, 2026
 
+### Current State Update (Workflow Rule: Selective Task Commits)
+
+**Done:**
+- Updated `AGENTS.md` with a **Selective Commit Policy** to commit only files touched for the active task.
+- Added guidance to avoid blocking on unrelated modified files and to use selective staging (`git add <paths>`).
+
+**Pending:**
+- Apply this policy consistently across future Codex/Claude commits.
+
+**Blockers:**
+- None.
+
+**Tests Run:**
+- Not applicable (docs/rules update only).
+
 ### Current State Update (Search Timeout Resilience + Better Error Diagnostics)
 
 **Done:**
