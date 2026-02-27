@@ -242,6 +242,32 @@ Behavior:
 - If Sentry DSN env vars are not set, the integration remains inert.
 - If DSN is set, unhandled server/client/app-route errors are captured with stack/context for debugging.
 
+## Web State Strategy (RSC + Scoped Zustand)
+
+For the Next.js web app (`web/`), state management now follows this rule:
+- Server Components (RSC) are the default for read/data state.
+- Zustand is used only for client-only interaction state.
+
+RSC-first domains:
+- Episode/wiki/search page data loading.
+- Admin list reads when renderable per-request.
+- Any data fetched from DB/API that does not need client-global mutability.
+
+Zustand domains:
+- UI interaction state across client components:
+  - filter panel selections
+  - selected row/item
+  - pending action IDs
+  - optimistic interaction flags and transient UI errors.
+
+Current implementation:
+- `web/lib/stores/admin-dashboard-ui.ts` stores moderation dashboard UI state.
+- Server/read data remains in component request flows rather than being duplicated into a global client data cache.
+
+Anti-patterns to avoid:
+- Copying server-fetched datasets into large global client stores.
+- Using a single global Zustand store for all app state.
+
 ## Environment Topology
 
 Standard environments:

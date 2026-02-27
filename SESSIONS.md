@@ -2,6 +2,31 @@
 
 ## Session: February 27, 2026 (cont'd — Cleanup & Security)
 
+### Current State Update (Web State Architecture: RSC Defaults + Scoped Zustand)
+
+**Done:**
+- Added `zustand` to `web/` and introduced a scoped admin interaction store:
+  - `web/lib/stores/admin-dashboard-ui.ts`
+  - persisted UI-only state: admin key, filter selections, selected queue item.
+- Refactored `web/components/admin/AdminDashboard.tsx` to use Zustand for client UI state:
+  - filters/status controls
+  - selected queue row
+  - action-in-flight and UI error flags.
+- Kept request/read payloads as request-driven data in component fetch flow (no new global data cache store).
+- Updated web dev script to non-Turbopack default for stable local runtime with current stack:
+  - `web/package.json` (`next dev -p ${PORT:-3001}`).
+- Added architecture policy section documenting the RSC + scoped Zustand rule:
+  - `ARCHITECTURE.md` ("Web State Strategy (RSC + Scoped Zustand)").
+
+**Pending:**
+- Optional follow-up: move admin list reads to authenticated RSC loaders once login flow is non-stub.
+
+**Blockers:**
+- None.
+
+**Tests Run:**
+- `npm --prefix web run build` — **pass** (Next.js 15.5.10, routes/pages compile and render)
+
 ### Current State Update (Sentry Follow-Through: Dev Runtime + Targeted Spans)
 
 **Done:**

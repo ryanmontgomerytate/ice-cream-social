@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type {
   AdminPaginatedResponse,
   ContentRevision,
@@ -8,8 +8,7 @@ import type {
   ModerationQueueItemWithRef,
   PendingEditWithRevision,
 } from "@/lib/types";
-
-const ADMIN_KEY_STORAGE = "ics_admin_api_key";
+import { useAdminDashboardUiStore } from "@/lib/stores/admin-dashboard-ui";
 
 async function fetchAdminEndpoint<T>(url: string, adminKey: string): Promise<T> {
   const response = await fetch(url, {
@@ -42,33 +41,33 @@ function formatDateTime(iso: string | null | undefined): string {
 }
 
 export default function AdminDashboard() {
-  const [adminKey, setAdminKey] = useState("");
-  const [pendingStatus, setPendingStatus] = useState("pending");
-  const [queueStatus, setQueueStatus] = useState("open");
-  const [queueType, setQueueType] = useState("all");
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [actionQueueId, setActionQueueId] = useState<number | null>(null);
+  const {
+    adminKey,
+    pendingStatus,
+    queueStatus,
+    queueType,
+    selectedQueueItemId,
+    isLoading,
+    error,
+    actionError,
+    actionQueueId,
+    setAdminKey,
+    setPendingStatus,
+    setQueueStatus,
+    setQueueType,
+    setSelectedQueueItemId,
+    setIsLoading,
+    setError,
+    setActionError,
+    setActionQueueId,
+  } = useAdminDashboardUiStore();
+
   const [pendingEdits, setPendingEdits] = useState<AdminPaginatedResponse<PendingEditWithRevision> | null>(
     null
   );
   const [moderationQueue, setModerationQueue] =
     useState<AdminPaginatedResponse<ModerationQueueItemWithRef> | null>(null);
   const [revisions, setRevisions] = useState<AdminPaginatedResponse<ContentRevision> | null>(null);
-
-  useEffect(() => {
-    const stored = window.localStorage.getItem(ADMIN_KEY_STORAGE) ?? "";
-    if (stored) setAdminKey(stored);
-  }, []);
-
-  useEffect(() => {
-    if (!adminKey) {
-      window.localStorage.removeItem(ADMIN_KEY_STORAGE);
-      return;
-    }
-    window.localStorage.setItem(ADMIN_KEY_STORAGE, adminKey);
-  }, [adminKey]);
 
   const loadData = useCallback(async () => {
     if (!adminKey.trim()) {
@@ -127,6 +126,7 @@ export default function AdminDashboard() {
     async (queueItemId: number, action: ModerationActionType) => {
       setActionError(null);
       setActionQueueId(queueItemId);
+      setSelectedQueueItemId(queueItemId);
 
       try {
         const response = await fetch("/api/v1/admin/moderation-actions", {
@@ -156,7 +156,7 @@ export default function AdminDashboard() {
         setActionQueueId(null);
       }
     },
-    [loadData]
+    [loadData, setActionError, setActionQueueId, setSelectedQueueItemId]
   );
 
   const summary = useMemo(
@@ -298,6 +298,9 @@ export default function AdminDashboard() {
 
       <section className="rounded-xl border border-gray-800 bg-gray-900/60 p-4">
         <h2 className="mb-3 text-lg font-semibold text-white">Moderation Queue</h2>
+        {selectedQueueItemId && (
+          <p className="mb-3 text-xs text-blue-300">Selected queue item: #{selectedQueueItemId}</p>
+        )}
         {!moderationQueue || moderationQueue.data.length === 0 ? (
           <p className="text-sm text-gray-500">No queue items loaded.</p>
         ) : (
@@ -315,7 +318,12 @@ export default function AdminDashboard() {
               </thead>
               <tbody className="text-gray-300">
                 {moderationQueue.data.map((item) => (
-                  <tr key={item.id} className="border-t border-gray-800">
+                  <tr
+                    key={item.id}
+                    className={`border-t border-gray-800 ${
+                      selectedQueueItemId === item.id ? "bg-gray-800/40" : ""
+                    }`}
+                  >
                     <td className="py-2 pr-4">#{item.id}</td>
                     <td className="py-2 pr-4">{item.queue_type}</td>
                     <td className="py-2 pr-4">{item.status}</td>
@@ -325,6 +333,13 @@ export default function AdminDashboard() {
                     </td>
                     <td className="py-2 pr-4">
                       <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedQueueItemId(item.id)}
+                          className="rounded border border-blue-800/70 px-2 py-1 text-xs text-blue-300 hover:border-blue-500 hover:text-blue-200"
+                        >
+                          Select
+                        </button>
                         <button
                           type="button"
                           onClick={() => runQueueAction(item.id, "assign")}
