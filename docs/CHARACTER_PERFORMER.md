@@ -82,13 +82,49 @@ Not worth building before that — you need ground truth first.
 
 ---
 
+## Performer breakdown query
+
+Run this against `data/ice_cream_social.db` to see the current state:
+
+```sql
+-- Full performer breakdown: which characters, who performs them, how often
+SELECT
+    c.name                                          AS character,
+    COALESCE(sp.name, '(unassigned)')               AS performer,
+    COUNT(*)                                        AS appearances,
+    COUNT(DISTINCT ca.episode_id)                   AS episodes,
+    ROUND(100.0 * COUNT(*) / SUM(COUNT(*)) OVER (PARTITION BY c.name), 1) AS pct_of_char
+FROM character_appearances ca
+JOIN characters c ON ca.character_id = c.id
+LEFT JOIN speakers sp ON ca.performed_by_speaker_id = sp.id
+GROUP BY c.name, sp.name
+ORDER BY c.name, appearances DESC;
+```
+
+**How to read it:**
+- `appearances` — total segments tagged for this character/performer pair
+- `episodes` — how many distinct episodes the pair shows up in
+- `pct_of_char` — what % of this character's total appearances are from this performer (100% = only one person does it; split values signal acoustic diversity)
+- `(unassigned)` — segments marked before Option A shipped, or segments where diarization hadn't assigned a speaker yet
+
+**Quick thresholds at a glance:**
+
+| What you see | What it means |
+|---|---|
+| `pct_of_char = 100` for all characters | One performer owns each character — voice profiles would be clean |
+| Two performers sharing a character, both `n ≥ 20` | Option C harvest worth starting |
+| 3+ characters each `episodes ≥ 10` with split performers | Option B sub-speaker schema worth it |
+| `(unassigned)` rows dominate | Review more episodes before acting on this data |
+
+---
+
 ## Decision guide
 
 Ask when you're working on a new episode batch:
 
-1. Run: `SELECT ca.character_name, sp.name as performer, COUNT(*) as n FROM character_appearances ca LEFT JOIN speakers sp ON ca.performed_by_speaker_id = sp.id GROUP BY ca.character_name, sp.name ORDER BY n DESC`
-2. If any (character, performer) pair has **n ≥ 20** → Option C harvest is worth setting up
-3. If **3+ characters** each with **n ≥ 10** across multiple performers → Option B schema upgrade is worth it
+1. Run the breakdown query above
+2. If any (character, performer) pair has **appearances ≥ 20** → Option C harvest is worth setting up
+3. If **3+ characters** each with **episodes ≥ 10** across multiple performers → Option B schema upgrade is worth it
 4. If diarization is still confusing character voices with host voices after Option C → Option D
 
 ---
