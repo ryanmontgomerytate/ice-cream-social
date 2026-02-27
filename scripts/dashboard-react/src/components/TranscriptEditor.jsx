@@ -446,6 +446,17 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
     if (isPlaying) {
       audioRef.current.pause()
     } else {
+      // If a segment is selected, clear it so auto-scroll resumes —
+      // unless the user has typed unsaved content into a picker
+      if (selectedSegmentIdx !== null) {
+        if (activePicker && flagInlineInput.trim()) {
+          onNotification?.('Save or discard your edit before resuming playback', 'info')
+          return
+        }
+        setSelectedSegmentIdx(null)
+        setActivePicker(null)
+        setFlagInlineInput('')
+      }
       audioRef.current.play().catch(err => {
         console.error('Audio play failed:', err)
         onNotification?.('Audio playback failed — file may be missing', 'error')
