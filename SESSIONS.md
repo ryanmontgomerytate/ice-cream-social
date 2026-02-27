@@ -1,6 +1,66 @@
 # Development Sessions Log
 
+## Session: February 26, 2026 (continued)
+
+### Current State Update (Phase 1: Web Read Experience + Hosted Data Model)
+
+**Done:**
+- `web/supabase/migrations/001_initial_schema.sql` — Full Postgres DDL: shows, episodes, transcript_segments (tsvector FTS), speakers, episode_speakers, characters, character_appearances, chapter_types, episode_chapters, audio_drops, audio_drop_instances, wiki_lore, wiki_lore_mentions, wiki_episode_meta, import_batches. RLS enabled (anon SELECT on public episodes; service role writes all).
+- `scripts/export_to_hosted.py` — Rewritten by linter with psycopg2 + psycopg2.extras.execute_values. FK-safe order, chunked batches, `import_batches` lifecycle, JSONL exports under `exports/<timestamp>/`, import log at `exports/import_log.json`. Dry-run verified: 2,218 episodes, 1,765,487 transcript segments.
+- `web/` — Full Next.js 15 scaffold (TypeScript, App Router, Tailwind, `@supabase/ssr`):
+  - `lib/supabase/{client,server,middleware}.ts` — browser + server + session-refresh clients
+  - `lib/types.ts` — full TypeScript types for all 15 hosted tables + utilities
+  - `app/layout.tsx` — root layout with nav
+  - `app/(public)/episodes/page.tsx` — **implemented** Server Component: paginated episode list, category filter tabs, title search, Suspense skeleton loading
+  - `app/(public)/episodes/[id]/page.tsx` — stub
+  - `app/(public)/search/page.tsx` — stub
+  - `app/(public)/wiki/[slug]/page.tsx` — stub
+  - `app/(auth)/login/page.tsx` — stub
+  - `app/(admin)/admin/page.tsx` — stub
+  - `app/api/v1/episodes/route.ts` — **implemented** REST endpoint with pagination, category, q, variants params
+  - `app/api/v1/search/route.ts` — stub
+  - `components/episodes/EpisodeCard.tsx` — episode card with category colors, duration, date
+  - `web/.env.example`, `web/.gitignore`, `next.config.ts`, `tailwind.config.ts`
+- `npm run build` passes clean (10 routes, middleware 78.9kB)
+
+**Pending (Phase 1 next steps):**
+- User creates Supabase project + fills in `web/.env.local`
+- Run `python scripts/export_to_hosted.py --mode full` to populate Supabase
+- Apply schema: paste `web/supabase/migrations/001_initial_schema.sql` in Supabase SQL editor (or `supabase db push`)
+- `cd web && npm run dev` to test episodes page against live data
+
+**Blockers:** None — waiting on Supabase project credentials.
+
+---
+
 ## Session: February 26, 2026
+
+### Current State Update (Phase 1 Hosted Bridge: Export/Import Pipeline + Env Templates)
+
+- Added `scripts/export_to_hosted.py` with SQLite -> hosted pipeline modes: `export`, `import`, `full`, plus `--dry-run` and `--tables` subset support
+- Pipeline behavior:
+  - FK-safe table order for hosted read-model scope (`shows` through `transcript_segments`)
+  - Idempotent Postgres upserts via `ON CONFLICT`
+  - Chunked import for large transcript table (`transcript_segments` at batch size 1000)
+  - `import_batches` lifecycle updates (`in_progress` -> `complete`/`failed`) when table exists
+  - Export JSONL artifacts + manifest logging under `exports/<timestamp>/` and `exports/import_log.json`
+- Added hosted env templates:
+  - `web/.env.example`
+  - `scripts/.env.example`
+- Updated `.gitignore` for hosted artifacts and local web env files:
+  - `exports/`
+  - `web/.env.local`
+  - `web/.env.*.local`
+- Updated `ARCHITECTURE.md` with a new "Hosted Phase 1 Bridge Artifacts" section
+- Added runbook: `docs/operations/HOSTED_IMPORT_PIPELINE.md`
+
+### Current State Update (AGENTS.md / WORKFLOW.md Consolidation)
+
+- **Done:** Merged all additive content from `docs/gpt/WORKFLOW.md` into `AGENTS.md` — added Session Start Checklist (including "avoid repeating completed work"), When To Update Handoff trigger list, Rate Limit Strategy, concrete handoff example, and Current State format definition (Done/Pending/Blockers 3-bullet minimum). Replaced `docs/gpt/WORKFLOW.md` with a 4-line pointer to `AGENTS.md` to eliminate drift.
+- **Pending:** None for this task. Open items from feedTheScoops review: close Phase 0 CI, write dependency map across the 4 plans, solo-adjusted timeline, audio hosting decision before clip feed, move voice library plan to ARCHITECTURE.md.
+- **Blockers:** None.
+
+
 
 ### Current State Update (Voice Library Storage Migration Foundation)
 
@@ -33,6 +93,30 @@
 - Updated `AGENTS.md` and `CLAUDE.md` to require a `Tests Run` summary for completed coding tasks (exact commands, pass/fail, short output/blocker note)
 - Added explicit verification command guidance to `CLAUDE.md` so `cargo tauri dev` is clearly documented as runtime/manual testing, not the only validation step
 - Added default backend unit test command documentation: `cargo test --manifest-path src-tauri/Cargo.toml`
+
+### Current State Update (AGENTS.md Claude Memory Note)
+
+- Added `~/.claude/projects/.../memory/` guidance to `AGENTS.md` for tool switching handoffs
+- Clarified Claude memory is supplemental context only and does not override `CLAUDE.md`, `ARCHITECTURE.md`, or `SESSIONS.md`
+
+### Current State Update (Shared MCP Memory Setup - Codex)
+
+- Configured Codex CLI global MCP server `memory` using `@modelcontextprotocol/server-memory`
+- Shared MCP memory file path set to `/Users/ryan/.agent-memory/ice-cream-social/memory.json` (created directory; file will be created by MCP server on first write)
+- Added shared MCP memory path pointer to `AGENTS.md` and `CLAUDE.md` so Claude can be configured to use the same `MEMORY_FILE_PATH`
+
+### Current State Update (Phase 0 SDLC Foundation Artifacts)
+
+- Added environment definitions for `local`, `staging`, and `prod` in `docs/operations/ENVIRONMENTS.md`
+- Added issue templates in `.github/ISSUE_TEMPLATE/`:
+  - `feature_request.md`
+  - `bug_report.md`
+  - `moderation_safety_issue.md`
+- Added PR template with required `Tests Run` checklist in `.github/pull_request_template.md`
+- Re-enabled CI on PR/push via `.github/workflows/ci.yml` (frontend build + Rust check/tests)
+- Added deployment and rollback checklist in `docs/operations/DEPLOYMENT_AND_ROLLBACK_CHECKLIST.md`
+- Added backup/restore runbook in `docs/operations/BACKUP_RESTORE_RUNBOOK.md`
+- Updated `ARCHITECTURE.md` with environment topology + links to operations artifacts
 
 Next Steps & Areas to Review                                                                                                                                                                
                                                                                                                                                                                             

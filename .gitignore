@@ -45,3 +45,9 @@ scripts/voice_library/models/
 data/*.db
 data/*.db-shm
 data/*.db-wal
+exports/
+web/.env.local
+web/.env.*.local
+
+#ryan
+ryan.md 
