@@ -484,6 +484,10 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
     clipEndRef.current = null
     clipStartRef.current = null
     setPlayingClipIdx(null)
+    // Clear selection so the playing highlight follows along (same as togglePlay)
+    setSelectedSegmentIdx(null)
+    setActivePicker(null)
+    setFlagInlineInput('')
     seekTo(time)
     if (!isPlaying && audioRef.current) {
       audioRef.current.play().catch(err => console.error('Audio play failed:', err))
