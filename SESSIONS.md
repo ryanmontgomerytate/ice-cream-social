@@ -2,6 +2,33 @@
 
 ## Session: February 27, 2026
 
+### Current State Update (Web Observability: Sentry Error Tracking Baseline)
+
+**Done:**
+- Added Sentry SDK to web app dependencies (`@sentry/nextjs`) and configured Next integration wrapper in `web/next.config.ts`.
+- Added Sentry runtime bootstrap files:
+  - `web/instrumentation.ts`
+  - `web/instrumentation-client.ts`
+  - `web/sentry.server.config.ts`
+  - `web/sentry.edge.config.ts`
+- Added App Router global error capture boundary:
+  - `web/app/global-error.tsx`
+- Added API-route capture for search endpoint failures:
+  - `web/app/api/v1/search/route.ts`
+- Documented Sentry env vars in:
+  - `web/.env.example`
+  - `scripts/.env.example`
+
+**Pending:**
+- Set real `NEXT_PUBLIC_SENTRY_DSN` / `SENTRY_DSN` values in deployed web environments.
+- Optional: add source-map upload credentials (`SENTRY_ORG`, `SENTRY_PROJECT`, `SENTRY_AUTH_TOKEN`) for richer production stack traces.
+
+**Blockers:**
+- None for local integration; event delivery depends on user-provided DSN env vars.
+
+**Tests Run:**
+- `npm --prefix web run build` — **pass** (Sentry instrumentation files compile and routes/pages build successfully)
+
 ### Current State Update (Phase 2: Role-Aware Moderation Write Actions + RLS Policies)
 
 **Done:**

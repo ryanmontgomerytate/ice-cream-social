@@ -226,6 +226,22 @@ Current gap:
 - No architecture doc was present before this file was recreated
 - CI and API-contract coverage need strengthening before hosted deployment work
 
+## Web Observability (Phase 2 addition)
+
+The hosted Next.js web app now includes baseline Sentry integration for error visibility:
+- SDK: `@sentry/nextjs`
+- Runtime files:
+  - `web/instrumentation.ts`
+  - `web/instrumentation-client.ts`
+  - `web/sentry.server.config.ts`
+  - `web/sentry.edge.config.ts`
+- App Router global error capture:
+  - `web/app/global-error.tsx`
+
+Behavior:
+- If Sentry DSN env vars are not set, the integration remains inert.
+- If DSN is set, unhandled server/client/app-route errors are captured with stack/context for debugging.
+
 ## Environment Topology
 
 Standard environments:
