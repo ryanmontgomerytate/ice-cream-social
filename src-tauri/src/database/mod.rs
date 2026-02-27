@@ -3218,6 +3218,39 @@ Mark the start time of each segment.',
         Ok(rows)
     }
 
+    /// Get segment_idx values for segments whose speaker label is in `speakers`.
+    /// Used by reprocess_diarization to identify low-confidence segments for Qwen review.
+    pub fn get_segment_indices_for_speakers(
+        &self,
+        episode_id: i64,
+        speakers: &[String],
+    ) -> Result<Vec<i32>> {
+        if speakers.is_empty() {
+            return Ok(vec![]);
+        }
+        let conn = self.conn.lock().unwrap();
+        // Build a parameterized IN clause
+        let placeholders: Vec<String> = (2..=speakers.len() + 1)
+            .map(|i| format!("?{}", i))
+            .collect();
+        let sql = format!(
+            "SELECT segment_idx FROM transcript_segments WHERE episode_id = ?1 AND speaker IN ({}) ORDER BY segment_idx",
+            placeholders.join(", ")
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+        params.push(Box::new(episode_id));
+        for s in speakers {
+            params.push(Box::new(s.clone()));
+        }
+        let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+        let rows = stmt
+            .query_map(param_refs.as_slice(), |row| row.get::<_, i32>(0))?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
+    }
+
     /// Get transcript segments with timing info (for AI chapter detection)
     pub fn get_transcript_segments_for_episode_full(
         &self,

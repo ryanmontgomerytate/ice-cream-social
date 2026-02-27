@@ -36,7 +36,7 @@ export default async function SearchPage({ searchParams }: PageProps) {
   const q = (params.q ?? "").trim();
   const page = Math.max(1, parseInt(params.page ?? "1", 10));
 
-  const { results, total, has_more } = await searchTranscriptSegments({
+  const { results, total, has_more, warning, diagnostics_id } = await searchTranscriptSegments({
     q,
     page,
     perPage: PAGE_SIZE,
@@ -78,6 +78,17 @@ export default async function SearchPage({ searchParams }: PageProps) {
           {total.toLocaleString()} result{total !== 1 ? "s" : ""} for{" "}
           <span className="text-gray-300">&ldquo;{q}&rdquo;</span>
         </p>
+      )}
+
+      {warning && (
+        <div className="mb-4 rounded-xl border border-amber-700/40 bg-amber-950/20 p-4 text-sm text-amber-200">
+          <p>{warning}</p>
+          {diagnostics_id && (
+            <p className="mt-2 text-xs text-amber-300/90">
+              Diagnostics ID: <code>{diagnostics_id}</code>
+            </p>
+          )}
+        </div>
       )}
 
       {q && results.length === 0 && (

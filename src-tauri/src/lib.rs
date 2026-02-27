@@ -174,6 +174,7 @@ pub fn run() {
             commands::get_audio_path,
             commands::retry_diarization,
             commands::reprocess_diarization,
+            commands::confirm_reprocess_with_qwen_hints,
             commands::save_voice_samples,
             commands::analyze_episode_content,
             // Category commands

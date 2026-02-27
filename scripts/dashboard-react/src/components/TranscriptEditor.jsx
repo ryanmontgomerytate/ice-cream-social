@@ -89,6 +89,11 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
   const [reprocessing, setReprocessing] = useState(false)
   const [reprocessBackend, setReprocessBackend] = useState('current')
   const [currentEmbeddingBackend, setCurrentEmbeddingBackend] = useState('pyannote')
+  // Qwen pause state — set when phase 1 returns low-confidence segments
+  const [qwenPause, setQwenPause] = useState(null) // { segmentIndices, count } | null
+  const [qwenPauseRunning, setQwenPauseRunning] = useState(false)
+  const [qwenPauseDone, setQwenPauseDone] = useState(false)
+  const qwenPauseUnlistenRef = useRef(null)
   const [compareRunning, setCompareRunning] = useState(false)
   const [compareResults, setCompareResults] = useState(null)
   const [compareExpanded, setCompareExpanded] = useState(true)
@@ -167,6 +172,10 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
       setCompareExpanded(true)
       setRebuildingBackend(null)
       setDiarizationLocked(false)
+      setQwenPause(null)
+      setQwenPauseRunning(false)
+      setQwenPauseDone(false)
+      if (qwenPauseUnlistenRef.current) { qwenPauseUnlistenRef.current(); qwenPauseUnlistenRef.current = null }
       speakersAPI.getEmbeddingModel().then((backend) => {
         setCurrentEmbeddingBackend(backend || 'pyannote')
       }).catch(() => {
@@ -1898,33 +1907,122 @@ export default function TranscriptEditor({ onClose, onTranscriptLoaded }) {
                     <option value="ecapa-tdnn">Backend: ecapa-tdnn</option>
                   </select>
                   <button
-                    disabled={reprocessing || diarizationLocked}
+                    disabled={reprocessing || diarizationLocked || qwenPause != null}
                     onClick={async () => {
                       setReprocessing(true)
+                      setQwenPause(null)
+                      setQwenPauseDone(false)
+                      const chosenBackend = reprocessBackend === 'current' ? null : reprocessBackend
                       try {
-                        await episodesAPI.reprocessDiarization(episode.id, {
-                          embeddingBackend: reprocessBackend === 'current' ? null : reprocessBackend,
-                          prioritizeTop: true,
-                        })
-                        setDiarizationLocked(true)
-                        onNotification?.(`Queued re-diarization (${backendLabel}) at top priority.`, 'success')
+                        // Phase 1: check low-confidence segments
+                        const pauseInfo = await episodesAPI.reprocessDiarization(episode.id)
+                        if (pauseInfo?.needs_review && pauseInfo.segment_indices?.length > 0) {
+                          // Pause for Qwen review — set up event listener then fire Qwen polish
+                          setQwenPause({ segmentIndices: pauseInfo.segment_indices, count: pauseInfo.low_confidence_count, backend: chosenBackend })
+                          setQwenPauseRunning(true)
+                          setReprocessing(false)
+                          // Wire up qwen_complete listener to know when Qwen is done
+                          if (qwenPauseUnlistenRef.current) qwenPauseUnlistenRef.current()
+                          import('@tauri-apps/api/event').then(({ listen }) => {
+                            listen('qwen_complete', (event) => {
+                              if (event.payload?.episode_id === episode.id || event.payload?.episodeId === episode.id) {
+                                setQwenPauseRunning(false)
+                                setQwenPauseDone(true)
+                                if (qwenPauseUnlistenRef.current) { qwenPauseUnlistenRef.current(); qwenPauseUnlistenRef.current = null }
+                              }
+                            }).then(fn => { qwenPauseUnlistenRef.current = fn })
+                          })
+                          // Fire Qwen polish in background
+                          contentAPI.runQwenPolish(episode.id, pauseInfo.segment_indices).catch(err => {
+                            onNotification?.(`Qwen analysis failed: ${err.message}`, 'error')
+                            setQwenPauseRunning(false)
+                            setQwenPauseDone(true)
+                          })
+                        } else {
+                          // No low-confidence segments — go straight to phase 2
+                          await episodesAPI.confirmReprocessWithQwenHints(episode.id, { embeddingBackend: chosenBackend, prioritizeTop: true })
+                          setDiarizationLocked(true)
+                          setReprocessing(false)
+                          onNotification?.(`Queued re-diarization (${backendLabel}) at top priority.`, 'success')
+                        }
                       } catch (err) {
                         onNotification?.(`Failed to queue re-diarization: ${err.message}`, 'error')
                         setReprocessing(false)
+                        setQwenPause(null)
                       }
                     }}
                     className={`px-3 py-1 text-xs font-medium transition-all duration-300 ${
                       reprocessing
                         ? 'bg-green-100 text-green-700 cursor-not-allowed'
+                        : qwenPause != null
+                        ? 'bg-amber-100 text-amber-700 cursor-not-allowed'
                         : 'bg-orange-100 text-orange-700 hover:bg-orange-200 cursor-pointer'
                     }`}
                     title={hintCount > 0
                       ? `Reprocess with ${hintCount} speaker correction${hintCount > 1 ? 's' : ''} as hints. Runs at top queue priority.`
                       : 'Reprocess diarization (no corrections flagged). Runs at top queue priority.'}
                   >
-                    {reprocessing ? '✓ Queued for Diarization' : '🔄 Reprocess Diarization'}
+                    {reprocessing ? '⏳ Checking…' : qwenPause != null ? '⏸ Qwen Pause Active' : '🔄 Reprocess Diarization'}
                   </button>
                 </div>
+
+                {/* Qwen Pause Review — appears below the reprocess row when phase 1 found low-confidence segments */}
+                {qwenPause != null && (
+                  <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="font-semibold text-amber-800">
+                        {qwenPauseRunning
+                          ? `⏳ Qwen analyzing ${qwenPause.count} low-confidence segment${qwenPause.count !== 1 ? 's' : ''}…`
+                          : `✓ Qwen done — check Scoop Polish section for results`}
+                      </span>
+                    </div>
+                    <p className="text-amber-700 mb-2">
+                      {qwenPauseRunning
+                        ? 'Qwen is reviewing segments where speaker identification was uncertain. Approve any corrections in the Scoop Polish panel, then confirm below.'
+                        : 'Review Qwen corrections in the Scoop Polish panel above, then confirm re-diarization to include them as hints.'}
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        disabled={qwenPauseRunning}
+                        onClick={async () => {
+                          const backend = qwenPause.backend
+                          setQwenPause(null)
+                          setQwenPauseDone(false)
+                          try {
+                            await episodesAPI.confirmReprocessWithQwenHints(episode.id, { embeddingBackend: backend, prioritizeTop: true })
+                            setDiarizationLocked(true)
+                            onNotification?.(`Queued re-diarization with Qwen hints (${backendLabel}) at top priority.`, 'success')
+                          } catch (err) {
+                            onNotification?.(`Failed to confirm re-diarization: ${err.message}`, 'error')
+                          }
+                        }}
+                        className="px-2.5 py-1 rounded bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 font-medium"
+                        title="Confirm re-diarization — includes Qwen corrections as hints"
+                      >
+                        ✓ Re-diarize with Qwen hints
+                      </button>
+                      <button
+                        onClick={async () => {
+                          const backend = qwenPause.backend
+                          setQwenPause(null)
+                          setQwenPauseDone(false)
+                          if (qwenPauseUnlistenRef.current) { qwenPauseUnlistenRef.current(); qwenPauseUnlistenRef.current = null }
+                          try {
+                            await episodesAPI.confirmReprocessWithQwenHints(episode.id, { embeddingBackend: backend, prioritizeTop: true })
+                            setDiarizationLocked(true)
+                            onNotification?.(`Queued re-diarization (skipped Qwen, ${backendLabel}) at top priority.`, 'success')
+                          } catch (err) {
+                            onNotification?.(`Failed to queue re-diarization: ${err.message}`, 'error')
+                          }
+                        }}
+                        className="px-2.5 py-1 rounded bg-slate-200 text-slate-700 hover:bg-slate-300 font-medium"
+                        title="Skip Qwen suggestions and re-diarize now with existing hints only"
+                      >
+                        Skip Qwen, re-diarize now
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {transcript?.has_diarization && (
                   <div className="flex items-center gap-1.5">

@@ -2,6 +2,49 @@
 
 ## Session: February 27, 2026
 
+### Current State Update (Search Timeout Resilience + Better Error Diagnostics)
+
+**Done:**
+- Updated hosted search pipeline in `web/lib/search.ts` to reduce timeout risk and improve diagnosability:
+  - switched from heavy joined search query to a two-step query shape (segments first, episodes hydrate second)
+  - reduced expensive exact count path (`count: "planned"`)
+  - added timeout-aware graceful fallback with user-visible warning instead of hard page crash
+  - added diagnostics IDs (`search:<id>`) and structured server logs for easier debugging.
+- Updated `web/app/(public)/search/page.tsx` to show warning + diagnostics ID when backend timeout occurs.
+
+**Pending:**
+- Validate in live/dev runtime against broad queries (e.g., short/common names) and tune ranking/query strategy further if needed.
+
+**Blockers:**
+- None.
+
+**Tests Run:**
+- `npm --prefix web run build` — **pass**
+
+### Current State Update (Diarization Flywheel: Qwen Pause + Auto-Harvest)
+
+**Done:**
+- Split `reprocess_diarization` into two phases:
+  - Phase 1 (`reprocess_diarization`): reads `_with_speakers.json`, finds speakers with confidence < 0.65, returns their segment indices to the frontend as `QwenPauseInfo`, emits `qwen_pause_ready` event — no requeue yet
+  - Phase 2 (`confirm_reprocess_with_qwen_hints`): builds hints from DB flags + approved Qwen corrections, writes hints file, resets diarization, requeues at top priority
+- Added `get_segment_indices_for_speakers()` DB method to `database/mod.rs`
+- Registered `confirm_reprocess_with_qwen_hints` command in `lib.rs`
+- Added `run_harvest_for_episode()` to `worker/diarize.rs` — fires `harvest_voice_samples.py --episode-id` automatically after every successful diarization run
+- Updated `services/tauri.js` + `services/api.js` with new API methods
+- Updated `TranscriptEditor.jsx` reprocess flow:
+  - Phase 1 returns `QwenPauseInfo`; if `needs_review`, fires `run_qwen_polish` in background
+  - Amber "Qwen Pause Active" banner appears with progress/done status, Scoop Polish pointer, and two action buttons: "Re-diarize with Qwen hints" (phase 2 with approved corrections) and "Skip Qwen, re-diarize now" (phase 2 immediately)
+  - If `needs_review = false`, jumps straight to phase 2 (no user action required)
+- `harvest_voice_samples.py` already had `--episode-id` support — no change needed
+
+**Tests Run:**
+- `cargo check --manifest-path src-tauri/Cargo.toml` — **pass**
+- `cargo test --manifest-path src-tauri/Cargo.toml --lib` — **pass** (49 passed, 0 failed)
+- `npm --prefix scripts/dashboard-react run build` — **pass**
+
+**Pending:**
+- Manual test with Episode 1291 (134 unknowns): verify Qwen pause appears, approvals flow through to requeue, Unknown count drops after re-diarize
+
 ### Current State Update (Phase 1 Progress: Wiki Index/Discovery Route + Nav)
 
 **Done:**

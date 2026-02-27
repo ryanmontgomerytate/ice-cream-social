@@ -18,16 +18,12 @@ export interface SearchQueryResult {
   page: number;
   per_page: number;
   has_more: boolean;
+  warning?: string;
+  diagnostics_id?: string;
 }
 
-type SearchRow = TranscriptSegment & {
-  episode: EpisodeCard | EpisodeCard[] | null;
-};
-
-function normalizeEpisode(raw: EpisodeCard | EpisodeCard[] | null): EpisodeCard | null {
-  if (!raw) return null;
-  if (Array.isArray(raw)) return raw[0] ?? null;
-  return raw;
+function createDiagnosticsId(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 export async function searchTranscriptSegments({
@@ -58,72 +54,90 @@ export async function searchTranscriptSegments({
   const { data, count, error } = await supabase
     .from("transcript_segments")
     .select(
-      `
-      id,
-      episode_id,
-      segment_idx,
-      speaker,
-      text,
-      start_time,
-      end_time,
-      is_performance_bit,
-      episode:episodes!inner(
-        id,
-        episode_number,
-        title,
-        description,
-        published_date,
-        duration,
-        category,
-        has_diarization,
-        feed_source
-      )
-      `,
-      { count: "exact" }
+      "id, episode_id, segment_idx, speaker, text, start_time, end_time, is_performance_bit",
+      { count: "planned" }
     )
     .textSearch("text_search", query, { type: "websearch", config: "english" })
-    .order("published_date", { referencedTable: "episodes", ascending: false })
+    .order("episode_id", { ascending: false })
     .order("segment_idx", { ascending: true })
-    .range(offset, offset + safePerPage - 1);
+    .range(offset, offset + safePerPage);
 
   if (error) {
-    throw new Error(error.message);
+    const diagnosticsId = createDiagnosticsId();
+    const isTimeout = /statement timeout/i.test(error.message);
+
+    console.error(`[search:${diagnosticsId}] search query failed`, {
+      query,
+      page: safePage,
+      per_page: safePerPage,
+      offset,
+      error: error.message,
+    });
+
+    if (isTimeout) {
+      return {
+        query,
+        results: [],
+        total: 0,
+        page: safePage,
+        per_page: safePerPage,
+        has_more: false,
+        warning:
+          "Search timed out on the backend. Try a more specific query or fewer broad terms.",
+        diagnostics_id: diagnosticsId,
+      };
+    }
+
+    throw new Error(`[search:${diagnosticsId}] ${error.message}`);
   }
 
-  const rows = (data ?? []) as SearchRow[];
-  const results: SearchResult[] = rows
-    .map((row) => {
-      const episode = normalizeEpisode(row.episode);
+  const segmentRows = (data ?? []) as TranscriptSegment[];
+  const hasMore = segmentRows.length > safePerPage;
+  const visibleSegments = hasMore ? segmentRows.slice(0, safePerPage) : segmentRows;
+
+  const episodeIds = Array.from(new Set(visibleSegments.map((row) => row.episode_id)));
+  let episodeMap = new Map<number, EpisodeCard>();
+
+  if (episodeIds.length > 0) {
+    const { data: episodes, error: episodesError } = await supabase
+      .from("episodes")
+      .select(
+        "id, episode_number, title, description, published_date, duration, category, has_diarization, feed_source"
+      )
+      .in("id", episodeIds);
+
+    if (episodesError) {
+      const diagnosticsId = createDiagnosticsId();
+      console.error(`[search:${diagnosticsId}] episode hydrate failed`, {
+        query,
+        episode_ids: episodeIds.length,
+        error: episodesError.message,
+      });
+      throw new Error(`[search:${diagnosticsId}] ${episodesError.message}`);
+    }
+
+    episodeMap = new Map(((episodes ?? []) as EpisodeCard[]).map((ep) => [ep.id, ep]));
+  }
+
+  const results: SearchResult[] = visibleSegments
+    .map((segment) => {
+      const episode = episodeMap.get(segment.episode_id);
       if (!episode) return null;
-
-      const segment: TranscriptSegment = {
-        id: row.id,
-        episode_id: row.episode_id,
-        segment_idx: row.segment_idx,
-        speaker: row.speaker ?? null,
-        text: row.text,
-        start_time: row.start_time,
-        end_time: row.end_time ?? null,
-        is_performance_bit: row.is_performance_bit,
-      };
-
       return {
         segment,
         episode,
-        // PostgREST doesn't expose ts_rank directly in this query shape.
-        // Keep deterministic ordering + placeholder rank for now.
         rank: 1,
       };
     })
     .filter((item): item is SearchResult => item !== null);
 
-  const total = count ?? 0;
+  const total = count ?? offset + results.length + (hasMore ? 1 : 0);
   return {
     query,
     results,
     total,
     page: safePage,
     per_page: safePerPage,
-    has_more: offset + safePerPage < total,
+    has_more: hasMore || offset + safePerPage < total,
   };
 }

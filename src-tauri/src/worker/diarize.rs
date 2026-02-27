@@ -8,6 +8,71 @@ use tokio::process::Command;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
+/// Spawn harvest_voice_samples.py for a single episode after diarization completes.
+/// Runs fire-and-forget; failures are logged as warnings and do not block the pipeline.
+async fn run_harvest_for_episode(episode_id: i64) {
+    let home_dir = match dirs::home_dir() {
+        Some(d) => d,
+        None => {
+            log::warn!("Auto-harvest: could not determine home dir");
+            return;
+        }
+    };
+    let project_dir = home_dir
+        .join("Desktop")
+        .join("Projects")
+        .join("ice-cream-social-app");
+    let venv_python = project_dir.join("venv").join("bin").join("python");
+    let harvest_script = project_dir.join("scripts").join("harvest_voice_samples.py");
+
+    if !venv_python.exists() || !harvest_script.exists() {
+        log::warn!(
+            "Auto-harvest: script or venv not found (python={}, script={})",
+            venv_python.display(),
+            harvest_script.display()
+        );
+        return;
+    }
+
+    log::info!("Auto-harvest: starting for episode {}", episode_id);
+
+    match Command::new(&venv_python)
+        .args([
+            harvest_script.to_str().unwrap_or(""),
+            "--episode-id",
+            &episode_id.to_string(),
+        ])
+        .current_dir(&project_dir)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+    {
+        Ok(child) => {
+            match child.wait_with_output().await {
+                Ok(output) => {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    if output.status.success() {
+                        log::info!(
+                            "Auto-harvest complete for episode {}: {}",
+                            episode_id,
+                            stdout.trim()
+                        );
+                    } else {
+                        let stderr = String::from_utf8_lossy(&output.stderr);
+                        log::warn!(
+                            "Auto-harvest non-zero exit for episode {}: stderr={}",
+                            episode_id,
+                            stderr.trim()
+                        );
+                    }
+                }
+                Err(e) => log::warn!("Auto-harvest wait failed for episode {}: {}", episode_id, e),
+            }
+        }
+        Err(e) => log::warn!("Auto-harvest spawn failed for episode {}: {}", episode_id, e),
+    }
+}
+
 use super::ProgressUpdate;
 
 /// Message sent to the diarize task
@@ -60,6 +125,12 @@ pub async fn diarize_task(
                             &progress_tx,
                             &cancel,
                         ).await;
+                        // Auto-harvest voice samples after a successful diarization run.
+                        // This feeds the voice library flywheel — each episode review grows
+                        // the speaker centroids so the next episode auto-diarizes better.
+                        if result.is_ok() {
+                            run_harvest_for_episode(episode_id).await;
+                        }
                         let duration_seconds = if result.is_ok() { Some(start.elapsed().as_secs_f64()) } else { None };
                         let _ = result_tx.send(DiarizeResult {
                             episode_id,

@@ -41,6 +41,15 @@ pub struct RefreshResult {
     pub total: i64,
 }
 
+/// Returned by reprocess_diarization to tell the frontend whether a Qwen review pause is needed
+#[derive(Debug, Serialize)]
+pub struct QwenPauseInfo {
+    pub needs_review: bool,
+    pub low_confidence_count: i32,
+    pub segment_indices: Vec<i32>,
+    pub episode_id: i64,
+}
+
 /// GET /api/v2/episodes -> get_episodes command
 #[tauri::command]
 pub async fn get_episodes(
@@ -1263,16 +1272,102 @@ pub async fn retry_diarization(
     Ok(())
 }
 
-/// Reprocess diarization with human correction hints
+/// Phase 1 of the two-phase reprocess flow.
+/// Checks the _with_speakers.json for low-confidence speakers, then returns the
+/// segment indices that Qwen should review before the actual requeue fires.
+/// The frontend calls confirm_reprocess_with_qwen_hints() after the optional Qwen review.
 #[tauri::command]
 pub async fn reprocess_diarization(
+    db: State<'_, Arc<Database>>,
+    app_handle: tauri::AppHandle,
+    episode_id: i64,
+) -> Result<QwenPauseInfo, AppError> {
+    log::info!("reprocess_diarization (phase 1) called for episode: {}", episode_id);
+
+    let episode = db
+        .get_episode_by_id(episode_id)
+        .map_err(AppError::from)?
+        .ok_or("Episode not found")?;
+
+    let transcript_path = episode
+        .transcript_path
+        .ok_or("No transcript for this episode")?;
+
+    // Find the _with_speakers.json file to extract low-confidence speaker labels
+    let transcript_stem = std::path::Path::new(&transcript_path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("transcript")
+        .to_string();
+    let transcript_dir = std::path::Path::new(&transcript_path)
+        .parent()
+        .ok_or("Invalid transcript path")?;
+    let with_speakers_path = transcript_dir.join(format!("{}_with_speakers.json", transcript_stem));
+
+    let mut low_conf_speakers: Vec<String> = Vec::new();
+    if with_speakers_path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&with_speakers_path) {
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(conf_map) = json.get("speaker_confidence").and_then(|v| v.as_object()) {
+                    for (label, conf_val) in conf_map {
+                        if conf_val.as_f64().unwrap_or(1.0) < 0.65 {
+                            low_conf_speakers.push(label.clone());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let segment_indices = if low_conf_speakers.is_empty() {
+        Vec::new()
+    } else {
+        db.get_segment_indices_for_speakers(episode_id, &low_conf_speakers)
+            .unwrap_or_default()
+    };
+
+    let needs_review = !segment_indices.is_empty();
+    let low_confidence_count = segment_indices.len() as i32;
+
+    log::info!(
+        "reprocess_diarization phase 1: episode {} — {} low-confidence speakers, {} segments need Qwen review",
+        episode_id, low_conf_speakers.len(), low_confidence_count
+    );
+
+    let _ = app_handle.emit(
+        "qwen_pause_ready",
+        serde_json::json!({
+            "episode_id": episode_id,
+            "segment_count": segment_indices.len(),
+            "low_confidence_count": low_confidence_count,
+            "needs_review": needs_review,
+        }),
+    );
+
+    Ok(QwenPauseInfo {
+        needs_review,
+        low_confidence_count,
+        segment_indices,
+        episode_id,
+    })
+}
+
+/// Phase 2 of the two-phase reprocess flow.
+/// Builds hints from DB flags + any approved Qwen corrections, writes hints file,
+/// resets diarization status, and requeues at top priority.
+/// Call this after the user has approved/skipped the Qwen review from phase 1.
+#[tauri::command]
+pub async fn confirm_reprocess_with_qwen_hints(
     db: State<'_, Arc<Database>>,
     app_handle: tauri::AppHandle,
     episode_id: i64,
     embedding_backend: Option<String>,
     prioritize_top: Option<bool>,
 ) -> Result<(), AppError> {
-    log::info!("reprocess_diarization called for episode: {}", episode_id);
+    log::info!(
+        "confirm_reprocess_with_qwen_hints called for episode: {}",
+        episode_id
+    );
     const PRIORITY_REPROCESS_TOP: i32 = 10_000;
 
     let episode = db
@@ -1314,7 +1409,6 @@ pub async fn reprocess_diarization(
     let mut multiple_speakers_segments = Vec::new();
     let mut exclude_from_voiceprint: Vec<i32> = Vec::new();
     let mut all_speakers = std::collections::HashSet::new();
-    // Track segment indices that already have a multiple_speakers entry
     let mut multi_speaker_idx_set: std::collections::HashSet<i32> =
         std::collections::HashSet::new();
 
@@ -1345,7 +1439,6 @@ pub async fn reprocess_diarization(
                 multi_speaker_idx_set.insert(flag.segment_idx);
             }
             "character_voice" => {
-                // Use the character name as the corrected speaker hint
                 let mut name = flag.character_name.clone();
                 if let Some(cid) = flag.character_id {
                     if let Ok(Some(speaker_name)) = db.get_character_speaker_name(cid) {
@@ -1367,7 +1460,6 @@ pub async fn reprocess_diarization(
         }
     }
 
-    // Add approved Qwen performance bits: character voices that should be excluded from voiceprint
     for (seg_idx, char_name) in &performance_segments {
         let already_in_corrections = corrections.iter().any(|c| {
             c.get("segment_idx")
@@ -1390,7 +1482,6 @@ pub async fn reprocess_diarization(
         }
     }
 
-    // Add approved multi-speaker corrections that aren't already in multi_speakers_segments
     for seg_idx in &multispeaker_correction_indices {
         if !multi_speaker_idx_set.contains(seg_idx) {
             multiple_speakers_segments.push(serde_json::json!({
@@ -1402,7 +1493,6 @@ pub async fn reprocess_diarization(
         }
     }
 
-    // Also count existing speakers from diarization
     if let Some(num) = episode.num_speakers {
         for i in 0..num {
             all_speakers.insert(format!("SPEAKER_{:02}", i));
@@ -1425,7 +1515,6 @@ pub async fn reprocess_diarization(
         "num_speakers_hint": num_speakers_hint,
     });
 
-    // Write hints file next to transcript
     let transcript_dir = std::path::Path::new(&transcript_path)
         .parent()
         .ok_or("Invalid transcript path")?;
@@ -1433,14 +1522,14 @@ pub async fn reprocess_diarization(
     std::fs::write(&hints_path, serde_json::to_string_pretty(&hints).unwrap())
         .map_err(|e| format!("Failed to write hints file: {}", e))?;
 
-    log::info!("Wrote diarization hints to: {:?} ({} corrections, {} multi-speaker segments, {} exclude-from-voiceprint)",
-        hints_path, corrections.len(), multiple_speakers_segments.len(), exclude_from_voiceprint.len());
+    log::info!(
+        "Wrote diarization hints to: {:?} ({} corrections, {} multi-speaker, {} exclude-from-voiceprint)",
+        hints_path, corrections.len(), multiple_speakers_segments.len(), exclude_from_voiceprint.len()
+    );
 
-    // Reset diarization status
     db.update_diarization(episode_id, 0)
         .map_err(|e| format!("Failed to reset diarization: {}", e))?;
 
-    // Use race-condition-safe requeue method
     db.requeue_for_diarization_with_backend(
         episode_id,
         if prioritize_top {
@@ -1452,7 +1541,6 @@ pub async fn reprocess_diarization(
     )
     .map_err(|e| format!("Failed to requeue for diarization: {}", e))?;
 
-    // Optional: pause new transcribe starts during priority reprocess for maximum diarize resources.
     let should_pause_transcribe = db
         .get_setting("priority_reprocess_pause_transcribe")
         .unwrap_or(None)
@@ -1484,13 +1572,9 @@ pub async fn reprocess_diarization(
 
     log::info!(
         "Episode {} queued for re-diarization with hints (backend={:?}, priority_top={}, pause_transcribe={})",
-        episode_id,
-        embedding_backend,
-        prioritize_top,
-        should_pause_transcribe
+        episode_id, embedding_backend, prioritize_top, should_pause_transcribe
     );
 
-    // Notify frontend so queue display updates
     let _ = app_handle.emit(
         "queue_update",
         serde_json::json!({

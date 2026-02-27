@@ -146,15 +146,22 @@ export const episodesAPI = {
     return result;
   },
 
-  async reprocessDiarization(episodeId, options = {}) {
+  async reprocessDiarization(episodeId) {
+    console.log('Tauri reprocessDiarization (phase 1) called for:', episodeId);
+    const result = await tauriInvoke('reprocess_diarization', { episodeId });
+    console.log('Tauri reprocessDiarization phase 1 result:', result);
+    return result;
+  },
+
+  async confirmReprocessWithQwenHints(episodeId, options = {}) {
     const { embeddingBackend = null, prioritizeTop = true } = options;
-    console.log('Tauri reprocessDiarization called for:', episodeId);
-    const result = await tauriInvoke('reprocess_diarization', {
+    console.log('Tauri confirmReprocessWithQwenHints called for:', episodeId);
+    const result = await tauriInvoke('confirm_reprocess_with_qwen_hints', {
       episodeId,
       embeddingBackend,
       prioritizeTop,
     });
-    console.log('Tauri reprocessDiarization result:', result);
+    console.log('Tauri confirmReprocessWithQwenHints result:', result);
     return result;
   },
 

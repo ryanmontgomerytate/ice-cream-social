@@ -225,16 +225,28 @@ export const episodesAPI = {
     throw new Error('Content analysis requires Tauri');
   },
 
-  async reprocessDiarization(episodeId, options = {}) {
+  async reprocessDiarization(episodeId) {
     if (isTauri) {
       try {
-        return await tauriAPI.episodesAPI.reprocessDiarization(episodeId, options);
+        return await tauriAPI.episodesAPI.reprocessDiarization(episodeId);
       } catch (e) {
         console.error('Tauri reprocessDiarization failed:', e);
         throw e;
       }
     }
     throw new Error('Reprocess diarization requires Tauri');
+  },
+
+  async confirmReprocessWithQwenHints(episodeId, options = {}) {
+    if (isTauri) {
+      try {
+        return await tauriAPI.episodesAPI.confirmReprocessWithQwenHints(episodeId, options);
+      } catch (e) {
+        console.error('Tauri confirmReprocessWithQwenHints failed:', e);
+        throw e;
+      }
+    }
+    throw new Error('Confirm reprocess requires Tauri');
   },
 
   async getCategoryRules() {
