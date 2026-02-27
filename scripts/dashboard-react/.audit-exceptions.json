@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Acknowledged npm audit findings that cannot be fixed without a breaking major upgrade. Reviewed periodically.",
+  "exceptions": [
+    {
+      "id": "GHSA-67mh-4wv8-2f99",
+      "package": "esbuild",
+      "severity": "moderate",
+      "currentVersion": "0.21.5",
+      "fixedIn": "0.25.0",
+      "reason": "esbuild is a dev-only build dependency pulled by vite@5. Fix requires vite@7 (major breaking change). The vulnerability allows dev-server request hijacking — only affects local development, not production builds.",
+      "acceptedDate": "2026-02-27",
+      "reviewBy": "2026-06-01",
+      "upstream": "https://github.com/vitejs/vite/issues"
+    }
+  ]
+}

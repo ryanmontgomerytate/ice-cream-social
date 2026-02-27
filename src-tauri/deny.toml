@@ -1,0 +1,99 @@
+# cargo-deny configuration
+# Run: cargo deny --manifest-path src-tauri/Cargo.toml check advisories
+# Docs: https://embarkstudios.github.io/cargo-deny/
+#
+# Process:
+#   1. Run `cargo deny check advisories` (CI or manual)
+#   2. If a new advisory appears, evaluate whether it affects this app
+#   3. If not actionable (transitive, pinned by Tauri, macOS-only), add an ignore entry below
+#   4. Set review-by ~3 months out or when the next Tauri major release lands
+#   5. Commit the deny.toml change with the advisory context in the commit message
+
+[advisories]
+# ─────────────────────────────────────────────────────────────────────────────
+# Tauri GTK3 transitive dependencies (macOS-only app, no GTK surface)
+#
+# Tauri v2 still depends on gtk-rs GTK3 bindings for Linux support.
+# This app targets macOS only — these crates are compiled but never executed.
+# All will resolve when Tauri migrates to GTK4 or drops the Linux GTK dep.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# glib VariantStrIter unsoundness (GHSA-wrw7-89jp-8q8g, needs glib 0.20, Tauri pins 0.18)
+# Tracked by Dependabot as GHSA-wrw7-89jp-8q8g; no RUSTSEC match at this lockfile version.
+# Documented here for completeness — macOS-only app, VariantStrIter never called.
+
+# GTK3 bindings — unmaintained (archived by gtk-rs maintainers)
+[[advisories.ignore]]
+id = "RUSTSEC-2024-0411"  # cairo-rs
+reason = "Tauri transitive dep; macOS-only, no GTK surface"
+
+[[advisories.ignore]]
+id = "RUSTSEC-2024-0412"  # cairo-sys-rs
+reason = "Tauri transitive dep; macOS-only, no GTK surface"
+
+[[advisories.ignore]]
+id = "RUSTSEC-2024-0413"  # atk
+reason = "Tauri transitive dep; macOS-only, no GTK surface"
+
+[[advisories.ignore]]
+id = "RUSTSEC-2024-0414"  # gdk
+reason = "Tauri transitive dep; macOS-only, no GTK surface"
+
+[[advisories.ignore]]
+id = "RUSTSEC-2024-0415"  # gdk-pixbuf
+reason = "Tauri transitive dep; macOS-only, no GTK surface"
+
+[[advisories.ignore]]
+id = "RUSTSEC-2024-0416"  # atk-sys
+reason = "Tauri transitive dep; macOS-only, no GTK surface"
+
+[[advisories.ignore]]
+id = "RUSTSEC-2024-0417"  # gdk-pixbuf-sys
+reason = "Tauri transitive dep; macOS-only, no GTK surface"
+
+[[advisories.ignore]]
+id = "RUSTSEC-2024-0418"  # gdk-sys
+reason = "Tauri transitive dep; macOS-only, no GTK surface"
+
+[[advisories.ignore]]
+id = "RUSTSEC-2024-0419"  # gtk3-macros
+reason = "Tauri transitive dep; macOS-only, no GTK surface"
+
+[[advisories.ignore]]
+id = "RUSTSEC-2024-0420"  # gtk-sys
+reason = "Tauri transitive dep; macOS-only, no GTK surface"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Other unmaintained transitive dependencies
+# ─────────────────────────────────────────────────────────────────────────────
+
+[[advisories.ignore]]
+id = "RUSTSEC-2024-0370"  # proc-macro-error (used by glib-macros)
+reason = "Transitive via glib-macros → Tauri; build-time only, no runtime impact"
+
+[[advisories.ignore]]
+id = "RUSTSEC-2025-0057"  # fxhash
+reason = "Transitive dep; unmaintained but no vulnerability, just archived"
+
+# unic-* crates (Unicode utilities, unmaintained)
+[[advisories.ignore]]
+id = "RUSTSEC-2025-0075"  # unic-common
+reason = "Transitive via Tauri; unmaintained, no known vulnerability"
+
+[[advisories.ignore]]
+id = "RUSTSEC-2025-0080"  # unic-char-property
+reason = "Transitive via Tauri; unmaintained, no known vulnerability"
+
+[[advisories.ignore]]
+id = "RUSTSEC-2025-0081"  # unic-char-range
+reason = "Transitive via Tauri; unmaintained, no known vulnerability"
+
+[[advisories.ignore]]
+id = "RUSTSEC-2025-0098"  # unic-ucd-ident
+reason = "Transitive via Tauri; unmaintained, no known vulnerability"
+
+[[advisories.ignore]]
+id = "RUSTSEC-2025-0100"  # unic-ucd-version
+reason = "Transitive via Tauri; unmaintained, no known vulnerability"
+
+# review-by: 2026-06-01 or next Tauri major release (whichever comes first)
