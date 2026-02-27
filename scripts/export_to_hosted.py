@@ -7,6 +7,7 @@ Usage:
   python scripts/export_to_hosted.py --mode import
   python scripts/export_to_hosted.py --mode full
   python scripts/export_to_hosted.py --mode verify
+  python scripts/export_to_hosted.py --mode verify-hosted
   python scripts/export_to_hosted.py --mode full --dry-run
   python scripts/export_to_hosted.py --tables episodes transcript_segments
 """
@@ -1068,13 +1069,92 @@ def verify_tables(
     return verification
 
 
+def verify_hosted_tables(
+    *,
+    table_names: List[str],
+    database_url: str,
+) -> Dict[str, Dict[str, Any]]:
+    psycopg2, sql_mod, _, _ = ensure_postgres_driver()
+    verification: Dict[str, Dict[str, Any]] = {}
+
+    with psycopg2.connect(database_url) as pg_conn:
+        with pg_conn.cursor() as pg_cur:
+            target_columns_by_table = get_public_table_columns(pg_cur, table_names)
+            missing_tables = [name for name, cols in target_columns_by_table.items() if not cols]
+            if missing_tables:
+                raise RuntimeError(
+                    "Target Postgres schema is missing table metadata for: "
+                    + ", ".join(sorted(missing_tables))
+                )
+
+            for table_name in table_names:
+                pg_cur.execute(
+                    sql_mod.SQL("SELECT COUNT(*) FROM {}").format(sql_mod.Identifier(table_name))
+                )
+                row = pg_cur.fetchone()
+                hosted_count = int(row[0]) if row else 0
+                verification[table_name] = {
+                    "hosted": hosted_count,
+                    "match": True,
+                    "reason": None,
+                }
+
+            # Basic hosted sanity: these should not be empty in a valid import.
+            for required_table in ("shows", "episodes", "transcript_segments"):
+                if required_table in verification and verification[required_table]["hosted"] <= 0:
+                    verification[required_table]["match"] = False
+                    verification[required_table]["reason"] = "expected_nonzero"
+
+            # If import_batches exists and has a completed row, compare key counts.
+            if "import_batches" in get_public_table_columns(pg_cur, ["import_batches"]):
+                pg_cur.execute(
+                    """
+                    SELECT id, episode_count, segment_count, character_count
+                    FROM import_batches
+                    WHERE status = 'complete'
+                      AND (
+                          COALESCE(episode_count, 0) > 0
+                          OR COALESCE(segment_count, 0) > 0
+                          OR COALESCE(character_count, 0) > 0
+                      )
+                    ORDER BY imported_at DESC, id DESC
+                    LIMIT 1
+                    """
+                )
+                latest_batch = pg_cur.fetchone()
+                if latest_batch:
+                    _, batch_episode_count, batch_segment_count, batch_character_count = latest_batch
+                    expectations = {
+                        "episodes": int(batch_episode_count or 0),
+                        "transcript_segments": int(batch_segment_count or 0),
+                        "characters": int(batch_character_count or 0),
+                    }
+                    for table_name, expected in expectations.items():
+                        if table_name not in verification:
+                            continue
+                        if expected <= 0:
+                            continue
+                        hosted = int(verification[table_name]["hosted"])
+                        verification[table_name]["expected"] = expected
+                        verification[table_name]["delta"] = hosted - expected
+                        if hosted != expected:
+                            verification[table_name]["match"] = False
+                            verification[table_name]["reason"] = "import_batch_mismatch"
+
+    return verification
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Export local SQLite data to hosted Postgres.")
     parser.add_argument(
         "--mode",
-        choices=["export", "import", "full", "verify"],
+        choices=["export", "import", "full", "verify", "verify-hosted"],
         default="full",
-        help="export: JSON only, import: DB upsert only, full: export+import, verify: local vs hosted row-count check",
+        help=(
+            "export: JSON only, import: DB upsert only, full: export+import, "
+            "verify: import-source vs hosted row-count check, "
+            "verify-hosted: hosted-only integrity check"
+        ),
     )
     parser.add_argument(
         "--tables",
@@ -1128,13 +1208,41 @@ def main() -> None:
 
     load_default_env_files()
 
-    if not sqlite_path.exists():
+    needs_sqlite = args.mode in {"export", "import", "full", "verify"}
+    if needs_sqlite and not sqlite_path.exists():
         raise SystemExit(f"SQLite DB not found: {sqlite_path}")
 
-    needs_import = args.mode in {"import", "full", "verify"}
+    needs_import = args.mode in {"import", "full", "verify", "verify-hosted"}
     database_url = os.getenv("DATABASE_URL", "").strip()
     if needs_import and not args.dry_run and not database_url:
-        raise SystemExit("DATABASE_URL is required for import/full/verify mode.")
+        raise SystemExit("DATABASE_URL is required for import/full/verify/verify-hosted mode.")
+
+    if args.mode == "verify-hosted":
+        print(f"[info] mode={args.mode} dry_run={args.dry_run}")
+        print(f"[info] tables={', '.join(table_names)}")
+        verification = verify_hosted_tables(
+            table_names=table_names,
+            database_url=database_url,
+        )
+        print("[verify-hosted] hosted integrity checks:")
+        mismatches: List[str] = []
+        for table_name in table_names:
+            row = verification[table_name]
+            status = "ok" if row["match"] else "mismatch"
+            detail = f"hosted={row['hosted']}"
+            if "expected" in row:
+                detail += f" expected={row['expected']} delta={row.get('delta', 0)}"
+            if row.get("reason"):
+                detail += f" reason={row['reason']}"
+            print(f"  - {table_name}: {detail} [{status}]")
+            if not row["match"]:
+                mismatches.append(table_name)
+        if mismatches:
+            raise SystemExit(
+                "Hosted verification failed for table(s): " + ", ".join(mismatches)
+            )
+        print("[done] export/import pipeline finished.")
+        return
 
     sqlite_conn = sqlite3.connect(str(sqlite_path))
     sqlite_conn.row_factory = sqlite3.Row

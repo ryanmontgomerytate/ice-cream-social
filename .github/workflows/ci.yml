@@ -89,6 +89,7 @@ jobs:
         id: verify_prereqs
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SQLITE_DB_URL: ${{ secrets.SQLITE_DB_URL }}
         run: |
           if [ -n "${DATABASE_URL:-}" ]; then
             echo "database_url_set=true" >> "$GITHUB_OUTPUT"
@@ -97,10 +98,23 @@ jobs:
             echo "database_url_set=false" >> "$GITHUB_OUTPUT"
           fi
 
+          # Optional bootstrap: download a SQLite snapshot when not present in repo checkout.
+          if [ ! -f data/ice_cream_social.db ] && [ -n "${SQLITE_DB_URL:-}" ]; then
+            mkdir -p data
+            tmp_db="$(mktemp)"
+            echo "Downloading SQLite source snapshot..."
+            curl -fL "${SQLITE_DB_URL}" -o "${tmp_db}"
+            if file "${tmp_db}" | grep -qi 'gzip compressed'; then
+              gunzip -c "${tmp_db}" > data/ice_cream_social.db
+            else
+              mv "${tmp_db}" data/ice_cream_social.db
+            fi
+          fi
+
           if [ -f data/ice_cream_social.db ]; then
             echo "sqlite_exists=true" >> "$GITHUB_OUTPUT"
           else
-            echo "::warning::Skipping hosted verify: data/ice_cream_social.db is not present in this checkout."
+            echo "::warning::Skipping hosted verify: data/ice_cream_social.db is not present and SQLITE_DB_URL was not provided (or download failed)."
             echo "sqlite_exists=false" >> "$GITHUB_OUTPUT"
           fi
 
@@ -109,3 +123,9 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python scripts/export_to_hosted.py --mode verify
+
+      - name: Verify hosted integrity (fallback without local SQLite)
+        if: ${{ steps.verify_prereqs.outputs.database_url_set == 'true' && steps.verify_prereqs.outputs.sqlite_exists != 'true' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python scripts/export_to_hosted.py --mode verify-hosted
