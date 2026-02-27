@@ -2,6 +2,24 @@
 
 ## Session: February 27, 2026
 
+### Current State Update (Phase 1 Search Relevance: Hosted Migration Applied)
+
+**Done:**
+- Applied hosted Supabase migration `search_ranked_rpc` to create `public.search_transcript_segments(...)` in the live project.
+- Validated the function with a live query (`Penn`, page 1, size 5) and confirmed ranked rows are returned.
+- Updated `docs/EVOLVE_ICS_TRACKER.md` to reflect hosted migration completion.
+- Commit scope remained selective to active Phase 1 files only (unrelated local changes untouched).
+
+**Pending:**
+- Tune ranking quality for broad/common terms and adjust tie-break behavior if needed.
+
+**Blockers:**
+- None.
+
+**Tests Run:**
+- `mcp__supabase__apply_migration(name=\"search_ranked_rpc\", ...)` — **pass**
+- `mcp__supabase__execute_sql(\"select ... from public.search_transcript_segments('Penn', 1, 5)\")` — **pass**
+
 ### Current State Update (Phase 1 Search Relevance: Ranked RPC + Safe Fallback)
 
 **Done:**
