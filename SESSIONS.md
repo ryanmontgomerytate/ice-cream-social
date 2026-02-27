@@ -1,5 +1,75 @@
 # Development Sessions Log
 
+## Session: February 27, 2026 (cont'd — Cleanup & Security)
+
+### Current State Update (Kill Browser Mode — Tauri-Only Frontend)
+
+**Done:**
+- Removed all Flask/Socket.IO/browser-mode dead code from `scripts/dashboard-react/`:
+  - `api.js`: Removed `API_BASE`, `APIError`, `fetchJSON()`, all `if(isTauri)` branching and `try/catch/console.error` wrappers. Every method now directly calls through to `tauriAPI.*`. 1424 → 692 lines.
+  - `App.jsx`: Removed Socket.IO `else` branch (dynamic import of `socket.io-client`, event handlers). Only Tauri event listeners remain. 303 → 264 lines.
+  - `tauri.js`: Removed `__TAURI_MOCK__` detection, verbose `console.log` debug block. Simplified `getInvoke()`/`getListen()`.
+  - `EpisodeCard.jsx`: Removed unused `isTauri` import.
+  - `package.json`: Removed `socket.io-client` dependency (10 packages removed from lockfile).
+- `TranscriptModal.jsx`: Fixed `addCharacterAppearance` to pass `performedBySpeakerId` from episode speaker assignments.
+
+**What did NOT change:**
+- `dashboard_server.py` — standalone tool, deferred to separate cleanup task.
+- `tauri.js` IPC wrappers — these are the real API layer, untouched.
+- `/web/` (Next.js) — completely separate, untouched.
+- Rust backend — no changes.
+- Component `isTauri` guards in `PropertiesPanel`, `TranscriptEditor`, `TranscriptModal` — kept as feature-availability checks.
+
+**Tests Run:**
+- `npm --prefix scripts/dashboard-react run build` — **pass** (489 kB bundle, no import errors)
+- `grep -r "socket.io|fetchJSON|API_BASE|APIError" src/` — **0 matches**
+- `socket.io-client` absent from `package-lock.json` — **confirmed**
+
+**Commits:** `9a815c8`, `2a9c822`
+
+---
+
+### Current State Update (Dependabot Vulnerability Remediation)
+
+**Done:**
+- Fixed 14 of 16 Dependabot alerts:
+  - `next` 15.1.6 → 15.5.10 in `web/` (11 alerts: 2 critical, 3 high, 5 medium, 1 low)
+  - `time` 0.3.46 → 0.3.47, `bytes` 1.11.0 → 1.11.1 in `src-tauri/Cargo.lock` (2 medium Rust alerts)
+  - `rollup` 4.53.5 → 4.59.0 in `scripts/dashboard-react/` via `npm audit fix` (1 high)
+- Remaining 2 alerts (both moderate, documented as accepted):
+  - `esbuild` ≤0.24.2 — dev-only build tool, fix requires Vite 5→7 major bump
+  - `glib` 0.18.5 — pinned by Tauri's GTK3 dependency chain, macOS-only app
+
+**Tests Run:**
+- `npx next build` (web/) — **pass** (all routes build, middleware compiles)
+- `npm --prefix scripts/dashboard-react run build` — **pass**
+- `cargo check --manifest-path src-tauri/Cargo.toml` — **pass** (1 warning: unused struct)
+
+**Commit:** `17ffd24`
+
+---
+
+### Current State Update (Security Audit Exception Tracking)
+
+**Done:**
+- Installed `cargo-deny` and created `src-tauri/deny.toml`:
+  - 17 documented ignore entries for Tauri-pinned transitive deps (GTK3 unmaintained, glib, fxhash, unic-*, proc-macro-error)
+  - Each entry has a reason explaining why it's accepted
+  - Review-by date: 2026-06-01
+  - Process comment at top of file explains how to add new exceptions
+- Created `scripts/dashboard-react/.audit-exceptions.json`:
+  - Documents esbuild exception with `acceptedDate`, `reviewBy`, `severity`, `reason`
+- `cargo deny check advisories` — **passes clean**
+
+**Process going forward:**
+1. Run `cargo deny check advisories` or `npm audit` when updating deps
+2. If a new advisory can't be fixed (pinned upstream), add a documented ignore entry
+3. Review all exceptions at review-by date or next Tauri major release
+
+**Commit:** `0f95670`
+
+---
+
 ## Session: February 27, 2026
 
 ### Current State Update (Web Observability: Sentry Error Tracking Baseline)
