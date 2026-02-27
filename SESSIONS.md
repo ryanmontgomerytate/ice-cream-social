@@ -2,6 +2,34 @@
 
 ## Session: February 27, 2026
 
+### Current State Update (Phase 2: First Admin API Surface + Dashboard)
+
+**Done:**
+- Added Phase 2 admin-gated read APIs in Next.js:
+  - `web/app/api/v1/admin/revisions/route.ts`
+  - `web/app/api/v1/admin/pending-edits/route.ts`
+  - `web/app/api/v1/admin/moderation-queue/route.ts`
+- Added shared admin key gate helper: `web/lib/admin-auth.ts` (`x-admin-key` or bearer token against `ADMIN_API_KEY`).
+- Added typed Phase 2 web models in `web/lib/types.ts` for revisions, pending edits, queue items, and admin paginated responses.
+- Replaced `/admin` placeholder with a working moderation review dashboard:
+  - `web/components/admin/AdminDashboard.tsx`
+  - `web/app/(admin)/admin/page.tsx`
+- Documented `ADMIN_API_KEY` in env templates:
+  - `web/.env.example`
+  - `scripts/.env.example`
+- Updated tracker/architecture docs for this Phase 2 milestone (`docs/EVOLVE_ICS_TRACKER.md`, `ARCHITECTURE.md`).
+
+**Pending:**
+- Add authenticated, role-aware moderation write endpoints (approve/reject/assign) and wire corresponding UI actions.
+- Move from bootstrap admin-key gating to auth + RLS-backed policy enforcement.
+
+**Blockers:**
+- `next lint` is not yet configured in `web` and exits into interactive setup.
+
+**Tests Run:**
+- `npm --prefix web run build` — **pass** (includes `/admin` and all new `/api/v1/admin/*` routes in build output)
+- `npm --prefix web run lint` — **blocked** (interactive Next.js ESLint setup prompt)
+
 ### Current State Update (Character Performer Tracking — Option A)
 
 **Done:**

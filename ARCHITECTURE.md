@@ -290,6 +290,21 @@ Current Phase 2 schema posture:
 - RLS enabled on new tables.
 - Anonymous access remains closed by default until auth + API policies are introduced.
 
+## Hosted Phase 2 API Surface (Initial Read Endpoints)
+
+Initial Phase 2 read APIs are now implemented in Next.js route handlers:
+- `GET /api/v1/admin/revisions`
+- `GET /api/v1/admin/pending-edits`
+- `GET /api/v1/admin/moderation-queue`
+
+Security posture for this initial slice:
+- Endpoints require `ADMIN_API_KEY` via `x-admin-key` or `Authorization: Bearer`.
+- Data fetches currently use the Supabase secret-key server client (`createAdminClient`) to bypass RLS.
+- This is a bootstrap admin surface for internal moderation workflows; role-aware authenticated flows and RLS-backed policies are the next step.
+
+Admin review UI:
+- `/admin` now renders a minimal dashboard that loads pending edits, queue items, and unapproved revisions through these API routes.
+
 ## Target Direction (Short Version)
 
 Near-term (desktop quality):

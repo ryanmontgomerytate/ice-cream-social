@@ -244,6 +244,86 @@ export interface SearchResponse {
   total: number;
 }
 
+// ─── Phase 2: Community moderation primitives ────────────────────────────────
+
+export type PendingEditStatus =
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "needs_changes"
+  | "auto_approved";
+
+export type ModerationQueueStatus = "open" | "in_review" | "resolved" | "dismissed";
+
+export type ModerationQueueType = "pending_edit" | "report" | "system_flag";
+
+export interface ContentRevision {
+  id: number;
+  show_id: number | null;
+  content_type: string;
+  content_id: number;
+  revision_number: number;
+  operation: "create" | "update" | "delete";
+  title: string | null;
+  summary: string | null;
+  payload: Record<string, unknown>;
+  created_by: string | null;
+  created_at: string;
+  is_approved: boolean;
+  approved_by: string | null;
+  approved_at: string | null;
+}
+
+export interface PendingEdit {
+  id: number;
+  revision_id: number;
+  status: PendingEditStatus;
+  risk_score: number | string;
+  risk_reason: string | null;
+  submitted_at: string;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  updated_at: string;
+}
+
+export interface PendingEditWithRevision extends PendingEdit {
+  revision: ContentRevision | null;
+}
+
+export interface ReportSummary {
+  id: number;
+  target_type: string;
+  target_id: number;
+  reason: string;
+  status: string;
+  created_at: string;
+}
+
+export interface ModerationQueueItem {
+  id: number;
+  show_id: number | null;
+  queue_type: ModerationQueueType;
+  ref_id: number;
+  priority: number;
+  status: ModerationQueueStatus;
+  assigned_to: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ModerationQueueItemWithRef extends ModerationQueueItem {
+  ref: PendingEdit | ReportSummary | null;
+}
+
+export interface AdminPaginatedResponse<T> {
+  data: T[];
+  page: number;
+  per_page: number;
+  total: number;
+  has_more: boolean;
+}
+
 // ─── Utility ──────────────────────────────────────────────────────────────────
 
 /** Format seconds as "1h 23m" or "42m" */
