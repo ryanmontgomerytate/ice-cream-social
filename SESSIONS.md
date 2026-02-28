@@ -1379,3 +1379,21 @@ Tests Run
 - `mcp__supabase__execute_sql("select conname, pg_get_constraintdef(oid) ... moderation_actions_action_check")` — **PASS** (`resolve`/`dismiss` present)
 - `mcp__supabase__execute_sql("select pg_get_functiondef('public.apply_moderation_action(...)')")` — **PASS** (report/system_flag branch present)
 - `npm --prefix web run build` — **PASS** (admin routes/components compile with new moderation actions)
+
+### Current State Update (#4 Started: Phase 3 PWA + Phone Install Baseline)
+
+- **Done:** Added Phase 3 PWA metadata/runtime baseline in `web/`:
+  - `web/app/manifest.ts` (`/manifest.webmanifest`)
+  - `web/public/sw.js` (baseline service worker)
+  - `web/components/pwa/InstallAppButton.tsx` (service worker registration + install prompt + iOS fallback)
+  - `web/app/(public)/install/page.tsx` (manual install instructions for iOS/Android)
+  - `web/public/icons/icon.svg` and `web/public/icons/apple-touch-icon.svg`
+- **Done:** Updated root layout metadata/viewport/nav responsiveness in `web/app/layout.tsx`:
+  - manifest + icon metadata and mobile viewport config
+  - mobile-friendly nav spacing and install CTA placement.
+- **Done:** Updated roadmap/architecture docs for Phase 3 in-progress state and PWA baseline scope.
+- **Pending:** Mobile UX/accessibility performance pass (tap targets/nav ergonomics/Lighthouse mobile metrics) and broader installability QA on real devices.
+- **Blockers:** None.
+
+Tests Run
+- `npm --prefix web run build` — **PASS** (routes now include `/install` and `/manifest.webmanifest`; full app build succeeds)

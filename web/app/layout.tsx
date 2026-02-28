@@ -1,5 +1,6 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import Link from "next/link";
+import InstallAppButton from "@/components/pwa/InstallAppButton";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -10,6 +11,24 @@ export const metadata: Metadata = {
   description:
     "Fan wiki and episode guide for Matt and Mattingly's Ice Cream Social podcast.",
   keywords: ["Ice Cream Social", "Matt Donnelly", "Paul Mattingly", "podcast"],
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    title: "Ice Cream Social",
+    capable: true,
+    statusBarStyle: "black-translucent",
+  },
+  icons: {
+    icon: "/icons/icon.svg",
+    apple: "/icons/apple-touch-icon.svg",
+  },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#020617",
+  colorScheme: "dark",
 };
 
 export default function RootLayout({
@@ -31,7 +50,8 @@ export default function RootLayout({
               <span>Ice Cream Social</span>
             </Link>
 
-            <div className="flex items-center gap-6 text-sm text-gray-400">
+            <div className="flex flex-wrap items-center justify-end gap-3 text-xs text-gray-400 sm:gap-6 sm:text-sm">
+              <InstallAppButton />
               <Link href="/episodes" className="hover:text-white transition-colors">
                 Episodes
               </Link>
@@ -52,7 +72,7 @@ export default function RootLayout({
         </nav>
 
         {/* ── Main content ── */}
-        <main className="mx-auto max-w-7xl px-4 py-8">{children}</main>
+        <main className="mx-auto max-w-7xl px-4 py-6 sm:py-8">{children}</main>
 
         {/* ── Footer ── */}
         <footer className="border-t border-gray-800 py-8 text-center text-xs text-gray-600">

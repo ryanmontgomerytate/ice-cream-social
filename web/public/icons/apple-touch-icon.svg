@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" role="img" aria-label="Ice Cream Social">
+  <rect x="0" y="0" width="180" height="180" rx="36" fill="#0f172a" />
+  <circle cx="90" cy="62" r="38" fill="#f8fafc" />
+  <path d="M90 150L65 86h50z" fill="#d97706" />
+</svg>

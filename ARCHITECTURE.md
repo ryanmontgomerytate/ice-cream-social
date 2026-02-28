@@ -402,6 +402,21 @@ Optional bootstrap behavior:
   - `PHASE2_BOOTSTRAP_ADMIN_EMAILS`
   - `PHASE2_BOOTSTRAP_MODERATOR_EMAILS`
 
+## Hosted Phase 3 Baseline (Phone-First / PWA)
+
+Initial phone-first baseline is now in place for the Next.js app:
+- `web/app/manifest.ts` provides `manifest.webmanifest`.
+- `web/public/sw.js` is registered client-side for baseline installability support.
+- `web/components/pwa/InstallAppButton.tsx` handles:
+  - service worker registration
+  - `beforeinstallprompt` install CTA
+  - iOS fallback link to manual install instructions.
+- `web/app/(public)/install/page.tsx` provides mobile install steps for iOS Safari and Android Chrome.
+
+Current Phase 3 posture:
+- PWA/install baseline is present.
+- Offline caching and richer mobile UX/accessibility tuning are still pending.
+
 ## Target Direction (Short Version)
 
 Near-term (desktop quality):
