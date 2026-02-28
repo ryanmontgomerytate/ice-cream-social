@@ -261,6 +261,8 @@ export type ModerationActionType =
   | "approve"
   | "reject"
   | "needs_changes"
+  | "resolve"
+  | "dismiss"
   | "assign"
   | "unassign";
 

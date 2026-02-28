@@ -358,11 +358,17 @@ Write behavior:
   - `approve`
   - `reject`
   - `needs_changes`
+  - `resolve` (for `report` / `system_flag` queue items)
+  - `dismiss` (for `report` / `system_flag` queue items)
   - `assign`
   - `unassign`
 - RPC runs as `SECURITY INVOKER` so RLS policies are enforced for the caller.
 
-RLS updates introduced in migration `web/supabase/migrations/005_phase2_moderation_actions.sql`:
+Schema/RPC updates introduced in:
+- `web/supabase/migrations/005_phase2_moderation_actions.sql`
+- `web/supabase/migrations/008_phase2_moderation_queue_resolution.sql`
+
+RLS posture:
 - Moderator/admin SELECT/UPDATE policies on:
   - `content_revisions`
   - `pending_edits`

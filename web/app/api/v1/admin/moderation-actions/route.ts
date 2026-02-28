@@ -8,6 +8,8 @@ const ALLOWED_ACTIONS = new Set([
   "approve",
   "reject",
   "needs_changes",
+  "resolve",
+  "dismiss",
   "assign",
   "unassign",
 ]);
@@ -54,7 +56,10 @@ export async function POST(request: NextRequest) {
 
       if (!ALLOWED_ACTIONS.has(action)) {
         return NextResponse.json(
-          { error: "Unsupported action. Use approve, reject, needs_changes, assign, or unassign." },
+          {
+            error:
+              "Unsupported action. Use approve, reject, needs_changes, resolve, dismiss, assign, or unassign.",
+          },
           { status: 400 }
         );
       }

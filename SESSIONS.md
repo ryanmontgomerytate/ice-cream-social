@@ -1360,3 +1360,22 @@ Tests Run
 
 Tests Run
 - `ruby -e 'require "yaml"; YAML.load_file(".github/workflows/ci.yml"); puts "ci.yml OK"'` — **PASS** (workflow YAML parses cleanly)
+
+### Current State Update (#3 Progress: Report/System-Flag Moderation Actions)
+
+- **Done:** Added hosted migration `web/supabase/migrations/008_phase2_moderation_queue_resolution.sql` and applied it to Supabase.
+- **Done:** Extended `public.apply_moderation_action(...)` to support `resolve`/`dismiss` for `report` + `system_flag` queue items, including queue status transitions and report status updates.
+- **Done:** Expanded moderation action check constraint to include `resolve` and `dismiss`.
+- **Done:** Updated web moderation action surface:
+  - `web/app/api/v1/admin/moderation-actions/route.ts` now allows `resolve`/`dismiss`.
+  - `web/components/admin/AdminDashboard.tsx` now shows `Resolve`/`Dismiss` controls for report/system-flag items.
+  - `web/lib/types.ts` `ModerationActionType` updated.
+- **Done:** Updated architecture/tracker docs for the new Phase 2 write-path scope (`ARCHITECTURE.md`, `docs/EVOLVE_ICS_TRACKER.md`).
+- **Pending:** Add richer role-management UX (beyond bootstrap allowlists) and moderation history/triage context in `/admin`.
+- **Blockers:** None.
+
+Tests Run
+- `mcp__supabase__apply_migration(name="phase2_moderation_queue_resolution", ...)` — **PASS**
+- `mcp__supabase__execute_sql("select conname, pg_get_constraintdef(oid) ... moderation_actions_action_check")` — **PASS** (`resolve`/`dismiss` present)
+- `mcp__supabase__execute_sql("select pg_get_functiondef('public.apply_moderation_action(...)')")` — **PASS** (report/system_flag branch present)
+- `npm --prefix web run build` — **PASS** (admin routes/components compile with new moderation actions)

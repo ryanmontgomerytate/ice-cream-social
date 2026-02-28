@@ -303,13 +303,19 @@ export default function AdminDashboard() {
                 </tr>
               </thead>
               <tbody className="text-gray-300">
-                {moderationQueue.data.map((item) => (
-                  <tr
-                    key={item.id}
-                    className={`border-t border-gray-800 ${
-                      selectedQueueItemId === item.id ? "bg-gray-800/40" : ""
-                    }`}
-                  >
+                {moderationQueue.data.map((item) => {
+                  const isClosed = item.status === "resolved" || item.status === "dismissed";
+                  const isPendingEdit = item.queue_type === "pending_edit";
+                  const isReportOrSystemFlag =
+                    item.queue_type === "report" || item.queue_type === "system_flag";
+
+                  return (
+                    <tr
+                      key={item.id}
+                      className={`border-t border-gray-800 ${
+                        selectedQueueItemId === item.id ? "bg-gray-800/40" : ""
+                      }`}
+                    >
                     <td className="py-2 pr-4">#{item.id}</td>
                     <td className="py-2 pr-4">{item.queue_type}</td>
                     <td className="py-2 pr-4">{item.status}</td>
@@ -342,40 +348,59 @@ export default function AdminDashboard() {
                         >
                           Unassign
                         </button>
-                        {item.queue_type === "pending_edit" &&
-                          item.status !== "resolved" &&
-                          item.status !== "dismissed" && (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => runQueueAction(item.id, "approve")}
-                                disabled={actionQueueId === item.id}
-                                className="rounded border border-emerald-700/70 px-2 py-1 text-xs text-emerald-300 hover:border-emerald-500 hover:text-emerald-200 disabled:cursor-not-allowed disabled:opacity-60"
-                              >
-                                Approve
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => runQueueAction(item.id, "needs_changes")}
-                                disabled={actionQueueId === item.id}
-                                className="rounded border border-amber-700/70 px-2 py-1 text-xs text-amber-300 hover:border-amber-500 hover:text-amber-200 disabled:cursor-not-allowed disabled:opacity-60"
-                              >
-                                Needs changes
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => runQueueAction(item.id, "reject")}
-                                disabled={actionQueueId === item.id}
-                                className="rounded border border-red-700/70 px-2 py-1 text-xs text-red-300 hover:border-red-500 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-60"
-                              >
-                                Reject
-                              </button>
-                            </>
-                          )}
+                        {isPendingEdit && !isClosed && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => runQueueAction(item.id, "approve")}
+                              disabled={actionQueueId === item.id}
+                              className="rounded border border-emerald-700/70 px-2 py-1 text-xs text-emerald-300 hover:border-emerald-500 hover:text-emerald-200 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              Approve
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => runQueueAction(item.id, "needs_changes")}
+                              disabled={actionQueueId === item.id}
+                              className="rounded border border-amber-700/70 px-2 py-1 text-xs text-amber-300 hover:border-amber-500 hover:text-amber-200 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              Needs changes
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => runQueueAction(item.id, "reject")}
+                              disabled={actionQueueId === item.id}
+                              className="rounded border border-red-700/70 px-2 py-1 text-xs text-red-300 hover:border-red-500 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              Reject
+                            </button>
+                          </>
+                        )}
+                        {isReportOrSystemFlag && !isClosed && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => runQueueAction(item.id, "resolve")}
+                              disabled={actionQueueId === item.id}
+                              className="rounded border border-emerald-700/70 px-2 py-1 text-xs text-emerald-300 hover:border-emerald-500 hover:text-emerald-200 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              Resolve
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => runQueueAction(item.id, "dismiss")}
+                              disabled={actionQueueId === item.id}
+                              className="rounded border border-amber-700/70 px-2 py-1 text-xs text-amber-300 hover:border-amber-500 hover:text-amber-200 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              Dismiss
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
-                  </tr>
-                ))}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
