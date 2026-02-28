@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 
 interface AuthMePayload {
@@ -27,7 +27,7 @@ const DEFAULT_AUTH_STATE: AuthMePayload = {
 };
 
 export default function LoginPanel() {
-  const supabase = useMemo(() => createClient(), []);
+  const supabaseRef = useRef<ReturnType<typeof createClient> | null>(null);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -35,6 +35,22 @@ export default function LoginPanel() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [authState, setAuthState] = useState<AuthMePayload>(DEFAULT_AUTH_STATE);
+
+  const getSupabase = useCallback(() => {
+    if (supabaseRef.current) return supabaseRef.current;
+
+    try {
+      supabaseRef.current = createClient();
+      return supabaseRef.current;
+    } catch (clientError) {
+      const message =
+        clientError instanceof Error
+          ? clientError.message
+          : "Supabase client is not configured in this environment.";
+      setError(message);
+      return null;
+    }
+  }, []);
 
   const refreshAuthState = useCallback(async () => {
     const response = await fetch("/api/v1/auth/me", { cache: "no-store" });
@@ -58,6 +74,12 @@ export default function LoginPanel() {
     setError(null);
     setMessage(null);
 
+    const supabase = getSupabase();
+    if (!supabase) {
+      setIsLoading(false);
+      return;
+    }
+
     const { error: signInError } = await supabase.auth.signInWithPassword({
       email: email.trim(),
       password,
@@ -72,12 +94,18 @@ export default function LoginPanel() {
     setMessage("Signed in.");
     await refreshAuthState();
     setIsLoading(false);
-  }, [email, password, refreshAuthState, supabase.auth]);
+  }, [email, getSupabase, password, refreshAuthState]);
 
   const handleSignUp = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     setMessage(null);
+
+    const supabase = getSupabase();
+    if (!supabase) {
+      setIsLoading(false);
+      return;
+    }
 
     const trimmedEmail = email.trim();
     const redirectTo = typeof window !== "undefined" ? `${window.location.origin}/login` : undefined;
@@ -99,12 +127,18 @@ export default function LoginPanel() {
     setMessage("Signup submitted. Check your email to confirm your account if required.");
     await refreshAuthState();
     setIsLoading(false);
-  }, [email, password, refreshAuthState, supabase.auth]);
+  }, [email, getSupabase, password, refreshAuthState]);
 
   const handleMagicLink = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     setMessage(null);
+
+    const supabase = getSupabase();
+    if (!supabase) {
+      setIsLoading(false);
+      return;
+    }
 
     const trimmedEmail = email.trim();
     const redirectTo = typeof window !== "undefined" ? `${window.location.origin}/login` : undefined;
@@ -124,12 +158,18 @@ export default function LoginPanel() {
 
     setMessage("Magic link sent. Check your inbox.");
     setIsLoading(false);
-  }, [email, supabase.auth]);
+  }, [email, getSupabase]);
 
   const handleSignOut = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     setMessage(null);
+
+    const supabase = getSupabase();
+    if (!supabase) {
+      setIsLoading(false);
+      return;
+    }
 
     const { error: signOutError } = await supabase.auth.signOut();
     if (signOutError) {
@@ -141,7 +181,7 @@ export default function LoginPanel() {
     setAuthState(DEFAULT_AUTH_STATE);
     setMessage("Signed out.");
     setIsLoading(false);
-  }, [supabase.auth]);
+  }, [getSupabase]);
 
   return (
     <div className="mx-auto max-w-2xl space-y-6 py-8">

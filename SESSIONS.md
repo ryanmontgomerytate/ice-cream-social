@@ -1336,3 +1336,13 @@ Tests Run
 - `mcp__supabase__execute_sql("select policyname ... from pg_policies where tablename='profiles'")` — **PASS** (self-profile policies present)
 - `mcp__supabase__execute_sql("select tgname ... auth.users ... on_auth_user_created_profiles")` — **PASS** (trigger present)
 - `npm --prefix web run build` — **PASS** (includes `/login` and `/api/v1/auth/me`)
+
+### Current State Update (#3 Follow-up: Login Prerender CI Fix)
+
+- **Done:** Fixed `/login` prerender failure in CI by making Supabase browser-client initialization lazy in `web/components/auth/LoginPanel.tsx` (created only in click handlers, not during render).
+- **Done:** This prevents build-time crashes when Supabase env vars are absent in CI web-build job.
+- **Pending:** CI still has unrelated Rust fmt failures in in-progress Tauri files.
+- **Blockers:** None for web auth milestone.
+
+Tests Run
+- `npm --prefix web run build` — **PASS** (`/login` now prerenders successfully)
