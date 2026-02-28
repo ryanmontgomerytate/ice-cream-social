@@ -1298,3 +1298,20 @@ Tests Run
 Tests Run
 - `npm --prefix web run build` — **PASS** (Next.js production build succeeds with updated Sentry config; local upload gracefully skipped without CI upload flag)
 - `ruby -e 'require "yaml"; YAML.load_file(".github/workflows/ci.yml"); puts "ci.yml OK"'` — **PASS** (workflow YAML parses cleanly)
+### Current State Update (#2 Completed: Phase 1 Search Relevance + Tie-Break Tuning)
+
+- **Done:** Added hosted migration `web/supabase/migrations/006_search_relevance_tuning.sql` to tune both search RPCs:
+  - `search_transcript_segments`: normalized rank (`ts_rank_cd(..., 32)`), phrase-match boost, and refined ordering.
+  - `search_transcript_segments_fast`: recency-bounded candidate window + lightweight rerank for broad/single-token query quality without full-table ranked sort behavior.
+- **Done:** Applied migration to hosted Supabase and validated live RPC output for phrase and broad-query cases.
+- **Done:** Updated `web/lib/search.ts` fast-path note to reflect the new bounded-candidate rerank behavior.
+- **Done:** Updated `docs/EVOLVE_ICS_TRACKER.md` to mark **Phase 1: Web read + hosted model** as `done`.
+- **Pending:** Monitor live search quality/latency and open incremental follow-up tuning issues if needed.
+- **Blockers:** None.
+
+Tests Run
+- `mcp__supabase__apply_migration(name=\"phase1_search_relevance_tuning\", ...)` — **PASS**
+- `mcp__supabase__execute_sql(\"select ... from public.search_transcript_segments('Thanks, Penn', 1, 5)\")` — **PASS** (ranked rows returned)
+- `mcp__supabase__execute_sql(\"select ... from public.search_transcript_segments_fast('Penn', 1, 5)\")` — **PASS** (broad-query fast path returns ranked rows)
+- `mcp__supabase__execute_sql(\"select ... from public.search_transcript_segments_fast('Thanks, Penn', 1, 5)\")` — **PASS** (phrase query returns results through fast path)
+- `npm --prefix web run build` — **PASS** (Next.js production build succeeds)

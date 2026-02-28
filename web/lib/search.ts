@@ -360,8 +360,8 @@ export async function searchTranscriptSegments({
       },
     },
     async () => {
-      // Single-token queries are usually broad and can time out under ranked sorting.
-      // Use a fast non-ranked RPC path for better reliability.
+      // Single-token queries are usually broad and can time out under full ranked sorting.
+      // Use the fast RPC path (recency-bounded candidate window + lightweight rerank).
       if (queryTokens.length <= 1) {
         return searchWithFastRpc({
           query,
