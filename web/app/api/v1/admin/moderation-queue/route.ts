@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdminApiKey } from "@/lib/admin-auth";
-import { createAdminClient } from "@/lib/supabase/server";
+import { requireModeratorAccess } from "@/lib/moderation-auth";
 import type {
   ModerationQueueItem,
   ModerationQueueItemWithRef,
@@ -21,6 +20,7 @@ function parsePositiveInt(value: string | null, fallback: number): number {
 
 /**
  * GET /api/v1/admin/moderation-queue
+ * Requires authenticated moderator/admin role.
  *
  * Query params:
  *   page        page number (default 1)
@@ -29,8 +29,9 @@ function parsePositiveInt(value: string | null, fallback: number): number {
  *   queue_type  pending_edit|report|system_flag|all
  */
 export async function GET(request: NextRequest) {
-  const authFailure = requireAdminApiKey(request);
-  if (authFailure) return authFailure;
+  const access = await requireModeratorAccess();
+  if (access.response) return access.response;
+  const { supabase } = access.context!;
 
   const params = request.nextUrl.searchParams;
   const page = parsePositiveInt(params.get("page"), 1);
@@ -38,8 +39,6 @@ export async function GET(request: NextRequest) {
   const offset = (page - 1) * perPage;
   const status = (params.get("status") ?? "open").trim();
   const queueType = (params.get("queue_type") ?? "all").trim();
-
-  const supabase = await createAdminClient();
 
   let queueQuery = supabase
     .from("moderation_queue")

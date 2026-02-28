@@ -23,7 +23,7 @@ Source strategy:
 |---|---|---|---|
 | Phase 0: SDLC foundation | `done` | CI workflow restored; issue/PR templates; deployment + backup runbooks; architecture doc restored; Rust fmt violations fixed in `src-tauri`. | Monitor CI for regressions and enforce formatting pre-commit/PR. |
 | Phase 1: Web read + hosted model | `done` | Supabase schema + import pipeline; hosted import/verify modes; web episodes/search/wiki/episode detail reads live; hosted verify job wired in Actions; wiki index/discovery route shipped; ranked search RPC + fallback path implemented; migration applied and validated in hosted Supabase; fast search RPC timeout-degrade path added and validated; relevance/tie-break tuning applied (`006_search_relevance_tuning.sql`) and validated in hosted Supabase. | Monitor search quality/latency in production and capture follow-up tuning as incremental issues. |
-| Phase 2: Community editing + moderation | `in_progress` | Hosted Phase 2 schema foundation migration added/applied (`profiles`, roles/memberships, revisions, pending edits, moderation queue/actions, reports, trust/rate-limit/audit, import batch items); admin read APIs + `/admin` dashboard shipped; authenticated moderation write action path shipped (`/api/v1/admin/moderation-actions`) with DB RPC + RLS moderator/admin policies. | Add auth UX/role bootstrap flow (non-stub login + profile/role provisioning) and expand moderation actions (report/system_flag resolution). |
+| Phase 2: Community editing + moderation | `in_progress` | Hosted Phase 2 schema foundation migration added/applied (`profiles`, roles/memberships, revisions, pending edits, moderation queue/actions, reports, trust/rate-limit/audit, import batch items); admin dashboard shipped; moderation write action path shipped (`/api/v1/admin/moderation-actions`) with DB RPC + RLS moderator/admin policies; non-stub login/auth status UX shipped (`/login` + `/api/v1/auth/me`); profile bootstrap helpers/trigger added and admin read APIs moved to authenticated moderator/admin checks. | Expand moderation actions beyond pending edits (report/system_flag resolution) and add richer role-management UX beyond bootstrap allowlists. |
 | Phase 3: Phone-first polish | `not_started` | Responsive foundations present in web pages. | Add PWA manifest/install flow and mobile UX performance/accessibility pass. |
 | Phase 4: Multi-show generalization | `not_started` | `shows` support exists in hosted schema. | Add show-scoped routing/config and API/UI show selection patterns. |
 
@@ -36,8 +36,9 @@ Source strategy:
 | Voice library SQLite migration | `in_progress` | Core runtime paths switched to SQLite store mode; optional UI actions pending. |
 | Web observability (Sentry) | `done` | Sentry integrated in Next.js runtime (client/server/edge/global error), smoke-tested event ingestion, and targeted spans added for search + moderation actions. |
 | Phase 2 moderation schema | `done` | Phase 2 foundation tables migrated and validated in hosted Supabase. |
-| Phase 2 moderation API (read) | `done` | Admin-key-gated read endpoints + `/admin` dashboard wired for pending edits, moderation queue, and revisions. |
+| Phase 2 moderation API (read) | `done` | Authenticated moderator/admin-gated read endpoints + `/admin` dashboard wired for pending edits, moderation queue, and revisions. |
 | Phase 2 moderation API (write) | `in_progress` | `POST /api/v1/admin/moderation-actions` shipped for approve/reject/needs_changes/assign/unassign using authenticated role checks and RLS-backed RPC. |
+| Phase 2 auth UX + role bootstrap | `in_progress` | `/login` now supports Supabase sign-in/up/magic-link/sign-out and `/api/v1/auth/me`; profile auto-provision trigger/helper + optional env allowlist role bootstrap shipped. |
 | Playwright modernization | `done` | Deterministic test harness in place and workflow enabled. |
 | TikTok-style clip feed | `not_started` | Dedicated tracker created; implementation phases pending. |
 
@@ -49,7 +50,7 @@ Source strategy:
 
 ## Next 3 Priority Tasks
 
-1. Add Phase 2 auth UX + role bootstrap flow so moderator write actions are usable without manual session setup.
+1. Expand moderation queue actions to cover `report`/`system_flag` workflows end-to-end.
 2. Add `SQLITE_DB_URL` secret to restore full hosted parity verification on GitHub runners.
 3. Add guardrails to keep Rust formatting enforced before CI (local hook or dedicated check guidance).
 

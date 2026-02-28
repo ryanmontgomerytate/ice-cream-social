@@ -1315,3 +1315,24 @@ Tests Run
 - `mcp__supabase__execute_sql(\"select ... from public.search_transcript_segments_fast('Penn', 1, 5)\")` — **PASS** (broad-query fast path returns ranked rows)
 - `mcp__supabase__execute_sql(\"select ... from public.search_transcript_segments_fast('Thanks, Penn', 1, 5)\")` — **PASS** (phrase query returns results through fast path)
 - `npm --prefix web run build` — **PASS** (Next.js production build succeeds)
+
+### Current State Update (#3 Started: Phase 2 Auth UX + Role/Profile Bootstrap)
+
+- **Done:** Added migration `web/supabase/migrations/007_phase2_auth_bootstrap.sql`:
+  - `auth.users` -> `profiles` auto-provision trigger (`on_auth_user_created_profiles`)
+  - authenticated helper RPCs: `ensure_profile_for_current_user`, `current_user_roles`
+  - baseline self-profile RLS policies (`profile_self_read/insert/update`).
+- **Done:** Applied migration to hosted Supabase and validated trigger/functions/policies exist.
+- **Done:** Replaced `/login` stub with working Supabase auth UX (`web/components/auth/LoginPanel.tsx` + `web/app/(auth)/login/page.tsx`) supporting sign-in, sign-up, magic link, sign-out, and current role/session display.
+- **Done:** Added `GET /api/v1/auth/me` (`web/app/api/v1/auth/me/route.ts`) to return authenticated user/profile/roles and run profile bootstrap.
+- **Done:** Moved admin read APIs (`revisions`, `pending-edits`, `moderation-queue`) from `ADMIN_API_KEY` gating to authenticated moderator/admin checks (`requireModeratorAccess`) to align read/write auth model.
+- **Done:** Updated navigation and docs (`ARCHITECTURE.md`, `docs/EVOLVE_ICS_TRACKER.md`, env examples) for new Phase 2 auth flow and optional bootstrap allowlists.
+- **Pending:** Expand moderation actions beyond `pending_edit` queue items (`report` + `system_flag`) and add richer role management UI (currently bootstrap allowlist + DB role assignments).
+- **Blockers:** None.
+
+Tests Run
+- `mcp__supabase__apply_migration(name="phase2_auth_bootstrap", ...)` — **PASS**
+- `mcp__supabase__execute_sql("select proname from pg_proc where proname in (...)")` — **PASS** (new functions present)
+- `mcp__supabase__execute_sql("select policyname ... from pg_policies where tablename='profiles'")` — **PASS** (self-profile policies present)
+- `mcp__supabase__execute_sql("select tgname ... auth.users ... on_auth_user_created_profiles")` — **PASS** (trigger present)
+- `npm --prefix web run build` — **PASS** (includes `/login` and `/api/v1/auth/me`)

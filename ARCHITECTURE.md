@@ -340,9 +340,9 @@ Initial Phase 2 read APIs are now implemented in Next.js route handlers:
 - `GET /api/v1/admin/moderation-queue`
 
 Security posture for this initial slice:
-- Endpoints require `ADMIN_API_KEY` via `x-admin-key` or `Authorization: Bearer`.
-- Data fetches currently use the Supabase secret-key server client (`createAdminClient`) to bypass RLS.
-- This is a bootstrap admin surface for internal moderation workflows; role-aware authenticated flows and RLS-backed policies are the next step.
+- Endpoints now require authenticated moderator/admin role checks via `public.current_user_has_role(text[])`.
+- Read route handlers use the publishable-key server client (`createPublicClient`) under RLS, matching the write path model.
+- API routes no longer require manual `ADMIN_API_KEY` for standard moderation dashboard reads.
 
 Admin review UI:
 - `/admin` now renders a minimal dashboard that loads pending edits, queue items, and unapproved revisions through these API routes.
@@ -371,7 +371,30 @@ RLS updates introduced in migration `web/supabase/migrations/005_phase2_moderati
   - `moderation_actions`
 
 Current auth gap:
-- `/login` is still a stub in the web app, so write actions require an existing authenticated moderator/admin session provisioned out-of-band.
+- Baseline auth UX now exists at `/login` with Supabase sign-in/sign-up/magic-link/sign-out.
+- Auth status endpoint `GET /api/v1/auth/me` ensures profile provisioning and returns current role keys for session-aware UI.
+
+### Phase 2 Auth/Profile Bootstrap (new)
+
+Migration:
+- `web/supabase/migrations/007_phase2_auth_bootstrap.sql`
+
+Additions:
+- `profiles` auto-provision trigger on `auth.users` inserts:
+  - `public.handle_new_auth_user_profile()`
+  - trigger: `on_auth_user_created_profiles`
+- Authenticated helper RPCs:
+  - `public.ensure_profile_for_current_user()`
+  - `public.current_user_roles()`
+- Baseline self-service profile RLS policies:
+  - `profile_self_read`
+  - `profile_self_insert`
+  - `profile_self_update`
+
+Optional bootstrap behavior:
+- `/api/v1/auth/me` supports env-based role bootstrap allowlists for early Phase 2 operations:
+  - `PHASE2_BOOTSTRAP_ADMIN_EMAILS`
+  - `PHASE2_BOOTSTRAP_MODERATOR_EMAILS`
 
 ## Target Direction (Short Version)
 

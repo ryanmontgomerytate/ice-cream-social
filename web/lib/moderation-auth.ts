@@ -37,6 +37,14 @@ export async function requireModeratorAccess(): Promise<ModeratorAccessResult> {
     };
   }
 
+  const { error: ensureProfileError } = await supabase.rpc("ensure_profile_for_current_user");
+  if (ensureProfileError) {
+    return {
+      context: null,
+      response: NextResponse.json({ error: ensureProfileError.message }, { status: 500 }),
+    };
+  }
+
   const { data: isModerator, error: roleError } = await supabase.rpc("current_user_has_role", {
     role_keys: ["admin", "moderator"],
   });

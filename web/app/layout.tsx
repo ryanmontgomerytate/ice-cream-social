@@ -41,6 +41,12 @@ export default function RootLayout({
               <Link href="/search" className="hover:text-white transition-colors">
                 Search
               </Link>
+              <Link href="/admin" className="hover:text-white transition-colors">
+                Admin
+              </Link>
+              <Link href="/login" className="hover:text-white transition-colors">
+                Login
+              </Link>
             </div>
           </div>
         </nav>

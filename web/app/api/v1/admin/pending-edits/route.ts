@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdminApiKey } from "@/lib/admin-auth";
-import { createAdminClient } from "@/lib/supabase/server";
+import { requireModeratorAccess } from "@/lib/moderation-auth";
 import type { ContentRevision, PendingEdit, PendingEditWithRevision } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -16,6 +15,7 @@ function parsePositiveInt(value: string | null, fallback: number): number {
 
 /**
  * GET /api/v1/admin/pending-edits
+ * Requires authenticated moderator/admin role.
  *
  * Query params:
  *   page      page number (default 1)
@@ -23,16 +23,15 @@ function parsePositiveInt(value: string | null, fallback: number): number {
  *   status    pending|approved|rejected|needs_changes|auto_approved|all
  */
 export async function GET(request: NextRequest) {
-  const authFailure = requireAdminApiKey(request);
-  if (authFailure) return authFailure;
+  const access = await requireModeratorAccess();
+  if (access.response) return access.response;
+  const { supabase } = access.context!;
 
   const params = request.nextUrl.searchParams;
   const page = parsePositiveInt(params.get("page"), 1);
   const perPage = Math.min(parsePositiveInt(params.get("per_page"), PAGE_SIZE_DEFAULT), PAGE_SIZE_MAX);
   const offset = (page - 1) * perPage;
   const status = (params.get("status") ?? "pending").trim();
-
-  const supabase = await createAdminClient();
 
   let pendingQuery = supabase
     .from("pending_edits")

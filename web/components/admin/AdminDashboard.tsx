@@ -10,11 +10,8 @@ import type {
 } from "@/lib/types";
 import { useAdminDashboardUiStore } from "@/lib/stores/admin-dashboard-ui";
 
-async function fetchAdminEndpoint<T>(url: string, adminKey: string): Promise<T> {
+async function fetchAdminEndpoint<T>(url: string): Promise<T> {
   const response = await fetch(url, {
-    headers: {
-      "x-admin-key": adminKey,
-    },
     cache: "no-store",
   });
 
@@ -42,7 +39,6 @@ function formatDateTime(iso: string | null | undefined): string {
 
 export default function AdminDashboard() {
   const {
-    adminKey,
     pendingStatus,
     queueStatus,
     queueType,
@@ -51,7 +47,6 @@ export default function AdminDashboard() {
     error,
     actionError,
     actionQueueId,
-    setAdminKey,
     setPendingStatus,
     setQueueStatus,
     setQueueType,
@@ -70,11 +65,6 @@ export default function AdminDashboard() {
   const [revisions, setRevisions] = useState<AdminPaginatedResponse<ContentRevision> | null>(null);
 
   const loadData = useCallback(async () => {
-    if (!adminKey.trim()) {
-      setError("Enter an admin API key to load moderation data.");
-      return;
-    }
-
     setError(null);
     setIsLoading(true);
 
@@ -98,16 +88,13 @@ export default function AdminDashboard() {
 
       const [pendingRes, queueRes, revisionRes] = await Promise.all([
         fetchAdminEndpoint<AdminPaginatedResponse<PendingEditWithRevision>>(
-          `/api/v1/admin/pending-edits?${pendingQuery.toString()}`,
-          adminKey
+          `/api/v1/admin/pending-edits?${pendingQuery.toString()}`
         ),
         fetchAdminEndpoint<AdminPaginatedResponse<ModerationQueueItemWithRef>>(
-          `/api/v1/admin/moderation-queue?${queueQuery.toString()}`,
-          adminKey
+          `/api/v1/admin/moderation-queue?${queueQuery.toString()}`
         ),
         fetchAdminEndpoint<AdminPaginatedResponse<ContentRevision>>(
-          `/api/v1/admin/revisions?${revisionsQuery.toString()}`,
-          adminKey
+          `/api/v1/admin/revisions?${revisionsQuery.toString()}`
         ),
       ]);
 
@@ -120,7 +107,7 @@ export default function AdminDashboard() {
     } finally {
       setIsLoading(false);
     }
-  }, [adminKey, pendingStatus, queueStatus, queueType]);
+  }, [pendingStatus, queueStatus, queueType]);
 
   const runQueueAction = useCallback(
     async (queueItemId: number, action: ModerationActionType) => {
@@ -178,18 +165,7 @@ export default function AdminDashboard() {
       </div>
 
       <div className="rounded-xl border border-gray-800 bg-gray-900/70 p-4">
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-5">
-          <label className="lg:col-span-2">
-            <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500">Admin API key</span>
-            <input
-              type="password"
-              value={adminKey}
-              onChange={(event) => setAdminKey(event.target.value)}
-              placeholder="Enter ADMIN_API_KEY"
-              className="w-full rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-white focus:border-gray-500 focus:outline-none"
-            />
-          </label>
-
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
           <label>
             <span className="mb-1 block text-xs uppercase tracking-wide text-gray-500">Pending status</span>
             <select
@@ -245,10 +221,20 @@ export default function AdminDashboard() {
           >
             {isLoading ? "Loading..." : "Load moderation data"}
           </button>
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && (
+            <p className="text-sm text-red-400">
+              {error}{" "}
+              {(/Authentication required|Moderator role required|Unauthorized/i.test(error) && (
+                <a className="underline text-red-300 hover:text-red-200" href="/login">
+                  Sign in
+                </a>
+              )) ||
+                null}
+            </p>
+          )}
         </div>
         <p className="mt-2 text-xs text-gray-500">
-          Write actions use authenticated moderator/admin role checks (no API key bypass).
+          Read/write actions require authenticated moderator/admin roles.
         </p>
         {actionError && <p className="mt-2 text-sm text-red-400">{actionError}</p>}
       </div>

@@ -4,7 +4,6 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
 interface AdminDashboardUiState {
-  adminKey: string;
   pendingStatus: string;
   queueStatus: string;
   queueType: string;
@@ -13,7 +12,6 @@ interface AdminDashboardUiState {
   error: string | null;
   actionError: string | null;
   actionQueueId: number | null;
-  setAdminKey: (value: string) => void;
   setPendingStatus: (value: string) => void;
   setQueueStatus: (value: string) => void;
   setQueueType: (value: string) => void;
@@ -27,7 +25,6 @@ interface AdminDashboardUiState {
 export const useAdminDashboardUiStore = create<AdminDashboardUiState>()(
   persist(
     (set) => ({
-      adminKey: "",
       pendingStatus: "pending",
       queueStatus: "open",
       queueType: "all",
@@ -36,7 +33,6 @@ export const useAdminDashboardUiStore = create<AdminDashboardUiState>()(
       error: null,
       actionError: null,
       actionQueueId: null,
-      setAdminKey: (value) => set({ adminKey: value }),
       setPendingStatus: (value) => set({ pendingStatus: value }),
       setQueueStatus: (value) => set({ queueStatus: value }),
       setQueueType: (value) => set({ queueType: value }),
@@ -50,7 +46,6 @@ export const useAdminDashboardUiStore = create<AdminDashboardUiState>()(
       name: "ics-admin-dashboard-ui",
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
-        adminKey: state.adminKey,
         pendingStatus: state.pendingStatus,
         queueStatus: state.queueStatus,
         queueType: state.queueType,

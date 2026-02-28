@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdminApiKey } from "@/lib/admin-auth";
-import { createAdminClient } from "@/lib/supabase/server";
+import { requireModeratorAccess } from "@/lib/moderation-auth";
 import type { ContentRevision } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -16,6 +15,7 @@ function parsePositiveInt(value: string | null, fallback: number): number {
 
 /**
  * GET /api/v1/admin/revisions
+ * Requires authenticated moderator/admin role.
  *
  * Query params:
  *   page          page number (default 1)
@@ -26,8 +26,9 @@ function parsePositiveInt(value: string | null, fallback: number): number {
  *   approved      true|false
  */
 export async function GET(request: NextRequest) {
-  const authFailure = requireAdminApiKey(request);
-  if (authFailure) return authFailure;
+  const access = await requireModeratorAccess();
+  if (access.response) return access.response;
+  const { supabase } = access.context!;
 
   const params = request.nextUrl.searchParams;
   const page = parsePositiveInt(params.get("page"), 1);
@@ -38,8 +39,6 @@ export async function GET(request: NextRequest) {
   const contentId = parsePositiveInt(params.get("content_id"), 0);
   const showId = parsePositiveInt(params.get("show_id"), 0);
   const approvedRaw = (params.get("approved") ?? "").trim().toLowerCase();
-
-  const supabase = await createAdminClient();
 
   let query = supabase
     .from("content_revisions")
