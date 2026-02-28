@@ -160,7 +160,12 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SQLITE_DB_URL: ${{ secrets.SQLITE_DB_URL }}
         run: |
+          database_url_set=false
+          database_reachable=false
+          sqlite_exists=false
+
           if [ -n "${DATABASE_URL:-}" ]; then
+            database_url_set=true
             echo "database_url_set=true" >> "$GITHUB_OUTPUT"
           else
             echo "::warning::Skipping hosted verify: DATABASE_URL secret is not available to this job."
@@ -170,6 +175,7 @@ jobs:
           if [ -n "${DATABASE_URL:-}" ]; then
             if python -c "import os,socket;from urllib.parse import urlparse;u=urlparse(os.environ.get('DATABASE_URL','').strip());h=u.hostname;p=u.port or 5432;assert h;socket.create_connection((h,p),5).close()"
             then
+              database_reachable=true
               echo "database_reachable=true" >> "$GITHUB_OUTPUT"
             else
               echo "::warning::Skipping hosted verify: DATABASE_URL host is not reachable from this runner. Use an IPv4-reachable Supabase pooler URL."
@@ -193,11 +199,22 @@ jobs:
           fi
 
           if [ -f data/ice_cream_social.db ]; then
+            sqlite_exists=true
             echo "sqlite_exists=true" >> "$GITHUB_OUTPUT"
           else
             echo "::warning::Skipping hosted verify: data/ice_cream_social.db is not present and SQLITE_DB_URL was not provided (or download failed)."
             echo "sqlite_exists=false" >> "$GITHUB_OUTPUT"
           fi
+
+          verify_mode="skipped"
+          if [ "$database_url_set" = "true" ] && [ "$database_reachable" = "true" ]; then
+            if [ "$sqlite_exists" = "true" ]; then
+              verify_mode="parity"
+            else
+              verify_mode="integrity"
+            fi
+          fi
+          echo "verify_mode=${verify_mode}" >> "$GITHUB_OUTPUT"
 
       - name: Verify hosted row parity
         if: ${{ steps.verify_prereqs.outputs.database_url_set == 'true' && steps.verify_prereqs.outputs.database_reachable == 'true' && steps.verify_prereqs.outputs.sqlite_exists == 'true' }}
@@ -210,3 +227,21 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python scripts/export_to_hosted.py --mode verify-hosted
+
+      - name: Hosted verify summary
+        if: ${{ always() }}
+        env:
+          VERIFY_MODE: ${{ steps.verify_prereqs.outputs.verify_mode }}
+        run: |
+          case "${VERIFY_MODE}" in
+            parity)
+              echo "Hosted verify mode: parity (local SQLite vs hosted counts)."
+              ;;
+            integrity)
+              echo "::warning::Hosted verify mode: integrity-only fallback. Set SQLITE_DB_URL to re-enable full parity checks on GitHub-hosted runners."
+              ;;
+            *)
+              echo "::error::Hosted verification did not run (mode: ${VERIFY_MODE:-unknown}). Check DATABASE_URL reachability and workflow logs."
+              exit 1
+              ;;
+          esac

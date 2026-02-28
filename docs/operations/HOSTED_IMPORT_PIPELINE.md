@@ -57,3 +57,25 @@ python3 scripts/export_to_hosted.py --mode full --tables shows episodes speakers
 
 - `DATABASE_URL` is required for `--mode import` and `--mode full` (unless `--dry-run`).
 - Local SQLite remains source of truth in Phase 1.
+
+## GitHub Hosted Verification
+
+CI workflow `Hosted Import Verify` in `.github/workflows/ci.yml` runs on push/manual dispatch (non-PR):
+
+- `verify` mode (full parity): runs when both are available:
+  - `DATABASE_URL`
+  - local `data/ice_cream_social.db` (or downloadable snapshot via `SQLITE_DB_URL`)
+- `verify-hosted` mode (integrity fallback): runs when `DATABASE_URL` is reachable but SQLite is unavailable.
+
+Required secrets:
+- `DATABASE_URL` (required)
+- `SQLITE_DB_URL` (optional, enables full parity in GitHub-hosted runners)
+
+Recommended `SQLITE_DB_URL` format:
+- direct HTTPS URL to a current SQLite snapshot (`.db` or `.gz`)
+- accessible from GitHub Actions runner without auth prompts
+
+CI summary behavior:
+- `parity` -> success message (full check)
+- `integrity` -> warning with guidance to add `SQLITE_DB_URL`
+- `skipped` -> job fails (verification did not run)

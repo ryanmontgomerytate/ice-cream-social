@@ -32,7 +32,7 @@ Source strategy:
 | Workstream | Status | Notes |
 |---|---|---|
 | Hosted import parity | `done` | Full local import-source vs hosted verification passing locally. |
-| GitHub hosted verification | `in_progress` | Secret/env wiring done; fallback hosted checks run in Actions; optional `SQLITE_DB_URL` still not configured. |
+| GitHub hosted verification | `done` | Hosted verify workflow now reports/enforces verify mode: `parity` (SQLite+hosted), `integrity` fallback (hosted-only), and fails on `skipped`; runbook updated with `SQLITE_DB_URL` guidance for full parity on GitHub-hosted runners. |
 | Voice library SQLite migration | `in_progress` | Core runtime paths switched to SQLite store mode; optional UI actions pending. |
 | Web observability (Sentry) | `done` | Sentry integrated in Next.js runtime (client/server/edge/global error), smoke-tested event ingestion, and targeted spans added for search + moderation actions. |
 | Phase 2 moderation schema | `done` | Phase 2 foundation tables migrated and validated in hosted Supabase. |
@@ -44,14 +44,12 @@ Source strategy:
 
 ## Current Blockers
 
-| Blocker | Impact | Resolution path |
-|---|---|---|
-| No `SQLITE_DB_URL` secret for Actions | Full source-vs-hosted parity check skipped on hosted runner | Add downloadable DB snapshot URL secret or run verify on self-hosted runner with local DB. |
+None.
 
 ## Next 3 Priority Tasks
 
 1. Expand moderation queue actions to cover `report`/`system_flag` workflows end-to-end.
-2. Add `SQLITE_DB_URL` secret to restore full hosted parity verification on GitHub runners.
+2. Add richer role-management UX for Phase 2 (beyond bootstrap allowlists).
 3. Add guardrails to keep Rust formatting enforced before CI (local hook or dedicated check guidance).
 
 ## Update Rule

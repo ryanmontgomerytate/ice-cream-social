@@ -1346,3 +1346,17 @@ Tests Run
 
 Tests Run
 - `npm --prefix web run build` — **PASS** (`/login` now prerenders successfully)
+### Current State Update (#7 Completed: GitHub Hosted Verification Hardening)
+
+- **Done:** Hardened `Hosted Import Verify` workflow in `.github/workflows/ci.yml` with explicit verify-mode output:
+  - `parity` when SQLite source snapshot is available (full source-vs-hosted count verification).
+  - `integrity` when only hosted checks are available (`verify-hosted` fallback).
+  - `skipped` now fails the job to prevent silent no-op verification runs.
+- **Done:** Added workflow summary step that clearly reports mode and guides adding `SQLITE_DB_URL` when only integrity mode runs on GitHub-hosted runners.
+- **Done:** Updated hosted import runbook (`docs/operations/HOSTED_IMPORT_PIPELINE.md`) with CI verification mode behavior, required secrets, and snapshot URL guidance.
+- **Done:** Updated roadmap tracker (`docs/EVOLVE_ICS_TRACKER.md`) to mark GitHub hosted verification as `done` and removed stale blocker status.
+- **Pending:** Optional follow-up: provide a stable `SQLITE_DB_URL` snapshot source so CI routinely runs `parity` mode instead of fallback integrity mode.
+- **Blockers:** None.
+
+Tests Run
+- `ruby -e 'require "yaml"; YAML.load_file(".github/workflows/ci.yml"); puts "ci.yml OK"'` — **PASS** (workflow YAML parses cleanly)
